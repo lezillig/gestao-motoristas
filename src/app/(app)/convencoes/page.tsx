@@ -31,6 +31,7 @@ export default async function ConvencoesPage() {
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
                 <th className="px-4 py-3">Sindicato</th>
+                <th className="px-4 py-3">Tipo</th>
                 <th className="px-4 py-3">Vigência</th>
                 <th className="px-4 py-3">Regras</th>
                 <th className="px-4 py-3">Status</th>
@@ -40,7 +41,7 @@ export default async function ConvencoesPage() {
             <tbody>
               {convencoes.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
                     Nenhuma convenção coletiva cadastrada ainda.
                   </td>
                 </tr>
@@ -50,6 +51,15 @@ export default async function ConvencoesPage() {
                 return (
                   <tr key={c.id} className="border-b border-slate-100 last:border-0">
                     <td className="px-4 py-3 font-medium text-slate-800">{c.sindicato.nome}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`${badgeClass} ${
+                          c.tipo === "ACT" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600"
+                        }`}
+                      >
+                        {c.tipo === "ACT" ? "ACT" : "CCT"}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 text-slate-600">
                       {format(c.vigenciaInicio, "dd/MM/yyyy")} –{" "}
                       {c.vigenciaFim ? format(c.vigenciaFim, "dd/MM/yyyy") : "indeterminado"}

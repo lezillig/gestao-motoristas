@@ -39,6 +39,8 @@ export default async function EditarPontoPage({
             date: format(entry.date, "yyyy-MM-dd"),
             clockIn: entry.clockIn,
             clockOut: entry.clockOut,
+            intervaloInicio: entry.intervaloInicio,
+            intervaloFim: entry.intervaloFim,
             notes: entry.notes,
           }}
         />

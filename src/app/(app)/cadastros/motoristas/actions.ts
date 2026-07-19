@@ -19,6 +19,8 @@ const schema = z.object({
     .transform(parseLocalDate),
   phone: z.string().optional(),
   sindicatoId: z.string().optional(),
+  regimeHoras: z.enum(["PADRAO", "DOZE_X_TRINTA_SEIS"]).optional(),
+  escalaSemanal: z.enum(["SEIS_UM", "CINCO_DOIS"]).optional(),
 });
 
 function parseForm(formData: FormData) {
@@ -30,6 +32,8 @@ function parseForm(formData: FormData) {
     cnhExpiration: formData.get("cnhExpiration"),
     phone: formData.get("phone") || undefined,
     sindicatoId: formData.get("sindicatoId") || undefined,
+    regimeHoras: formData.get("regimeHoras") || undefined,
+    escalaSemanal: formData.get("escalaSemanal") || undefined,
   });
 }
 
@@ -73,6 +77,20 @@ export async function toggleDriverActive(id: string, active: boolean) {
 export type ImportRowError = { row: number; message: string };
 export type ImportResult = { created: number; errors: ImportRowError[] };
 export type ImportState = { error?: string; result?: ImportResult };
+
+function normalizeRegimeHoras(value: string): "PADRAO" | "DOZE_X_TRINTA_SEIS" | null {
+  const v = value.trim().toLowerCase();
+  if (v === "padrao" || v === "padrão") return "PADRAO";
+  if (v === "12x36" || v === "12 x 36") return "DOZE_X_TRINTA_SEIS";
+  return null;
+}
+
+function normalizeEscalaSemanal(value: string): "SEIS_UM" | "CINCO_DOIS" | null {
+  const v = value.trim().toLowerCase();
+  if (v === "6x1" || v === "6 x 1") return "SEIS_UM";
+  if (v === "5x2" || v === "5 x 2") return "CINCO_DOIS";
+  return null;
+}
 
 // Mesma validacao de createDriver, linha a linha, com melhor esforco: linhas
 // invalidas viram erro reportado ao usuario, mas nao bloqueiam a importacao
@@ -130,6 +148,8 @@ export async function importDrivers(
     const phone = normalizeText(row["Telefone"]) || undefined;
     const sindicatoNome = normalizeText(row["Sindicato"]);
     const ativoRaw = normalizeText(row["Ativo (SIM/NAO)"]).toLowerCase();
+    const regimeHorasText = normalizeText(row["Regime de Horas"]);
+    const escalaSemanalText = normalizeText(row["Escala"]);
 
     let sindicatoId: string | undefined;
     if (sindicatoNome) {
@@ -141,6 +161,17 @@ export async function importDrivers(
       sindicatoId = match;
     }
 
+    const regimeHoras = regimeHorasText ? normalizeRegimeHoras(regimeHorasText) : undefined;
+    if (regimeHorasText && !regimeHoras) {
+      errors.push({ row: rowNumber, message: `Regime de horas "${regimeHorasText}" inválido (use Padrão ou 12x36)` });
+      continue;
+    }
+    const escalaSemanal = escalaSemanalText ? normalizeEscalaSemanal(escalaSemanalText) : undefined;
+    if (escalaSemanalText && !escalaSemanal) {
+      errors.push({ row: rowNumber, message: `Escala "${escalaSemanalText}" inválida (use 6x1 ou 5x2)` });
+      continue;
+    }
+
     const parsed = schema.safeParse({
       name,
       cpf,
@@ -149,6 +180,8 @@ export async function importDrivers(
       cnhExpiration: cnhExpiration ?? "",
       phone,
       sindicatoId,
+      regimeHoras: regimeHoras ?? undefined,
+      escalaSemanal: escalaSemanal ?? undefined,
     });
     if (!parsed.success) {
       errors.push({ row: rowNumber, message: parsed.error.issues[0]?.message ?? "Dados inválidos" });

@@ -34,6 +34,29 @@ enum TipoRegraConvencao {
   OUTRO
 }
 
+// CCT: negociada entre sindicatos (categoria inteira). ACT: negociado direto
+// entre o sindicato e esta empresa. Quando os dois existem para o mesmo
+// sindicato, o ACT prevalece (art. 620 CLT) — ver src/lib/convencao.ts.
+enum TipoConvencao {
+  CCT
+  ACT
+}
+
+// Override individual por motorista — tem precedencia sobre a CCT/ACT do
+// sindicato quando definido (art. 59-A CLT permite 12x36 por acordo
+// individual, nao so por convencao coletiva). Nulo = segue a CCT/ACT.
+enum RegimeHoras {
+  PADRAO
+  DOZE_X_TRINTA_SEIS
+}
+
+// Padrao de folga semanal do motorista, usado para ajustar o limiar do
+// alerta de descanso semanal (DSR). Nulo = usa o padrao generico de 7 dias.
+enum EscalaSemanal {
+  SEIS_UM
+  CINCO_DOIS
+}
+
 // ---------- Multi-tenant: empresa/cliente ----------
 // Mesmo desenho do Sistema Agendamento (ver memoria design-system-agendamento):
 // cada empresa e um tenant isolado. Fase 2 roda com uma unica empresa, mas o
@@ -110,6 +133,8 @@ model Driver {
   cnhExpiration DateTime
   phone         String?
   photoUrl      String?
+  regimeHoras   RegimeHoras?
+  escalaSemanal EscalaSemanal?
   active        Boolean   @default(true)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -181,6 +206,11 @@ model TimeClockEntry {
   date      DateTime
   clockIn   String // HH:mm
   clockOut  String? // HH:mm, nulo enquanto o turno esta aberto
+  // Pausa dentro do turno (intervalo intrajornada, art. 71 CLT). Opcionais
+  // para nao invalidar registros antigos — ausencia dos dois em turnos
+  // longos e o que alimenta o alerta de "intervalo nao registrado".
+  intervaloInicio String? // HH:mm
+  intervaloFim    String? // HH:mm
   notes     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -201,6 +231,7 @@ model ConvencaoColetiva {
   company        Company  @relation(fields: [companyId], references: [id])
   sindicatoId    String
   sindicato      Sindicato @relation(fields: [sindicatoId], references: [id])
+  tipo           TipoConvencao @default(CCT)
   fileName       String
   fileUrl        String
   vigenciaInicio DateTime

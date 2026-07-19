@@ -18,6 +18,8 @@ export default function PontoForm({
     date: string;
     clockIn: string;
     clockOut: string | null;
+    intervaloInicio?: string | null;
+    intervaloFim?: string | null;
     notes: string | null;
   };
 }) {
@@ -68,6 +70,27 @@ export default function PontoForm({
             className={inputClass}
           />
           <p className="mt-1 text-xs text-slate-400">Deixe em branco se o turno ainda está aberto.</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className={labelClass}>Início do intervalo</label>
+          <input
+            type="time"
+            name="intervaloInicio"
+            defaultValue={defaultValues?.intervaloInicio ?? ""}
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label className={labelClass}>Fim do intervalo</label>
+          <input
+            type="time"
+            name="intervaloFim"
+            defaultValue={defaultValues?.intervaloFim ?? ""}
+            className={inputClass}
+          />
+          <p className="mt-1 text-xs text-slate-400">Preencha se o motorista teve pausa registrada durante o turno.</p>
         </div>
       </div>
       <div>

@@ -15,6 +15,7 @@ export type RegraFormState = { error?: string };
 export type SuggestRegrasState = { error?: string; suggestions?: SuggestedRegra[] };
 
 const convencaoSchema = z.object({
+  tipo: z.enum(["CCT", "ACT"]),
   sindicatoId: z.string().min(1, "Selecione o sindicato"),
   vigenciaInicio: z
     .string()
@@ -40,6 +41,7 @@ export async function createConvencao(
   const session = await requireRole("ADMIN", "GESTOR");
 
   const parsed = convencaoSchema.safeParse({
+    tipo: formData.get("tipo"),
     sindicatoId: formData.get("sindicatoId"),
     vigenciaInicio: formData.get("vigenciaInicio"),
     vigenciaFim: formData.get("vigenciaFim") || undefined,
@@ -84,6 +86,7 @@ export async function createConvencao(
     data: {
       companyId: session.companyId,
       sindicatoId: sindicato.id,
+      tipo: parsed.data.tipo,
       vigenciaInicio: parsed.data.vigenciaInicio,
       vigenciaFim: parsed.data.vigenciaFim ?? null,
       fileName: arquivo.name,

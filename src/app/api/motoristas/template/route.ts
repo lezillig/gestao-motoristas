@@ -15,6 +15,8 @@ export async function GET() {
       "Telefone",
       "Sindicato",
       "Ativo (SIM/NAO)",
+      "Regime de Horas",
+      "Escala",
     ],
     example: [
       "João da Silva",
@@ -25,6 +27,8 @@ export async function GET() {
       "(11) 98765-4321",
       "Sindicato dos Motoristas",
       "SIM",
+      "Padrão",
+      "6x1",
     ],
   });
 

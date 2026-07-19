@@ -19,6 +19,8 @@ export default function DriverForm({
     cnhExpiration: Date;
     phone: string | null;
     sindicatoId: string | null;
+    regimeHoras?: string | null;
+    escalaSemanal?: string | null;
   };
 }) {
   return (
@@ -87,6 +89,36 @@ export default function DriverForm({
             </option>
           ))}
         </select>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className={labelClass}>Regime de horas</label>
+          <select
+            name="regimeHoras"
+            defaultValue={defaultValues?.regimeHoras ?? ""}
+            className={inputClass}
+          >
+            <option value="">— Segue a convenção do sindicato —</option>
+            <option value="PADRAO">Padrão (jornada normal)</option>
+            <option value="DOZE_X_TRINTA_SEIS">12x36</option>
+          </select>
+          <p className="mt-1 text-xs text-slate-400">
+            Prevalece sobre a CCT/ACT quando preenchido (acordo individual, art. 59-A CLT).
+          </p>
+        </div>
+        <div>
+          <label className={labelClass}>Escala</label>
+          <select
+            name="escalaSemanal"
+            defaultValue={defaultValues?.escalaSemanal ?? ""}
+            className={inputClass}
+          >
+            <option value="">— Sem escala especial —</option>
+            <option value="SEIS_UM">6x1 (6 dias trabalhados, 1 de folga)</option>
+            <option value="CINCO_DOIS">5x2 (5 dias trabalhados, 2 de folga)</option>
+          </select>
+          <p className="mt-1 text-xs text-slate-400">Ajusta o alerta de descanso semanal na análise de riscos.</p>
+        </div>
       </div>
       <div className="mt-2 flex gap-3">
         <button type="submit" className={primaryButtonClass}>

@@ -20,6 +20,14 @@ const schema = z.object({
     .string()
     .regex(/^\d{2}:\d{2}$/, "Horário de saída inválido")
     .optional(),
+  intervaloInicio: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/, "Horário de início do intervalo inválido")
+    .optional(),
+  intervaloFim: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/, "Horário de fim do intervalo inválido")
+    .optional(),
   notes: z.string().optional(),
 });
 
@@ -29,6 +37,8 @@ function parseForm(formData: FormData) {
     date: formData.get("date"),
     clockIn: formData.get("clockIn"),
     clockOut: formData.get("clockOut") || undefined,
+    intervaloInicio: formData.get("intervaloInicio") || undefined,
+    intervaloFim: formData.get("intervaloFim") || undefined,
     notes: formData.get("notes") || undefined,
   });
 }
@@ -78,6 +88,8 @@ export async function createEntry(
     data: {
       ...parsed.data,
       clockOut: parsed.data.clockOut || null,
+      intervaloInicio: parsed.data.intervaloInicio || null,
+      intervaloFim: parsed.data.intervaloFim || null,
       companyId: session.companyId,
     },
   });
@@ -111,6 +123,8 @@ export async function updateEntry(
     data: {
       ...parsed.data,
       clockOut: parsed.data.clockOut || null,
+      intervaloInicio: parsed.data.intervaloInicio || null,
+      intervaloFim: parsed.data.intervaloFim || null,
     },
   });
 

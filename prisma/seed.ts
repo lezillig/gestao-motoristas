@@ -182,7 +182,10 @@ async function main() {
   });
   void josenilson;
 
-  const uploadDir = path.join(process.cwd(), "public", "uploads", "convencoes", setcepar.id);
+  // Fora de public/: mesmo local privado usado por createConvencao
+  // (src/app/(app)/convencoes/actions.ts) — arquivos de CCT/ACT so sao
+  // servidos via rota autenticada /api/convencoes/[id]/arquivo.
+  const uploadDir = path.join(process.cwd(), "private-uploads", "convencoes", setcepar.id);
   await mkdir(uploadDir, { recursive: true });
   const cctFileName = `${Date.now()}-cct-setcepar-2026.pdf`;
   await writeFile(path.join(uploadDir, cctFileName), PLACEHOLDER_PDF);
@@ -191,10 +194,11 @@ async function main() {
     data: {
       companyId: company.id,
       sindicatoId: setcepar.id,
+      tipo: "CCT",
       vigenciaInicio: daysFromNow(-30),
       vigenciaFim: daysFromNow(335),
       fileName: "CCT-SETCEPAR-2026.pdf",
-      fileUrl: `/uploads/convencoes/${setcepar.id}/${cctFileName}`,
+      fileUrl: `${setcepar.id}/${cctFileName}`,
       uploadedById: admin.id,
     },
   });

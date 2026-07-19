@@ -24,6 +24,16 @@ export default function ConvencaoForm({
         </div>
       )}
       <div>
+        <label className={labelClass}>Tipo de documento *</label>
+        <select name="tipo" required defaultValue="CCT" className={inputClass}>
+          <option value="CCT">Convenção Coletiva (CCT — categoria)</option>
+          <option value="ACT">Acordo Coletivo (ACT — negociado com esta empresa)</option>
+        </select>
+        <p className="mt-1 text-xs text-slate-400">
+          Quando um sindicato tem os dois, o Acordo Coletivo (ACT) prevalece sobre a Convenção Coletiva (CCT) nas regras em comum.
+        </p>
+      </div>
+      <div>
         <label className={labelClass}>Sindicato *</label>
         <select name="sindicatoId" required defaultValue="" className={inputClass}>
           <option value="" disabled>

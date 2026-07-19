@@ -25,6 +25,16 @@ export default async function ConvencaoDetailPage({
   if (!convencao) notFound();
 
   const vigente = isVigente(convencao);
+
+  // Se este documento e uma CCT, avisa quando ha um ACT vigente para o mesmo
+  // sindicato — o ACT prevalece nas regras em comum (art. 620 CLT).
+  let actVigentePrevalece = false;
+  if (convencao.tipo === "CCT") {
+    const outrosDocumentos = await prisma.convencaoColetiva.findMany({
+      where: { companyId: session.companyId, sindicatoId: convencao.sindicatoId, tipo: "ACT" },
+    });
+    actVigentePrevalece = outrosDocumentos.some((d) => isVigente(d));
+  }
   const addRegraAction = addRegra.bind(null, id);
   const removeConvencaoAction = deleteConvencao.bind(null, id);
   const suggestAction = suggestRegrasFromCct.bind(null, id);
@@ -37,6 +47,9 @@ export default async function ConvencaoDetailPage({
       <div className={`${cardClass} mb-6`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
+            <span className={`${badgeClass} ${convencao.tipo === "ACT" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600"}`}>
+              {convencao.tipo === "ACT" ? "Acordo Coletivo (ACT)" : "Convenção Coletiva (CCT)"}
+            </span>{" "}
             <span className={`${badgeClass} ${vigente ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
               {vigente ? "Vigente" : "Expirada"}
             </span>
@@ -44,6 +57,11 @@ export default async function ConvencaoDetailPage({
               Vigência: {format(convencao.vigenciaInicio, "dd/MM/yyyy")} –{" "}
               {convencao.vigenciaFim ? format(convencao.vigenciaFim, "dd/MM/yyyy") : "indeterminado"}
             </p>
+            {actVigentePrevalece && (
+              <p className="mt-1 text-xs italic text-amber-600">
+                Há um Acordo Coletivo (ACT) vigente para este sindicato — ele prevalece sobre esta CCT nas regras em comum.
+              </p>
+            )}
           </div>
           <a
             href={`/api/convencoes/${convencao.id}/arquivo`}
