@@ -1,0 +1,278 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Enums ----------
+
+enum Role {
+  ADMIN
+  GESTOR
+  MOTORISTA
+}
+
+enum VehicleStatus {
+  ATIVO
+  MANUTENCAO
+  INATIVO
+}
+
+// Unidade de valorNumerico por tipo: JORNADA_DIARIA e BANCO_HORAS em horas;
+// HORA_EXTRA e ADICIONAL_NOTURNO em percentual; INTERVALO em minutos;
+// JORNADA_12X36 e OUTRO usam apenas descricao.
+enum TipoRegraConvencao {
+  JORNADA_DIARIA
+  HORA_EXTRA
+  BANCO_HORAS
+  ADICIONAL_NOTURNO
+  INTERVALO
+  JORNADA_12X36
+  OUTRO
+}
+
+// ---------- Multi-tenant: empresa/cliente ----------
+// Mesmo desenho do Sistema Agendamento (ver memoria design-system-agendamento):
+// cada empresa e um tenant isolado. Fase 2 roda com uma unica empresa, mas o
+// isolamento evita retrabalho se o produto for vendido a mais de um cliente.
+model Company {
+  id        String   @id @default(cuid())
+  name      String
+  logoUrl   String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users             User[]
+  sindicatos        Sindicato[]
+  drivers           Driver[]
+  vehicles          Vehicle[]
+  escalas           Escala[]
+  timeClockEntries  TimeClockEntry[]
+  convencoes        ConvencaoColetiva[]
+  regrasConvencao   RegraConvencao[]
+  usageLogs         VehicleUsageLog[]
+  telemetryReadings TelemetryReading[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id])
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  driver             Driver?
+  convencoesEnviadas ConvencaoColetiva[]
+}
+
+// ---------- Sindicato / Convencao Coletiva (base para MOD.06, futuro) ----------
+// Cadastro do sindicato ja nasce aqui porque o vinculo do motorista a ele e
+// pre-requisito do motor de conformidade de convencao coletiva (blueprint
+// Fase 1, MOD.06) — mesmo que a CCT em si so seja anexada em fase posterior.
+model Sindicato {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+  nome      String
+  cnpj      String?
+  cidade    String?
+  estado    String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  drivers    Driver[]
+  convencoes ConvencaoColetiva[]
+}
+
+// ---------- Motorista ----------
+model Driver {
+  id            String    @id @default(cuid())
+  companyId     String
+  company       Company   @relation(fields: [companyId], references: [id])
+  userId        String?   @unique
+  user          User?     @relation(fields: [userId], references: [id])
+  sindicatoId   String?
+  sindicato     Sindicato? @relation(fields: [sindicatoId], references: [id])
+  name          String
+  cpf           String    @unique
+  cnh           String
+  cnhCategory   String
+  cnhExpiration DateTime
+  phone         String?
+  photoUrl      String?
+  active        Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  escalas          Escala[]
+  timeClockEntries TimeClockEntry[]
+  usageLogs        VehicleUsageLog[]
+}
+
+// ---------- Veiculo ----------
+model Vehicle {
+  id        String        @id @default(cuid())
+  companyId String
+  company   Company       @relation(fields: [companyId], references: [id])
+  plate     String        @unique
+  brand     String
+  model     String
+  year      Int
+  type      String
+  status    VehicleStatus @default(ATIVO)
+  // Atualizado a cada encerramento de VehicleUsageLog (checkout com km final).
+  currentMileage         Int @default(0)
+  // Marca o km em que a ultima manutencao foi registrada; a diferenca para
+  // currentMileage alimenta o alerta de manutencao pendente em /utilizacao.
+  lastMaintenanceMileage Int @default(0)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  escalas           Escala[]
+  usageLogs         VehicleUsageLog[]
+  telemetryReadings TelemetryReading[]
+}
+
+// ---------- Escala (MOD.02) ----------
+// Turno planejado: motorista + veiculo + janela de horario em uma data. A
+// checagem de conflito (mesmo motorista ou mesmo veiculo com horario
+// sobreposto) roda em src/lib/escalaConflicts.ts antes de criar/editar.
+model Escala {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+  driverId  String
+  driver    Driver   @relation(fields: [driverId], references: [id])
+  vehicleId String
+  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id])
+  date      DateTime
+  startTime String // HH:mm
+  endTime   String // HH:mm
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  usageLogs VehicleUsageLog[]
+
+  @@index([companyId, date])
+}
+
+// ---------- Ponto (MOD.03) ----------
+// Um registro por dia trabalhado (entrada/saida), no molde do TimeClockEntry
+// do Sistema Agendamento. clockOut fica nulo enquanto o turno esta aberto. As
+// checagens de hora extra e interjornada (Lei 13.103/2015, art. 235-C/235-D)
+// rodam em src/lib/pontoCompliance.ts a partir destes registros.
+model TimeClockEntry {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+  driverId  String
+  driver    Driver   @relation(fields: [driverId], references: [id])
+  date      DateTime
+  clockIn   String // HH:mm
+  clockOut  String? // HH:mm, nulo enquanto o turno esta aberto
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId, date])
+  @@index([driverId, date])
+}
+
+// ---------- Convencao Coletiva (MOD.06) ----------
+// PDF da CCT vigente de um sindicato. "Vigente" e calculado em runtime a
+// partir de vigenciaInicio/vigenciaFim (sem campo de status para nao ficar
+// desatualizado). As regras extraidas ficam em RegraConvencao — hoje via
+// formulario estruturado manual; a extracao assistida por IA fica para a
+// Fase 3, apos termos volume real de CCTs cadastradas.
+model ConvencaoColetiva {
+  id             String   @id @default(cuid())
+  companyId      String
+  company        Company  @relation(fields: [companyId], references: [id])
+  sindicatoId    String
+  sindicato      Sindicato @relation(fields: [sindicatoId], references: [id])
+  fileName       String
+  fileUrl        String
+  vigenciaInicio DateTime
+  vigenciaFim    DateTime?
+  uploadedById   String
+  uploadedBy     User     @relation(fields: [uploadedById], references: [id])
+  uploadedAt     DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  regras RegraConvencao[]
+
+  @@index([sindicatoId])
+}
+
+model RegraConvencao {
+  id            String             @id @default(cuid())
+  companyId     String
+  company       Company            @relation(fields: [companyId], references: [id])
+  convencaoId   String
+  convencao     ConvencaoColetiva  @relation(fields: [convencaoId], references: [id], onDelete: Cascade)
+  tipo          TipoRegraConvencao
+  valorNumerico Float?
+  descricao     String?
+  createdAt     DateTime           @default(now())
+}
+
+// ---------- Utilizacao de veiculos (MOD.04) ----------
+// Uso real do veiculo por um motorista, distinto da Escala (planejamento).
+// Comparar escalaId nulo num periodo com escala vs. uso sem escala e o que
+// alimenta o alerta de divergencia em /utilizacao. Ao encerrar (checkOutAt +
+// kmFinal preenchidos), a action atualiza Vehicle.currentMileage.
+model VehicleUsageLog {
+  id         String   @id @default(cuid())
+  companyId  String
+  company    Company  @relation(fields: [companyId], references: [id])
+  driverId   String
+  driver     Driver   @relation(fields: [driverId], references: [id])
+  vehicleId  String
+  vehicle    Vehicle  @relation(fields: [vehicleId], references: [id])
+  escalaId   String?
+  escala     Escala?  @relation(fields: [escalaId], references: [id])
+  checkInAt  DateTime
+  checkOutAt DateTime?
+  kmInicial  Int
+  kmFinal    Int?
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([companyId, checkInAt])
+}
+
+// ---------- Telemetria / velocidade (MOD.05) ----------
+// Leitura normalizada, independente do fornecedor de origem (campo
+// "provider" e so informativo). Hoje alimentada por MockTelemetryProvider
+// (src/lib/telemetry); trocar para a API real da Ituran no futuro nao exige
+// mudar este modelo, so o adapter que grava aqui. Excesso de velocidade e
+// calculado em runtime (src/lib/speedCompliance.ts), nao persistido, no
+// mesmo padrao do motor de conformidade de ponto.
+model TelemetryReading {
+  id         String   @id @default(cuid())
+  companyId  String
+  company    Company  @relation(fields: [companyId], references: [id])
+  vehicleId  String
+  vehicle    Vehicle  @relation(fields: [vehicleId], references: [id])
+  speedKmh   Float
+  latitude   Float
+  longitude  Float
+  provider   String
+  recordedAt DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([vehicleId, recordedAt])
+}
