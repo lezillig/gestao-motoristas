@@ -50,6 +50,11 @@ async function assertNoDuplicate(
   return existing !== null;
 }
 
+async function assertDriverOwnership(companyId: string, driverId: string): Promise<boolean> {
+  const driver = await prisma.driver.findUnique({ where: { id: driverId, companyId } });
+  return driver !== null;
+}
+
 export async function createEntry(
   _prevState: PontoFormState,
   formData: FormData
@@ -58,6 +63,10 @@ export async function createEntry(
   const parsed = parseForm(formData);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Dados inválidos" };
+  }
+
+  if (!(await assertDriverOwnership(session.companyId, parsed.data.driverId))) {
+    return { error: "Motorista não encontrado." };
   }
 
   const duplicate = await assertNoDuplicate(session.companyId, parsed.data.driverId, parsed.data.date);
@@ -86,6 +95,10 @@ export async function updateEntry(
   const parsed = parseForm(formData);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Dados inválidos" };
+  }
+
+  if (!(await assertDriverOwnership(session.companyId, parsed.data.driverId))) {
+    return { error: "Motorista não encontrado." };
   }
 
   const duplicate = await assertNoDuplicate(session.companyId, parsed.data.driverId, parsed.data.date, id);

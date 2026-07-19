@@ -6,6 +6,7 @@ import { z } from "zod";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { parseLocalDate } from "@/lib/date";
+import { readWorkbookRows, normalizeText, cellToLocalDateString } from "@/lib/spreadsheet";
 
 const schema = z.object({
   name: z.string().min(2, "Informe o nome do motorista"),
@@ -67,4 +68,113 @@ export async function toggleDriverActive(id: string, active: boolean) {
   });
   revalidatePath("/cadastros/motoristas");
   revalidatePath("/dashboard");
+}
+
+export type ImportRowError = { row: number; message: string };
+export type ImportResult = { created: number; errors: ImportRowError[] };
+export type ImportState = { error?: string; result?: ImportResult };
+
+// Mesma validacao de createDriver, linha a linha, com melhor esforco: linhas
+// invalidas viram erro reportado ao usuario, mas nao bloqueiam a importacao
+// das linhas validas do resto da planilha.
+export async function importDrivers(
+  _prevState: ImportState,
+  formData: FormData
+): Promise<ImportState> {
+  const session = await requireRole("ADMIN", "GESTOR");
+
+  const arquivo = formData.get("arquivo");
+  if (!(arquivo instanceof File) || arquivo.size === 0) {
+    return { error: "Selecione o arquivo da planilha (.xlsx)." };
+  }
+
+  let rows: Record<string, unknown>[];
+  try {
+    const buffer = Buffer.from(await arquivo.arrayBuffer());
+    rows = await readWorkbookRows(buffer);
+  } catch {
+    return { error: "Não foi possível ler o arquivo. Baixe o modelo de planilha e tente novamente." };
+  }
+  if (rows.length === 0) {
+    return { error: "A planilha está vazia." };
+  }
+
+  const sindicatos = await prisma.sindicato.findMany({
+    where: { companyId: session.companyId },
+    select: { id: true, nome: true },
+  });
+  const sindicatoByName = new Map(sindicatos.map((s) => [s.nome.trim().toLowerCase(), s.id]));
+  const existingCpfs = new Set(
+    (
+      await prisma.driver.findMany({
+        where: { companyId: session.companyId },
+        select: { cpf: true },
+      })
+    ).map((d) => d.cpf)
+  );
+
+  const errors: ImportRowError[] = [];
+  let created = 0;
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const rowNumber = i + 2; // linha 1 e o cabecalho
+
+    const name = normalizeText(row["Nome"]);
+    const cpf = normalizeText(row["CPF"]).replace(/\D/g, "");
+    const cnh = normalizeText(row["CNH"]);
+    if (!name && !cpf && !cnh) continue; // linha em branco, ignora
+
+    const cnhCategory = normalizeText(row["Categoria CNH"]);
+    const cnhExpiration = cellToLocalDateString(row["Validade CNH (AAAA-MM-DD)"]);
+    const phone = normalizeText(row["Telefone"]) || undefined;
+    const sindicatoNome = normalizeText(row["Sindicato"]);
+    const ativoRaw = normalizeText(row["Ativo (SIM/NAO)"]).toLowerCase();
+
+    let sindicatoId: string | undefined;
+    if (sindicatoNome) {
+      const match = sindicatoByName.get(sindicatoNome.toLowerCase());
+      if (!match) {
+        errors.push({ row: rowNumber, message: `Sindicato "${sindicatoNome}" não encontrado` });
+        continue;
+      }
+      sindicatoId = match;
+    }
+
+    const parsed = schema.safeParse({
+      name,
+      cpf,
+      cnh,
+      cnhCategory,
+      cnhExpiration: cnhExpiration ?? "",
+      phone,
+      sindicatoId,
+    });
+    if (!parsed.success) {
+      errors.push({ row: rowNumber, message: parsed.error.issues[0]?.message ?? "Dados inválidos" });
+      continue;
+    }
+    if (existingCpfs.has(parsed.data.cpf)) {
+      errors.push({ row: rowNumber, message: `CPF ${parsed.data.cpf} já cadastrado` });
+      continue;
+    }
+
+    try {
+      await prisma.driver.create({
+        data: {
+          ...parsed.data,
+          active: ativoRaw !== "nao" && ativoRaw !== "não",
+          companyId: session.companyId,
+        },
+      });
+      existingCpfs.add(parsed.data.cpf);
+      created++;
+    } catch {
+      errors.push({ row: rowNumber, message: "Erro ao salvar a linha (CPF duplicado?)" });
+    }
+  }
+
+  revalidatePath("/cadastros/motoristas");
+  revalidatePath("/dashboard");
+  return { result: { created, errors } };
 }

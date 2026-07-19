@@ -47,6 +47,8 @@ export default async function MotoristasPage({
         subtitle="Cadastro base do motorista, com vínculo sindical para o motor de conformidade."
         actionHref="/cadastros/motoristas/novo"
         actionLabel="Novo motorista"
+        secondaryActionHref="/cadastros/motoristas/importar"
+        secondaryActionLabel="Importar planilha"
       />
 
       <form className="mb-4 flex flex-wrap items-end gap-3" method="get">

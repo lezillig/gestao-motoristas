@@ -27,6 +27,12 @@ const convencaoSchema = z.object({
     .optional(),
 });
 
+// Diretorio de armazenamento fora de public/: arquivos em public/ sao
+// servidos estaticamente pelo Next sem passar por requireSession(), o que
+// tornaria a CCT acessivel a qualquer pessoa com a URL, sem login. O acesso
+// passa a ser mediado pela rota /api/convencoes/[id]/arquivo (ve route.ts).
+const CCT_STORAGE_ROOT = path.join(process.cwd(), "private-uploads", "convencoes");
+
 export async function createConvencao(
   _prevState: ConvencaoFormState,
   formData: FormData
@@ -42,6 +48,16 @@ export async function createConvencao(
     return { error: parsed.error.issues[0]?.message ?? "Dados inválidos" };
   }
 
+  // Confirma que o sindicato pertence a empresa do usuario ANTES de usar o id
+  // como parte de um caminho de arquivo — evita tanto vincular a convencao a
+  // um sindicato de outra empresa quanto usar um id nao verificado no path.
+  const sindicato = await prisma.sindicato.findUnique({
+    where: { id: parsed.data.sindicatoId, companyId: session.companyId },
+  });
+  if (!sindicato) {
+    return { error: "Sindicato não encontrado." };
+  }
+
   const arquivo = formData.get("arquivo");
   if (!(arquivo instanceof File) || arquivo.size === 0) {
     return { error: "Selecione o arquivo PDF da convenção coletiva." };
@@ -50,21 +66,30 @@ export async function createConvencao(
     return { error: "O arquivo precisa ser um PDF." };
   }
 
+  const buffer = Buffer.from(await arquivo.arrayBuffer());
+  // O "type" do File e informado pelo navegador/cliente e pode ser forjado;
+  // confirma pela assinatura real do arquivo (magic bytes "%PDF-").
+  if (buffer.subarray(0, 5).toString("latin1") !== "%PDF-") {
+    return { error: "O arquivo não é um PDF válido." };
+  }
+
   const safeName = arquivo.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
   const fileName = `${Date.now()}-${safeName || "convencao.pdf"}`;
-  const uploadDir = path.join(process.cwd(), "public", "uploads", "convencoes", parsed.data.sindicatoId);
+  const relativePath = `${sindicato.id}/${fileName}`;
+  const uploadDir = path.join(CCT_STORAGE_ROOT, sindicato.id);
   await mkdir(uploadDir, { recursive: true });
-  const buffer = Buffer.from(await arquivo.arrayBuffer());
   await writeFile(path.join(uploadDir, fileName), buffer);
 
   await prisma.convencaoColetiva.create({
     data: {
       companyId: session.companyId,
-      sindicatoId: parsed.data.sindicatoId,
+      sindicatoId: sindicato.id,
       vigenciaInicio: parsed.data.vigenciaInicio,
       vigenciaFim: parsed.data.vigenciaFim ?? null,
       fileName: arquivo.name,
-      fileUrl: `/uploads/convencoes/${parsed.data.sindicatoId}/${fileName}`,
+      // Caminho relativo interno (nao e mais uma URL publica); o download
+      // passa pela rota autenticada /api/convencoes/[id]/arquivo.
+      fileUrl: relativePath,
       uploadedById: session.userId,
     },
   });
@@ -82,7 +107,7 @@ export async function deleteConvencao(id: string) {
 
   await prisma.convencaoColetiva.delete({ where: { id, companyId: session.companyId } });
   try {
-    await unlink(path.join(process.cwd(), "public", convencao.fileUrl.replace(/^\//, "")));
+    await unlink(path.join(CCT_STORAGE_ROOT, convencao.fileUrl));
   } catch {
     // arquivo ja pode ter sido removido manualmente; nao bloqueia a exclusao do registro
   }
@@ -111,6 +136,14 @@ export async function addRegra(
   formData: FormData
 ): Promise<RegraFormState> {
   const session = await requireRole("ADMIN", "GESTOR");
+
+  const convencao = await prisma.convencaoColetiva.findUnique({
+    where: { id: convencaoId, companyId: session.companyId },
+  });
+  if (!convencao) {
+    return { error: "Convenção não encontrada." };
+  }
+
   const parsed = regraSchema.safeParse({
     tipo: formData.get("tipo"),
     valorNumerico: formData.get("valorNumerico") || undefined,
@@ -121,7 +154,7 @@ export async function addRegra(
   }
 
   await prisma.regraConvencao.create({
-    data: { ...parsed.data, convencaoId, companyId: session.companyId },
+    data: { ...parsed.data, convencaoId: convencao.id, companyId: session.companyId },
   });
 
   revalidatePath(`/convencoes/${convencaoId}`);
@@ -153,7 +186,7 @@ export async function suggestRegrasFromCct(
   if (!convencao) return { error: "Convenção não encontrada." };
 
   try {
-    const filePath = path.join(process.cwd(), "public", convencao.fileUrl.replace(/^\//, ""));
+    const filePath = path.join(CCT_STORAGE_ROOT, convencao.fileUrl);
     const suggestions = await extractRegrasFromPdf(filePath);
     return { suggestions };
   } catch (e) {

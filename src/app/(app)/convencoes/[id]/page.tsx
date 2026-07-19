@@ -46,7 +46,7 @@ export default async function ConvencaoDetailPage({
             </p>
           </div>
           <a
-            href={convencao.fileUrl}
+            href={`/api/convencoes/${convencao.id}/arquivo`}
             target="_blank"
             rel="noreferrer"
             className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"

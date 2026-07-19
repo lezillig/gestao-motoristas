@@ -32,6 +32,10 @@ yarn-error.log*
 /public/uploads/*
 !/public/uploads/.gitkeep
 
+# CCT files (private — served only via the authenticated /api/convencoes/[id]/arquivo route)
+/private-uploads/*
+!/private-uploads/.gitkeep
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

@@ -49,6 +49,20 @@ function conflictMessage(
   return `Conflito de horário: ${parts.join("; ")}.`;
 }
 
+async function assertDriverAndVehicleOwnership(
+  companyId: string,
+  driverId: string,
+  vehicleId: string
+): Promise<string | null> {
+  const [driver, vehicle] = await Promise.all([
+    prisma.driver.findUnique({ where: { id: driverId, companyId } }),
+    prisma.vehicle.findUnique({ where: { id: vehicleId, companyId } }),
+  ]);
+  if (!driver) return "Motorista não encontrado.";
+  if (!vehicle) return "Veículo não encontrado.";
+  return null;
+}
+
 export async function createEscala(
   _prevState: EscalaFormState,
   formData: FormData
@@ -58,6 +72,13 @@ export async function createEscala(
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Dados inválidos" };
   }
+
+  const ownershipError = await assertDriverAndVehicleOwnership(
+    session.companyId,
+    parsed.data.driverId,
+    parsed.data.vehicleId
+  );
+  if (ownershipError) return { error: ownershipError };
 
   const conflicts = await findEscalaConflicts({
     companyId: session.companyId,
@@ -85,6 +106,13 @@ export async function updateEscala(
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Dados inválidos" };
   }
+
+  const ownershipError = await assertDriverAndVehicleOwnership(
+    session.companyId,
+    parsed.data.driverId,
+    parsed.data.vehicleId
+  );
+  if (ownershipError) return { error: ownershipError };
 
   const conflicts = await findEscalaConflicts({
     companyId: session.companyId,

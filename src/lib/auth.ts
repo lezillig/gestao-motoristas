@@ -5,9 +5,19 @@ import type { Role } from "@prisma/client";
 
 export const SESSION_COOKIE = "gestao_motoristas_session";
 
-const secret = new TextEncoder().encode(
-  process.env.JWT_SECRET ?? "dev-secret-change-me"
-);
+// Sem fallback proposital: assinar/verificar sessao com uma chave publica e
+// conhecida (ex.: um valor padrao hardcoded) permitiria forjar um JWT valido
+// para qualquer usuario/empresa caso a variavel de ambiente nao esteja
+// configurada. Falha alto (throw) em vez de falhar aberto (fallback inseguro).
+function getSecret(): Uint8Array {
+  const value = process.env.JWT_SECRET;
+  if (!value) {
+    throw new Error(
+      "JWT_SECRET não configurado. Defina essa variável de ambiente antes de autenticar usuários."
+    );
+  }
+  return new TextEncoder().encode(value);
+}
 
 export type SessionPayload = {
   userId: string;
@@ -22,14 +32,14 @@ export async function signSession(payload: SessionPayload) {
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("12h")
-    .sign(secret);
+    .sign(getSecret());
 }
 
 export async function verifySession(
   token: string
 ): Promise<SessionPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, secret);
+    const { payload } = await jwtVerify(token, getSecret());
     return payload as unknown as SessionPayload;
   } catch {
     return null;

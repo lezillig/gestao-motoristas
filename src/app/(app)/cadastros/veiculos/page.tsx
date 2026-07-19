@@ -32,6 +32,8 @@ export default async function VeiculosPage() {
         subtitle="Frota disponível para vínculo nas escalas."
         actionHref="/cadastros/veiculos/novo"
         actionLabel="Novo veículo"
+        secondaryActionHref="/cadastros/veiculos/importar"
+        secondaryActionLabel="Importar planilha"
       />
 
       <div className={`${cardClass} p-0 overflow-hidden`}>
