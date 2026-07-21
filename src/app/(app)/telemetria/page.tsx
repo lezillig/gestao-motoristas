@@ -4,19 +4,38 @@ import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass, primaryButtonClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
+import SortableTh from "@/components/ui/SortableTh";
 import { getActiveTelemetryProvider } from "@/lib/telemetry";
 import { findSpeedAlerts, isSpeeding, SPEED_LIMIT_KMH } from "@/lib/speedCompliance";
 import { generateReadings } from "./actions";
+import type { Prisma } from "@prisma/client";
 
-export default async function TelemetriaPage() {
+const SORT_FIELDS = ["vehicle", "speedKmh", "recordedAt"] as const;
+type SortField = (typeof SORT_FIELDS)[number];
+
+export default async function TelemetriaPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ sort?: string; dir?: string }>;
+}) {
   const session = await requireSession();
+  const { sort, dir } = await searchParams;
   const provider = getActiveTelemetryProvider();
+
+  const sortField: SortField = SORT_FIELDS.includes(sort as SortField) ? (sort as SortField) : "recordedAt";
+  const sortDir = dir === "asc" ? "asc" : "desc";
+  const orderBy: Prisma.TelemetryReadingOrderByWithRelationInput =
+    sortField === "vehicle"
+      ? { vehicle: { plate: sortDir } }
+      : sortField === "speedKmh"
+        ? { speedKmh: sortDir }
+        : { recordedAt: sortDir };
 
   const [readings, usageLogs] = await Promise.all([
     prisma.telemetryReading.findMany({
       where: { companyId: session.companyId },
       include: { vehicle: true },
-      orderBy: { recordedAt: "desc" },
+      orderBy,
       take: 100,
     }),
     prisma.vehicleUsageLog.findMany({
@@ -114,10 +133,10 @@ export default async function TelemetriaPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-3">Veículo</th>
-                <th className="px-4 py-3">Velocidade</th>
+                <SortableTh label="Veículo" field="vehicle" basePath="/telemetria" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="Velocidade" field="speedKmh" basePath="/telemetria" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <th className="px-4 py-3">Motorista</th>
-                <th className="px-4 py-3">Registrado em</th>
+                <SortableTh label="Registrado em" field="recordedAt" basePath="/telemetria" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
               </tr>
             </thead>
             <tbody>

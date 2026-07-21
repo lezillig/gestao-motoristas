@@ -5,15 +5,35 @@ import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
+import SortableTh from "@/components/ui/SortableTh";
 import { isVigente } from "@/lib/convencao";
+import type { Prisma } from "@prisma/client";
 
-export default async function ConvencoesPage() {
+const SORT_FIELDS = ["sindicato", "tipo", "vigenciaInicio"] as const;
+type SortField = (typeof SORT_FIELDS)[number];
+
+export default async function ConvencoesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ sort?: string; dir?: string }>;
+}) {
   const session = await requireSession();
+  const { sort, dir } = await searchParams;
+
+  const sortField: SortField = SORT_FIELDS.includes(sort as SortField) ? (sort as SortField) : "vigenciaInicio";
+  // Direcao padrao (sem clique ainda) e desc, igual ao comportamento original desta pagina.
+  const sortDir = dir === "asc" ? "asc" : "desc";
+  const orderBy: Prisma.ConvencaoColetivaOrderByWithRelationInput =
+    sortField === "sindicato"
+      ? { sindicato: { nome: sortDir } }
+      : sortField === "tipo"
+        ? { tipo: sortDir }
+        : { vigenciaInicio: sortDir };
 
   const convencoes = await prisma.convencaoColetiva.findMany({
     where: { companyId: session.companyId },
     include: { sindicato: true, _count: { select: { regras: true } } },
-    orderBy: { vigenciaInicio: "desc" },
+    orderBy,
   });
 
   return (
@@ -30,9 +50,9 @@ export default async function ConvencoesPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-3">Sindicato</th>
-                <th className="px-4 py-3">Tipo</th>
-                <th className="px-4 py-3">Vigência</th>
+                <SortableTh label="Sindicato" field="sindicato" basePath="/convencoes" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="Tipo" field="tipo" basePath="/convencoes" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="Vigência" field="vigenciaInicio" basePath="/convencoes" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <th className="px-4 py-3">Regras</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3" />

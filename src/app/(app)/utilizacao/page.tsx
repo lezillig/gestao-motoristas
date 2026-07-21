@@ -4,17 +4,38 @@ import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass, inputClass, primaryButtonClass, secondaryButtonClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
+import SortableTh from "@/components/ui/SortableTh";
 import { isMaintenanceDue, kmSinceLastMaintenance, MAINTENANCE_INTERVAL_KM } from "@/lib/maintenance";
 import { closeUsageLog, registerMaintenance } from "./actions";
+import type { Prisma } from "@prisma/client";
 
-export default async function UtilizacaoPage() {
+const SORT_FIELDS = ["driver", "vehicle", "checkInAt", "kmInicial"] as const;
+type SortField = (typeof SORT_FIELDS)[number];
+
+export default async function UtilizacaoPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ sort?: string; dir?: string }>;
+}) {
   const session = await requireSession();
+  const { sort, dir } = await searchParams;
+
+  const sortField: SortField = SORT_FIELDS.includes(sort as SortField) ? (sort as SortField) : "checkInAt";
+  const sortDir = dir === "asc" ? "asc" : "desc";
+  const orderBy: Prisma.VehicleUsageLogOrderByWithRelationInput =
+    sortField === "driver"
+      ? { driver: { name: sortDir } }
+      : sortField === "vehicle"
+        ? { vehicle: { plate: sortDir } }
+        : sortField === "kmInicial"
+          ? { kmInicial: sortDir }
+          : { checkInAt: sortDir };
 
   const [logs, vehicles, escalas] = await Promise.all([
     prisma.vehicleUsageLog.findMany({
       where: { companyId: session.companyId },
       include: { driver: true, vehicle: true },
-      orderBy: { checkInAt: "desc" },
+      orderBy,
       take: 50,
     }),
     prisma.vehicle.findMany({ where: { companyId: session.companyId } }),
@@ -104,10 +125,10 @@ export default async function UtilizacaoPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-3">Motorista</th>
-                <th className="px-4 py-3">Veículo</th>
-                <th className="px-4 py-3">Check-in</th>
-                <th className="px-4 py-3">Km inicial</th>
+                <SortableTh label="Motorista" field="driver" basePath="/utilizacao" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="Veículo" field="vehicle" basePath="/utilizacao" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="Check-in" field="checkInAt" basePath="/utilizacao" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="Km inicial" field="kmInicial" basePath="/utilizacao" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3" />
               </tr>

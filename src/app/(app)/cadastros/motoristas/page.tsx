@@ -5,17 +5,21 @@ import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass, inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
+import SortableTh from "@/components/ui/SortableTh";
 import { cnhAlertLevel, daysUntil } from "@/lib/driverAlerts";
 import { toggleDriverActive } from "./actions";
 import type { Prisma } from "@prisma/client";
 
+const SORT_FIELDS = ["name", "cpf", "sindicato", "cnhExpiration"] as const;
+type SortField = (typeof SORT_FIELDS)[number];
+
 export default async function MotoristasPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; sindicatoId?: string; status?: string }>;
+  searchParams: Promise<{ q?: string; sindicatoId?: string; status?: string; sort?: string; dir?: string }>;
 }) {
   const session = await requireSession();
-  const { q, sindicatoId, status } = await searchParams;
+  const { q, sindicatoId, status, sort, dir } = await searchParams;
 
   const where: Prisma.DriverWhereInput = { companyId: session.companyId };
   if (q) {
@@ -28,11 +32,24 @@ export default async function MotoristasPage({
   if (status === "ativo") where.active = true;
   if (status === "inativo") where.active = false;
 
+  const sortField: SortField = SORT_FIELDS.includes(sort as SortField) ? (sort as SortField) : "name";
+  const sortDir = dir === "desc" ? "desc" : "asc";
+  const orderBy: Prisma.DriverOrderByWithRelationInput =
+    sortField === "sindicato"
+      ? { sindicato: { nome: sortDir } }
+      : sortField === "cnhExpiration"
+        ? { cnhExpiration: sortDir }
+        : sortField === "cpf"
+          ? { cpf: sortDir }
+          : { name: sortDir };
+
+  const sortLinkParams = { q, sindicatoId, status };
+
   const [drivers, sindicatos] = await Promise.all([
     prisma.driver.findMany({
       where,
       include: { sindicato: true },
-      orderBy: { name: "asc" },
+      orderBy,
     }),
     prisma.sindicato.findMany({
       where: { companyId: session.companyId, active: true },
@@ -94,10 +111,10 @@ export default async function MotoristasPage({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-3">Nome</th>
-                <th className="px-4 py-3">CPF</th>
-                <th className="px-4 py-3">Sindicato</th>
-                <th className="px-4 py-3">CNH</th>
+                <SortableTh label="Nome" field="name" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="CPF" field="cpf" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="Sindicato" field="sindicato" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="CNH" field="cnhExpiration" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3" />
               </tr>

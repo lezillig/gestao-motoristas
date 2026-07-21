@@ -4,15 +4,34 @@ import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
+import SortableTh from "@/components/ui/SortableTh";
 import { toggleSindicatoActive } from "./actions";
+import type { Prisma } from "@prisma/client";
 
-export default async function SindicatosPage() {
+const SORT_FIELDS = ["nome", "cidade", "motoristas"] as const;
+type SortField = (typeof SORT_FIELDS)[number];
+
+export default async function SindicatosPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ sort?: string; dir?: string }>;
+}) {
   const session = await requireSession();
+  const { sort, dir } = await searchParams;
+
+  const sortField: SortField = SORT_FIELDS.includes(sort as SortField) ? (sort as SortField) : "nome";
+  const sortDir = dir === "desc" ? "desc" : "asc";
+  const orderBy: Prisma.SindicatoOrderByWithRelationInput =
+    sortField === "motoristas"
+      ? { drivers: { _count: sortDir } }
+      : sortField === "cidade"
+        ? { cidade: sortDir }
+        : { nome: sortDir };
 
   const sindicatos = await prisma.sindicato.findMany({
     where: { companyId: session.companyId },
     include: { _count: { select: { drivers: true } } },
-    orderBy: { nome: "asc" },
+    orderBy,
   });
 
   return (
@@ -29,9 +48,9 @@ export default async function SindicatosPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-3">Nome</th>
-                <th className="px-4 py-3">Cidade/UF</th>
-                <th className="px-4 py-3">Motoristas</th>
+                <SortableTh label="Nome" field="nome" basePath="/cadastros/sindicatos" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="Cidade/UF" field="cidade" basePath="/cadastros/sindicatos" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="Motoristas" field="motoristas" basePath="/cadastros/sindicatos" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3" />
               </tr>

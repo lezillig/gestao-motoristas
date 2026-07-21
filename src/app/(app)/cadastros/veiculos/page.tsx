@@ -4,6 +4,8 @@ import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
+import SortableTh from "@/components/ui/SortableTh";
+import type { Prisma } from "@prisma/client";
 
 const STATUS_LABEL: Record<string, string> = {
   ATIVO: "Ativo",
@@ -17,12 +19,24 @@ const STATUS_TONE: Record<string, string> = {
   INATIVO: "bg-slate-100 text-slate-500",
 };
 
-export default async function VeiculosPage() {
+const SORT_FIELDS = ["plate", "brand", "year", "currentMileage", "status"] as const;
+type SortField = (typeof SORT_FIELDS)[number];
+
+export default async function VeiculosPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ sort?: string; dir?: string }>;
+}) {
   const session = await requireSession();
+  const { sort, dir } = await searchParams;
+
+  const sortField: SortField = SORT_FIELDS.includes(sort as SortField) ? (sort as SortField) : "plate";
+  const sortDir = dir === "desc" ? "desc" : "asc";
+  const orderBy: Prisma.VehicleOrderByWithRelationInput = { [sortField]: sortDir };
 
   const vehicles = await prisma.vehicle.findMany({
     where: { companyId: session.companyId },
-    orderBy: { plate: "asc" },
+    orderBy,
   });
 
   return (
@@ -41,12 +55,12 @@ export default async function VeiculosPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-3">Placa</th>
-                <th className="px-4 py-3">Veículo</th>
+                <SortableTh label="Placa" field="plate" basePath="/cadastros/veiculos" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="Veículo" field="brand" basePath="/cadastros/veiculos" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <th className="px-4 py-3">Tipo</th>
-                <th className="px-4 py-3">Ano</th>
-                <th className="px-4 py-3">Km atual</th>
-                <th className="px-4 py-3">Status</th>
+                <SortableTh label="Ano" field="year" basePath="/cadastros/veiculos" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="Km atual" field="currentMileage" basePath="/cadastros/veiculos" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="Status" field="status" basePath="/cadastros/veiculos" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <th className="px-4 py-3" />
               </tr>
             </thead>

@@ -12,6 +12,7 @@ import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass, inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
+import SortableTh from "@/components/ui/SortableTh";
 import {
   EXCESSIVE_OVERTIME_MINUTES,
   MIN_INTERJORNADA_MINUTES,
@@ -57,13 +58,16 @@ const CATEGORIA_ICON: Record<Categoria, React.ComponentType<{ className?: string
   Jurisprudência: Gavel,
 };
 
+const ANALISE_SORT_FIELDS = ["motorista", "data", "categoria", "risco"] as const;
+type AnaliseSortField = (typeof ANALISE_SORT_FIELDS)[number];
+
 export default async function AnaliseDeRiscosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string; driverId?: string }>;
+  searchParams: Promise<{ mes?: string; driverId?: string; sort?: string; dir?: string }>;
 }) {
   const session = await requireSession();
-  const { mes, driverId } = await searchParams;
+  const { mes, driverId, sort, dir } = await searchParams;
 
   const anchor = mes ? new Date(`${mes}-01T00:00:00`) : new Date();
   const monthStart = startOfMonth(anchor);
@@ -217,12 +221,30 @@ export default async function AnaliseDeRiscosPage({
   }
 
   const riscoOrder: Record<RiskLevel, number> = { alto: 0, medio: 1, baixo: 2 };
-  rows.sort((a, b) => {
-    const byRisco = riscoOrder[a.risco] - riscoOrder[b.risco];
-    if (byRisco !== 0) return byRisco;
-    return (b.date?.getTime() ?? 0) - (a.date?.getTime() ?? 0);
-  });
+  const sortField: AnaliseSortField | null = ANALISE_SORT_FIELDS.includes(sort as AnaliseSortField)
+    ? (sort as AnaliseSortField)
+    : null;
+  const sortDir = dir === "desc" ? "desc" : "asc";
 
+  if (sortField) {
+    rows.sort((a, b) => {
+      let cmp = 0;
+      if (sortField === "motorista") cmp = a.driverName.localeCompare(b.driverName);
+      else if (sortField === "data") cmp = (a.date?.getTime() ?? 0) - (b.date?.getTime() ?? 0);
+      else if (sortField === "categoria") cmp = a.categoria.localeCompare(b.categoria);
+      else cmp = riscoOrder[a.risco] - riscoOrder[b.risco];
+      return sortDir === "desc" ? -cmp : cmp;
+    });
+  } else {
+    // Padrao sem clique: risco alto>medio>baixo, depois data mais recente primeiro.
+    rows.sort((a, b) => {
+      const byRisco = riscoOrder[a.risco] - riscoOrder[b.risco];
+      if (byRisco !== 0) return byRisco;
+      return (b.date?.getTime() ?? 0) - (a.date?.getTime() ?? 0);
+    });
+  }
+
+  const sortLinkParams = { mes: format(monthStart, "yyyy-MM"), driverId };
   const countByCategoria = (categoria: Categoria) => rows.filter((r) => r.categoria === categoria).length;
 
   return (
@@ -286,11 +308,11 @@ export default async function AnaliseDeRiscosPage({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-3">Motorista</th>
-                <th className="px-4 py-3">Data</th>
-                <th className="px-4 py-3">Categoria</th>
+                <SortableTh label="Motorista" field="motorista" basePath="/ponto/analise" currentParams={sortLinkParams} currentSort={sortField ?? undefined} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="Data" field="data" basePath="/ponto/analise" currentParams={sortLinkParams} currentSort={sortField ?? undefined} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="Categoria" field="categoria" basePath="/ponto/analise" currentParams={sortLinkParams} currentSort={sortField ?? undefined} currentDir={sortDir} className="px-4 py-3" />
                 <th className="px-4 py-3">Descrição</th>
-                <th className="px-4 py-3">Risco</th>
+                <SortableTh label="Risco" field="risco" basePath="/ponto/analise" currentParams={sortLinkParams} currentSort={sortField ?? undefined} currentDir={sortDir} className="px-4 py-3" />
                 <th className="px-4 py-3" />
               </tr>
             </thead>
