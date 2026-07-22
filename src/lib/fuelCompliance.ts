@@ -1,4 +1,5 @@
-import type { FuelTransaction, Vehicle, Driver } from "@prisma/client";
+import type { FuelTransaction, Vehicle, Driver, AnpPrecoReferencia } from "@prisma/client";
+import { normalizeProduto } from "@/lib/anp/client";
 
 // Padrao "computado, nao persistido" (mesmo estilo de pontoCompliance.ts,
 // speedCompliance.ts, maintenance.ts): estas funcoes so leem transacoes ja
@@ -120,4 +121,51 @@ export function spentByVehicle(txs: FuelTransaction[], vehicles: Vehicle[]) {
   return [...totals.entries()]
     .map(([vehicleId, cents]) => ({ vehicleId, plate: plateById.get(vehicleId) ?? "?", cents }))
     .sort((a, b) => b.cents - a.cents);
+}
+
+const OVERPRICE_THRESHOLD = 0.1; // 10% acima da media ANP da mesma UF/produto/semana
+
+export type OverpricedTransaction = {
+  id: string;
+  paidPriceCents: number;
+  refPriceCents: number;
+  deltaPercent: number;
+};
+
+// Eixo E: compara o preco pago por litro contra a media de revenda da ANP
+// pra mesma UF + produto + semana (src/lib/anp/client.ts). So compara
+// transacoes com UF preenchido e cujo texto de "combustivel" e reconhecido
+// por normalizeProduto — sem essas duas informacoes, a transacao fica de
+// fora (nao e possivel comparar, nao e um "OK" nem um alerta). Informativo,
+// nao e acusacao de fraude — mesmo tom ja usado em jurisprudencia.ts.
+export function findOverpricedTransactions(
+  txs: FuelTransaction[],
+  refPrices: AnpPrecoReferencia[]
+): OverpricedTransaction[] {
+  const results: OverpricedTransaction[] = [];
+  for (const t of txs) {
+    if (!t.uf || !t.combustivel || t.volumeLitros <= 0) continue;
+    const produto = normalizeProduto(t.combustivel);
+    if (!produto) continue;
+
+    const ref = refPrices.find(
+      (r) =>
+        r.uf === t.uf &&
+        r.produto === produto &&
+        t.dataHora >= r.semanaInicio &&
+        t.dataHora <= r.semanaFim
+    );
+    if (!ref) continue;
+
+    const paidPriceCents = t.valorCents / t.volumeLitros;
+    if (paidPriceCents > ref.precoMedioCents * (1 + OVERPRICE_THRESHOLD)) {
+      results.push({
+        id: t.id,
+        paidPriceCents,
+        refPriceCents: ref.precoMedioCents,
+        deltaPercent: ((paidPriceCents - ref.precoMedioCents) / ref.precoMedioCents) * 100,
+      });
+    }
+  }
+  return results;
 }

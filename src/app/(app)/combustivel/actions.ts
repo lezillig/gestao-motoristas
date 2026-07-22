@@ -5,6 +5,7 @@ import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { combineLocalDateTime } from "@/lib/date";
 import { readWorkbookRows, normalizeText } from "@/lib/spreadsheet";
+import { anpWeekRange, fetchAnpWeek } from "@/lib/anp/client";
 
 export type ImportRowError = { row: number; message: string };
 export type ImportResult = { created: number; errors: ImportRowError[] };
@@ -185,4 +186,49 @@ export async function importFuelTransactions(
 
   revalidatePath("/combustivel");
   return { result: { created: toCreate.length, errors } };
+}
+
+// Busca sob demanda (nunca automatico a cada render de pagina, ver comentario
+// no schema de AnpPrecoReferencia) o preco medio de revenda da ANP pra cada
+// semana (domingo-a-sabado) que toca o mes informado. Best-effort: uma
+// semana ainda nao publicada (ex. mes corrente) so conta como
+// "indisponivel", nao trava as demais. Pula semana que ja tem registro —
+// nunca refaz um fetch externo desnecessario. Sem valor de retorno (usado
+// direto como `<form action={...}>`, sem useActionState) — o resultado
+// aparece na proxima renderizacao via revalidatePath, os cards e o aviso de
+// semanas faltantes ja recalculam a partir do banco.
+export async function syncAnpPrices(mes: string): Promise<void> {
+  await requireRole("ADMIN", "GESTOR");
+
+  const monthStart = new Date(`${mes}-01T00:00:00`);
+  const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 1);
+
+  const weekStarts: Date[] = [];
+  let cursor = anpWeekRange(monthStart).start;
+  while (cursor < monthEnd) {
+    weekStarts.push(cursor);
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 7);
+  }
+
+  for (const weekStart of weekStarts) {
+    const { start, end } = anpWeekRange(weekStart);
+    const already = await prisma.anpPrecoReferencia.findFirst({ where: { semanaInicio: start } });
+    if (already) continue;
+
+    const rows = await fetchAnpWeek(start, end);
+    if (!rows) continue; // semana ainda nao publicada — segue pras demais
+
+    await prisma.anpPrecoReferencia.createMany({
+      data: rows.map((r) => ({
+        uf: r.uf,
+        produto: r.produto,
+        semanaInicio: start,
+        semanaFim: end,
+        precoMedioCents: r.precoMedioCents,
+      })),
+      skipDuplicates: true,
+    });
+  }
+
+  revalidatePath("/combustivel");
 }

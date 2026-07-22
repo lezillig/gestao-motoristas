@@ -7,10 +7,10 @@ import {
   startOfMonth,
   subMonths,
 } from "date-fns";
-import { ChevronLeft, ChevronRight, Fuel, Link2Off, TriangleAlert, Trophy } from "lucide-react";
+import { ChevronLeft, ChevronRight, Fuel, Gauge, Link2Off, TriangleAlert, Trophy } from "lucide-react";
 import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { cardClass, badgeClass } from "@/lib/ui";
+import { cardClass, badgeClass, primaryButtonClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import SortableTh from "@/components/ui/SortableTh";
 import {
@@ -18,10 +18,13 @@ import {
   findInactiveLinkTransactions,
   findSuspectedDuplicates,
   findOdometerRegressions,
+  findOverpricedTransactions,
   totalSpentCents,
   averagePriceCentsPerLiter,
   spentByVehicle,
 } from "@/lib/fuelCompliance";
+import { anpWeekRange } from "@/lib/anp/client";
+import { syncAnpPrices } from "./actions";
 import type { Prisma } from "@prisma/client";
 
 const SORT_FIELDS = ["dataHora", "placa", "motorista", "valor"] as const;
@@ -56,7 +59,7 @@ export default async function CombustivelPage({
           ? { valorCents: sortDir }
           : { dataHora: sortDir };
 
-  const [txs, vehicles, drivers] = await Promise.all([
+  const [txs, vehicles, drivers, refPrices] = await Promise.all([
     prisma.fuelTransaction.findMany({
       where: { companyId: session.companyId, dataHora: { gte: monthStart, lt: monthEnd } },
       include: { vehicle: true, driver: true },
@@ -64,7 +67,19 @@ export default async function CombustivelPage({
     }),
     prisma.vehicle.findMany({ where: { companyId: session.companyId } }),
     prisma.driver.findMany({ where: { companyId: session.companyId } }),
+    prisma.anpPrecoReferencia.findMany({
+      where: { semanaInicio: { lt: monthEnd }, semanaFim: { gte: monthStart } },
+    }),
   ]);
+
+  // Semanas ANP (domingo-a-sabado) que tocam o mes exibido, pra saber se
+  // falta sincronizar alguma antes de mostrar o card de comparacao de preco.
+  const weekStartsInMonth: Date[] = [];
+  for (let c = anpWeekRange(monthStart).start; c < monthEnd; c = new Date(c.getFullYear(), c.getMonth(), c.getDate() + 7)) {
+    weekStartsInMonth.push(c);
+  }
+  const syncedWeekKeys = new Set(refPrices.map((r) => r.semanaInicio.getTime()));
+  const weeksMissing = weekStartsInMonth.filter((w) => !syncedWeekKeys.has(w.getTime())).length;
 
   const { semVeiculo, semMotorista } = findUnlinkedTransactions(txs);
   const inactiveLinks = findInactiveLinkTransactions(txs, vehicles, drivers);
@@ -72,6 +87,9 @@ export default async function CombustivelPage({
   const regressions = findOdometerRegressions(txs, vehicles);
   const semHodometro = txs.filter((t) => t.hodometro == null);
   const ranking = spentByVehicle(txs, vehicles).slice(0, 5);
+
+  const overpriced = findOverpricedTransactions(txs, refPrices);
+  const overpricedById = new Map(overpriced.map((o) => [o.id, o]));
 
   const duplicateIds = new Set(duplicates.map((t) => t.id));
   const regressionIds = new Set(regressions.map((t) => t.id));
@@ -91,7 +109,7 @@ export default async function CombustivelPage({
         secondaryActionLabel="Importar extrato"
       />
 
-      <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+      <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-4">
         <div className={cardClass}>
           <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-blue-100 text-blue-700">
             <Fuel className="h-4 w-4" />
@@ -148,6 +166,29 @@ export default async function CombustivelPage({
               <p className="font-semibold text-slate-900">{semHodometro.length}</p>
               <p className="text-xs text-slate-500">sem hodômetro informado</p>
             </div>
+          </div>
+        </div>
+
+        <div className={cardClass}>
+          <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-orange-100 text-orange-700">
+            <Gauge className="h-4 w-4" />
+          </div>
+          <p className="text-sm text-slate-500">Preço ANP</p>
+          <p className="mt-1 text-2xl font-semibold text-slate-900">{overpriced.length}</p>
+          <p className="text-xs text-slate-500">acima da média da região (+10%)</p>
+          <div className="mt-3 border-t border-slate-100 pt-3 text-sm">
+            {weeksMissing > 0 ? (
+              <form action={syncAnpPrices.bind(null, format(monthStart, "yyyy-MM"))}>
+                <p className="mb-2 text-xs text-slate-500">
+                  {weeksMissing} de {weekStartsInMonth.length} semana(s) ainda não sincronizada(s)
+                </p>
+                <button type="submit" className={`${primaryButtonClass} w-full py-1.5 text-xs`}>
+                  Buscar preços ANP
+                </button>
+              </form>
+            ) : (
+              <p className="text-xs text-slate-500">Preços da ANP sincronizados para o período.</p>
+            )}
           </div>
         </div>
       </div>
@@ -229,11 +270,17 @@ export default async function CombustivelPage({
                       {regressionIds.has(t.id) && (
                         <span className={`${badgeClass} bg-red-100 text-red-700`}>Hodômetro retrocedido</span>
                       )}
+                      {overpricedById.has(t.id) && (
+                        <span className={`${badgeClass} bg-orange-100 text-orange-700`}>
+                          Acima do ANP (+{overpricedById.get(t.id)!.deltaPercent.toFixed(0)}%)
+                        </span>
+                      )}
                       {t.vehicleId &&
                         t.driverId &&
                         !inactiveLinkIds.has(t.id) &&
                         !duplicateIds.has(t.id) &&
-                        !regressionIds.has(t.id) && (
+                        !regressionIds.has(t.id) &&
+                        !overpricedById.has(t.id) && (
                           <span className={`${badgeClass} bg-emerald-100 text-emerald-700`}>OK</span>
                         )}
                     </div>

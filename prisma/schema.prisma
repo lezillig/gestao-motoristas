@@ -356,3 +356,24 @@ model FuelTransaction {
   @@index([companyId, dataHora])
   @@index([vehicleId, dataHora])
 }
+
+// Preco medio de revenda por UF/produto, direto do "Levantamento Semanal
+// de Precos" da ANP (arquivo publico, sem login, ver src/lib/anp/client.ts).
+// Deliberadamente SEM companyId — e dado de referencia publico, igual pra
+// qualquer empresa, ao contrario de todo o resto do schema (excecao
+// consciente ao padrao multi-tenant). Preenchido sob demanda por
+// syncAnpPrices (src/app/(app)/combustivel/actions.ts), nunca automatico a
+// cada carregamento de pagina, pra nao arriscar timeout com varios fetches
+// externos numa unica renderizacao.
+model AnpPrecoReferencia {
+  id              String   @id @default(cuid())
+  uf              String
+  produto         String
+  semanaInicio    DateTime
+  semanaFim       DateTime
+  precoMedioCents Int
+  createdAt       DateTime @default(now())
+
+  @@unique([uf, produto, semanaInicio])
+  @@index([semanaInicio])
+}
