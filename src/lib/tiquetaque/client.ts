@@ -35,7 +35,18 @@ async function tiqueTaqueFetch(path: string, retried = false): Promise<unknown> 
 
 type EmployeesPage = {
   _meta?: { total?: number };
-  _items?: { _id: string; full_name: string; cpf?: string | null }[];
+  _items?: {
+    _id: string;
+    full_name: string;
+    cpf?: string | null;
+    mobile_phone?: string | null;
+    phone_country_code?: string | null;
+    contract_data?: {
+      job_role?: string | null;
+      dismissal_date?: string | null;
+      hour_rate_cents?: number | null;
+    };
+  }[];
 };
 
 export async function fetchAllEmployees(): Promise<TiqueTaqueEmployee[]> {
@@ -47,7 +58,17 @@ export async function fetchAllEmployees(): Promise<TiqueTaqueEmployee[]> {
     const items = data._items ?? [];
     for (const item of items) {
       if (!item.cpf) continue; // alguns cadastros no TiqueTaque nao tem CPF preenchido (so NIS)
-      employees.push({ id: item._id, fullName: item.full_name, cpf: item.cpf });
+      employees.push({
+        id: item._id,
+        fullName: item.full_name,
+        cpf: item.cpf,
+        jobRole: item.contract_data?.job_role ?? "",
+        dismissed: Boolean(item.contract_data?.dismissal_date),
+        mobilePhone: item.mobile_phone
+          ? `${item.phone_country_code ?? ""}${item.mobile_phone}`
+          : null,
+        hourRateCents: item.contract_data?.hour_rate_cents ?? null,
+      });
     }
     const total = data._meta?.total ?? employees.length;
     if (employees.length >= total || items.length < maxResults) break;

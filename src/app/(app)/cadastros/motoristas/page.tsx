@@ -38,7 +38,7 @@ export default async function MotoristasPage({
     sortField === "sindicato"
       ? { sindicato: { nome: sortDir } }
       : sortField === "cnhExpiration"
-        ? { cnhExpiration: sortDir }
+        ? { cnhExpiration: { sort: sortDir, nulls: "last" } }
         : sortField === "cpf"
           ? { cpf: sortDir }
           : { name: sortDir };
@@ -129,7 +129,7 @@ export default async function MotoristasPage({
               )}
               {drivers.map((d) => {
                 const level = cnhAlertLevel(d.cnhExpiration);
-                const days = daysUntil(d.cnhExpiration);
+                const days = d.cnhExpiration ? daysUntil(d.cnhExpiration) : null;
                 return (
                   <tr key={d.id} className="border-b border-slate-100 last:border-0">
                     <td className="px-4 py-3 font-medium text-slate-800">{d.name}</td>
@@ -137,19 +137,25 @@ export default async function MotoristasPage({
                     <td className="px-4 py-3 text-slate-600">{d.sindicato?.nome ?? "—"}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <span className="text-slate-600">
-                          {d.cnhCategory} · {format(d.cnhExpiration, "dd/MM/yyyy")}
-                        </span>
-                        {level !== "ok" && (
-                          <span
-                            className={`${badgeClass} ${
-                              level === "vencida"
-                                ? "bg-red-100 text-red-700"
-                                : "bg-amber-100 text-amber-700"
-                            }`}
-                          >
-                            {level === "vencida" ? `Vencida há ${Math.abs(days)}d` : `${days}d`}
-                          </span>
+                        {level === "pendente" ? (
+                          <span className={`${badgeClass} bg-slate-100 text-slate-600`}>CNH pendente</span>
+                        ) : (
+                          <>
+                            <span className="text-slate-600">
+                              {d.cnhCategory} · {format(d.cnhExpiration!, "dd/MM/yyyy")}
+                            </span>
+                            {level !== "ok" && (
+                              <span
+                                className={`${badgeClass} ${
+                                  level === "vencida"
+                                    ? "bg-red-100 text-red-700"
+                                    : "bg-amber-100 text-amber-700"
+                                }`}
+                              >
+                                {level === "vencida" ? `Vencida há ${Math.abs(days!)}d` : `${days}d`}
+                              </span>
+                            )}
+                          </>
                         )}
                       </div>
                     </td>

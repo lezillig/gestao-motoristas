@@ -2,6 +2,10 @@ export type TiqueTaqueEmployee = {
   id: string;
   fullName: string;
   cpf: string;
+  jobRole: string;
+  dismissed: boolean;
+  mobilePhone: string | null;
+  hourRateCents: number | null;
 };
 
 // Um dia de trabalho ja pareado a partir das batidas avulsas do TiqueTaque

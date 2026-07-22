@@ -128,9 +128,12 @@ model Driver {
   sindicato     Sindicato? @relation(fields: [sindicatoId], references: [id])
   name          String
   cpf           String    @unique
-  cnh           String
-  cnhCategory   String
-  cnhExpiration DateTime
+  // Opcionais: motoristas importados do TiqueTaque (sem dado de CNH) ficam
+  // com esses tres campos nulos ate serem completados manualmente — ver
+  // src/lib/driverAlerts.ts ("pendente") em vez de tratar como vencida.
+  cnh           String?
+  cnhCategory   String?
+  cnhExpiration DateTime?
   phone         String?
   photoUrl      String?
   regimeHoras   RegimeHoras?

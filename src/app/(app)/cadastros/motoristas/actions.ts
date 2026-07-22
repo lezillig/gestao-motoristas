@@ -7,16 +7,20 @@ import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { parseLocalDate } from "@/lib/date";
 import { readWorkbookRows, normalizeText, cellToLocalDateString } from "@/lib/spreadsheet";
+import { fetchAllEmployees } from "@/lib/tiquetaque/client";
 
 const schema = z.object({
   name: z.string().min(2, "Informe o nome do motorista"),
   cpf: z.string().min(11, "CPF inválido"),
-  cnh: z.string().min(5, "Informe o número da CNH"),
-  cnhCategory: z.string().min(1, "Informe a categoria"),
+  // Opcionais: motoristas importados do TiqueTaque nao tem esses dados —
+  // ficam "CNH pendente" (src/lib/driverAlerts.ts) ate serem completados.
+  cnh: z.string().min(5, "Informe o número da CNH").optional(),
+  cnhCategory: z.string().min(1, "Informe a categoria").optional(),
   cnhExpiration: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida")
-    .transform(parseLocalDate),
+    .transform(parseLocalDate)
+    .optional(),
   phone: z.string().optional(),
   sindicatoId: z.string().optional(),
   regimeHoras: z.enum(["PADRAO", "DOZE_X_TRINTA_SEIS"]).optional(),
@@ -37,9 +41,9 @@ function parseForm(formData: FormData) {
   return schema.parse({
     name: formData.get("name"),
     cpf: formData.get("cpf"),
-    cnh: formData.get("cnh"),
-    cnhCategory: formData.get("cnhCategory"),
-    cnhExpiration: formData.get("cnhExpiration"),
+    cnh: formData.get("cnh") || undefined,
+    cnhCategory: formData.get("cnhCategory") || undefined,
+    cnhExpiration: formData.get("cnhExpiration") || undefined,
     phone: formData.get("phone") || undefined,
     sindicatoId: formData.get("sindicatoId") || undefined,
     regimeHoras: formData.get("regimeHoras") || undefined,
@@ -187,9 +191,9 @@ export async function importDrivers(
     const parsed = schema.safeParse({
       name,
       cpf,
-      cnh,
-      cnhCategory,
-      cnhExpiration: cnhExpiration ?? "",
+      cnh: cnh || undefined,
+      cnhCategory: cnhCategory || undefined,
+      cnhExpiration: cnhExpiration ?? undefined,
       phone,
       sindicatoId,
       regimeHoras: regimeHoras ?? undefined,
@@ -223,4 +227,72 @@ export async function importDrivers(
   revalidatePath("/cadastros/motoristas");
   revalidatePath("/dashboard");
   return { result: { created, errors } };
+}
+
+export type TiqueTaqueDriverImportRowError = { name: string; cpf: string; message: string };
+export type TiqueTaqueDriverImportResult = { created: number; errors: TiqueTaqueDriverImportRowError[] };
+export type TiqueTaqueDriverImportState = { error?: string; result?: TiqueTaqueDriverImportResult };
+
+// Traz os funcionarios ATIVOS do TiqueTaque cujo cargo contem "motorista"
+// (cobre variacoes como "MOTORISTA DE MICRO ONIBUS", exclui cargos como
+// "VIGILANTE"). CNH nao existe no TiqueTaque — fica pendente (nulo) ate ser
+// completada manualmente, ver src/lib/driverAlerts.ts. Um unico
+// `createMany` para os novos registros (nao um loop de create() por
+// funcionario) — com potencialmente centenas de funcionarios batendo o
+// filtro, um loop sequencial correria o mesmo risco de timeout que a
+// importacao de ponto teve que corrigir (ver src/app/(app)/ponto/actions.ts).
+export async function importDriversFromTiqueTaque(): Promise<TiqueTaqueDriverImportState> {
+  const session = await requireRole("ADMIN", "GESTOR");
+
+  let employees;
+  try {
+    employees = await fetchAllEmployees();
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Falha ao buscar funcionários do TiqueTaque." };
+  }
+
+  const activeDrivers = employees.filter(
+    (e) => !e.dismissed && e.jobRole.toLowerCase().includes("motorista")
+  );
+
+  const existingCpfs = new Set(
+    (await prisma.driver.findMany({ select: { cpf: true } })).map((d) => d.cpf)
+  );
+
+  const errors: TiqueTaqueDriverImportRowError[] = [];
+  const toCreate: {
+    companyId: string;
+    name: string;
+    cpf: string;
+    phone: string | null;
+    valorHoraCents: number | null;
+  }[] = [];
+
+  for (const emp of activeDrivers) {
+    const cpf = emp.cpf.replace(/\D/g, "");
+    if (cpf.length < 11) {
+      errors.push({ name: emp.fullName, cpf: emp.cpf, message: "CPF inválido no TiqueTaque." });
+      continue;
+    }
+    if (existingCpfs.has(cpf)) {
+      errors.push({ name: emp.fullName, cpf, message: "CPF já cadastrado." });
+      continue;
+    }
+    existingCpfs.add(cpf); // evita duplicar se o TiqueTaque repetir o mesmo CPF em dois registros
+    toCreate.push({
+      companyId: session.companyId,
+      name: emp.fullName,
+      cpf,
+      phone: emp.mobilePhone,
+      valorHoraCents: emp.hourRateCents,
+    });
+  }
+
+  if (toCreate.length > 0) {
+    await prisma.driver.createMany({ data: toCreate });
+  }
+
+  revalidatePath("/cadastros/motoristas");
+  revalidatePath("/dashboard");
+  return { result: { created: toCreate.length, errors } };
 }

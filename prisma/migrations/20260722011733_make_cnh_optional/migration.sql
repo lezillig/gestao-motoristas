@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "Driver" ALTER COLUMN "cnh" DROP NOT NULL,
+ALTER COLUMN "cnhCategory" DROP NOT NULL,
+ALTER COLUMN "cnhExpiration" DROP NOT NULL;

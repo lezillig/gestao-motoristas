@@ -13,7 +13,7 @@ export default async function DashboardPage() {
     prisma.driver.findMany({
       where: { companyId: session.companyId },
       include: { sindicato: true },
-      orderBy: { cnhExpiration: "asc" },
+      orderBy: { cnhExpiration: { sort: "asc", nulls: "last" } },
     }),
     prisma.sindicato.findMany({
       where: { companyId: session.companyId, active: true },
@@ -26,10 +26,11 @@ export default async function DashboardPage() {
   const alerts = activeDrivers
     .map((d) => ({ driver: d, level: cnhAlertLevel(d.cnhExpiration) }))
     .filter((a) => a.level !== "ok")
-    .sort((a, b) => a.driver.cnhExpiration.getTime() - b.driver.cnhExpiration.getTime());
+    .sort((a, b) => (a.driver.cnhExpiration?.getTime() ?? Infinity) - (b.driver.cnhExpiration?.getTime() ?? Infinity));
 
   const expired = alerts.filter((a) => a.level === "vencida").length;
   const dueSoon = alerts.filter((a) => a.level === "vence_em_breve").length;
+  const pending = alerts.filter((a) => a.level === "pendente").length;
 
   const semSindicato = activeDrivers.filter((d) => !d.sindicatoId).length;
 
@@ -42,7 +43,7 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard
           icon={IdCard}
           label="Motoristas ativos"
@@ -60,6 +61,12 @@ export default async function DashboardPage() {
           label="CNH vence em 30 dias"
           value={dueSoon}
           tone={dueSoon > 0 ? "warning" : "good"}
+        />
+        <StatCard
+          icon={IdCard}
+          label="CNH pendente"
+          value={pending}
+          tone={pending > 0 ? "warning" : "good"}
         />
         <StatCard
           icon={Landmark}
@@ -87,24 +94,32 @@ export default async function DashboardPage() {
           ) : (
             <ul className="divide-y divide-slate-100">
               {alerts.map(({ driver, level }) => {
-                const days = daysUntil(driver.cnhExpiration);
+                const days = driver.cnhExpiration ? daysUntil(driver.cnhExpiration) : null;
                 return (
                   <li key={driver.id} className="flex items-center justify-between gap-3 py-3">
                     <div>
                       <p className="text-sm font-medium text-slate-800">{driver.name}</p>
                       <p className="text-xs text-slate-500">
-                        {driver.sindicato?.nome ?? "Sem sindicato"} · CNH {driver.cnhCategory} · vence em{" "}
-                        {format(driver.cnhExpiration, "dd/MM/yyyy")}
+                        {driver.sindicato?.nome ?? "Sem sindicato"}
+                        {level === "pendente"
+                          ? " · CNH não cadastrada"
+                          : ` · CNH ${driver.cnhCategory} · vence em ${format(driver.cnhExpiration!, "dd/MM/yyyy")}`}
                       </p>
                     </div>
                     <span
                       className={`${badgeClass} ${
                         level === "vencida"
                           ? "bg-red-100 text-red-700"
-                          : "bg-amber-100 text-amber-700"
+                          : level === "pendente"
+                            ? "bg-slate-100 text-slate-600"
+                            : "bg-amber-100 text-amber-700"
                       }`}
                     >
-                      {level === "vencida" ? `Vencida há ${Math.abs(days)}d` : `Vence em ${days}d`}
+                      {level === "vencida"
+                        ? `Vencida há ${Math.abs(days!)}d`
+                        : level === "pendente"
+                          ? "Pendente"
+                          : `Vence em ${days}d`}
                     </span>
                   </li>
                 );

@@ -14,9 +14,9 @@ export default function DriverForm({
   defaultValues?: {
     name: string;
     cpf: string;
-    cnh: string;
-    cnhCategory: string;
-    cnhExpiration: Date;
+    cnh: string | null;
+    cnhCategory: string | null;
+    cnhExpiration: Date | null;
     phone: string | null;
     sindicatoId: string | null;
     regimeHoras?: string | null;
@@ -48,25 +48,23 @@ export default function DriverForm({
       </div>
       <div className="grid grid-cols-3 gap-4">
         <div>
-          <label className={labelClass}>Nº da CNH *</label>
-          <input name="cnh" required defaultValue={defaultValues?.cnh} className={inputClass} />
+          <label className={labelClass}>Nº da CNH</label>
+          <input name="cnh" defaultValue={defaultValues?.cnh ?? ""} className={inputClass} />
         </div>
         <div>
-          <label className={labelClass}>Categoria *</label>
+          <label className={labelClass}>Categoria</label>
           <input
             name="cnhCategory"
-            required
-            defaultValue={defaultValues?.cnhCategory}
+            defaultValue={defaultValues?.cnhCategory ?? ""}
             className={`${inputClass} uppercase`}
             placeholder="D"
           />
         </div>
         <div>
-          <label className={labelClass}>Vencimento CNH *</label>
+          <label className={labelClass}>Vencimento CNH</label>
           <input
             type="date"
             name="cnhExpiration"
-            required
             defaultValue={
               defaultValues?.cnhExpiration
                 ? format(defaultValues.cnhExpiration, "yyyy-MM-dd")
@@ -76,6 +74,9 @@ export default function DriverForm({
           />
         </div>
       </div>
+      <p className="-mt-2 text-xs text-slate-400">
+        Deixe em branco se ainda não tiver os dados da CNH — o motorista aparece como "CNH pendente" até ser completado.
+      </p>
       <div>
         <label className={labelClass}>Sindicato</label>
         <select
