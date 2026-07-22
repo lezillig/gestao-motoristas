@@ -14,6 +14,7 @@ import {
   FileText,
   Route,
   Satellite,
+  Fuel,
 } from "lucide-react";
 
 type NavItem = {
@@ -82,6 +83,12 @@ const NAV: NavItem[] = [
     href: "/telemetria",
     label: "Telemetria",
     icon: Satellite,
+    roles: ["ADMIN", "GESTOR"],
+  },
+  {
+    href: "/combustivel",
+    label: "Combustível",
+    icon: Fuel,
     roles: ["ADMIN", "GESTOR"],
   },
 ];

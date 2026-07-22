@@ -79,6 +79,7 @@ model Company {
   regrasConvencao   RegraConvencao[]
   usageLogs         VehicleUsageLog[]
   telemetryReadings TelemetryReading[]
+  fuelTransactions  FuelTransaction[]
 }
 
 model User {
@@ -149,6 +150,7 @@ model Driver {
   escalas          Escala[]
   timeClockEntries TimeClockEntry[]
   usageLogs        VehicleUsageLog[]
+  fuelTransactions FuelTransaction[]
 }
 
 // ---------- Veiculo ----------
@@ -173,6 +175,7 @@ model Vehicle {
   escalas           Escala[]
   usageLogs         VehicleUsageLog[]
   telemetryReadings TelemetryReading[]
+  fuelTransactions  FuelTransaction[]
 }
 
 // ---------- Escala (MOD.02) ----------
@@ -318,4 +321,38 @@ model TelemetryReading {
   createdAt  DateTime @default(now())
 
   @@index([vehicleId, recordedAt])
+}
+
+// ---------- Combustivel (MOD.07) ----------
+// Uma linha por transacao de abastecimento importada da planilha de extrato
+// do cartao Ticket Log (nao ha API de consulta do lado cliente-frota hoje,
+// so a de recolha de notas do lado posto — ver src/app/(app)/combustivel/
+// actions.ts). vehicleId/driverId ficam nulos quando a placa/motorista da
+// planilha nao bate com nenhum cadastro — a transacao ainda e importada
+// (visibilidade financeira), so fica marcada como "sem vinculo" na UI.
+// placaOriginal/motoristaOriginal preservam o texto cru pra auditoria mesmo
+// sem match.
+model FuelTransaction {
+  id                String   @id @default(cuid())
+  companyId         String
+  company           Company  @relation(fields: [companyId], references: [id])
+  vehicleId         String?
+  vehicle           Vehicle? @relation(fields: [vehicleId], references: [id])
+  driverId          String?
+  driver            Driver?  @relation(fields: [driverId], references: [id])
+  dataHora          DateTime
+  valorCents        Int
+  volumeLitros      Float
+  combustivel       String?
+  posto             String?
+  cidade            String?
+  uf                String?
+  hodometro         Int?
+  numeroAutorizacao String?
+  placaOriginal     String
+  motoristaOriginal String?
+  createdAt         DateTime @default(now())
+
+  @@index([companyId, dataHora])
+  @@index([vehicleId, dataHora])
 }
