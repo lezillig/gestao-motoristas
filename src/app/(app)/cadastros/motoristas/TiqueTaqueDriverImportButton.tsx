@@ -20,11 +20,11 @@ export default function TiqueTaqueDriverImportButton() {
   return (
     <div className="space-y-4">
       <button type="button" onClick={handleClick} disabled={running} className={primaryButtonClass}>
-        {running ? "Importando..." : "Importar motoristas ativos do TiqueTaque"}
+        {running ? "Importando..." : "Importar funcionários ativos do TiqueTaque"}
       </button>
       <p className="text-xs text-slate-400">
-        Traz nome, CPF, telefone e valor-hora dos funcionários ativos com cargo de motorista. CNH não vem do
-        TiqueTaque — os importados aparecem como "CNH pendente" até serem completados.
+        Traz nome, CPF, telefone e valor-hora de todos os funcionários ativos (não só motoristas). CNH não vem
+        do TiqueTaque — os importados aparecem como "CNH pendente" até serem completados.
       </p>
 
       {state?.error && (

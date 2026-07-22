@@ -233,14 +233,14 @@ export type TiqueTaqueDriverImportRowError = { name: string; cpf: string; messag
 export type TiqueTaqueDriverImportResult = { created: number; errors: TiqueTaqueDriverImportRowError[] };
 export type TiqueTaqueDriverImportState = { error?: string; result?: TiqueTaqueDriverImportResult };
 
-// Traz os funcionarios ATIVOS do TiqueTaque cujo cargo contem "motorista"
-// (cobre variacoes como "MOTORISTA DE MICRO ONIBUS", exclui cargos como
-// "VIGILANTE"). CNH nao existe no TiqueTaque — fica pendente (nulo) ate ser
-// completada manualmente, ver src/lib/driverAlerts.ts. Um unico
-// `createMany` para os novos registros (nao um loop de create() por
-// funcionario) — com potencialmente centenas de funcionarios batendo o
-// filtro, um loop sequencial correria o mesmo risco de timeout que a
-// importacao de ponto teve que corrigir (ver src/app/(app)/ponto/actions.ts).
+// Traz TODOS os funcionarios ATIVOS do TiqueTaque (nao so cargo
+// "motorista") — o cadastro serve de base unica de pessoal da empresa.
+// CNH nao existe no TiqueTaque — fica pendente (nulo) ate ser completada
+// manualmente, ver src/lib/driverAlerts.ts. Um unico `createMany` para os
+// novos registros (nao um loop de create() por funcionario) — com
+// potencialmente centenas de funcionarios ativos, um loop sequencial
+// correria o mesmo risco de timeout que a importacao de ponto teve que
+// corrigir (ver src/app/(app)/ponto/actions.ts).
 export async function importDriversFromTiqueTaque(): Promise<TiqueTaqueDriverImportState> {
   const session = await requireRole("ADMIN", "GESTOR");
 
@@ -251,9 +251,7 @@ export async function importDriversFromTiqueTaque(): Promise<TiqueTaqueDriverImp
     return { error: e instanceof Error ? e.message : "Falha ao buscar funcionários do TiqueTaque." };
   }
 
-  const activeDrivers = employees.filter(
-    (e) => !e.dismissed && e.jobRole.toLowerCase().includes("motorista")
-  );
+  const activeEmployees = employees.filter((e) => !e.dismissed);
 
   const existingCpfs = new Set(
     (await prisma.driver.findMany({ select: { cpf: true } })).map((d) => d.cpf)
@@ -268,7 +266,7 @@ export async function importDriversFromTiqueTaque(): Promise<TiqueTaqueDriverImp
     valorHoraCents: number | null;
   }[] = [];
 
-  for (const emp of activeDrivers) {
+  for (const emp of activeEmployees) {
     const cpf = emp.cpf.replace(/\D/g, "");
     if (cpf.length < 11) {
       errors.push({ name: emp.fullName, cpf: emp.cpf, message: "CPF inválido no TiqueTaque." });
