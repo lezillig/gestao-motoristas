@@ -30,6 +30,13 @@ export function workedMinutes(entry: Pick<PontoEntryLike, "clockIn" | "clockOut"
   return durationMinutes(entry.clockIn, entry.clockOut);
 }
 
+export function intervalDurationMinutes(
+  entry: Pick<PontoEntryLike, "intervaloInicio" | "intervaloFim">
+): number | null {
+  if (!entry.intervaloInicio || !entry.intervaloFim) return null;
+  return durationMinutes(entry.intervaloInicio, entry.intervaloFim);
+}
+
 // dailyLimitMinutes permite que a jornada normal de um motorista seja
 // estendida por convencao coletiva (Lei 13.103/2015 permite CCT/ACT ampliar
 // a jornada base) — ver src/lib/convencao.ts:driverDailyLimitMinutes.
@@ -148,4 +155,30 @@ export function findMissingWeeklyRestViolations(
     }
   }
   return violations;
+}
+
+export type EscalaLike = { driverId: string; date: Date };
+export type Absence = { driverId: string; date: Date };
+
+// Chave por dia usando componentes locais do Date — nao usar toISOString
+// aqui, que converte para UTC e pode deslocar o dia (mesmo bug de fuso ja
+// documentado em src/lib/date.ts).
+function localDayKey(driverId: string, date: Date): string {
+  return `${driverId}_${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+// Dias em que existe uma Escala planejada para o motorista mas nenhum
+// TimeClockEntry correspondente — mesma ideia de divergencia escala x uso
+// real ja usada em /utilizacao, aplicada aqui ao ponto ("dia sem registro").
+export function findAbsences(escalas: EscalaLike[], entries: PontoEntryLike[]): Absence[] {
+  const entryKeys = new Set(entries.map((e) => localDayKey(e.driverId, e.date)));
+  const seen = new Set<string>();
+  const absences: Absence[] = [];
+  for (const escala of escalas) {
+    const key = localDayKey(escala.driverId, escala.date);
+    if (entryKeys.has(key) || seen.has(key)) continue;
+    seen.add(key);
+    absences.push({ driverId: escala.driverId, date: escala.date });
+  }
+  return absences;
 }

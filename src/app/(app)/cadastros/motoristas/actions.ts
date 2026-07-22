@@ -21,6 +21,16 @@ const schema = z.object({
   sindicatoId: z.string().optional(),
   regimeHoras: z.enum(["PADRAO", "DOZE_X_TRINTA_SEIS"]).optional(),
   escalaSemanal: z.enum(["SEIS_UM", "CINCO_DOIS"]).optional(),
+  // Le do input "valorHora" (reais, ex.: "12,50") e converte pra centavos —
+  // o nome do campo do schema ja e o nome da coluna no Prisma.
+  valorHoraCents: z
+    .string()
+    .optional()
+    .transform((v) => {
+      if (!v) return undefined;
+      const num = parseFloat(v.replace(",", "."));
+      return Number.isFinite(num) ? Math.round(num * 100) : undefined;
+    }),
 });
 
 function parseForm(formData: FormData) {
@@ -34,6 +44,7 @@ function parseForm(formData: FormData) {
     sindicatoId: formData.get("sindicatoId") || undefined,
     regimeHoras: formData.get("regimeHoras") || undefined,
     escalaSemanal: formData.get("escalaSemanal") || undefined,
+    valorHoraCents: formData.get("valorHora") || undefined,
   });
 }
 
@@ -150,6 +161,7 @@ export async function importDrivers(
     const ativoRaw = normalizeText(row["Ativo (SIM/NAO)"]).toLowerCase();
     const regimeHorasText = normalizeText(row["Regime de Horas"]);
     const escalaSemanalText = normalizeText(row["Escala"]);
+    const valorHoraText = normalizeText(row["Valor da Hora (R$)"]) || undefined;
 
     let sindicatoId: string | undefined;
     if (sindicatoNome) {
@@ -182,6 +194,7 @@ export async function importDrivers(
       sindicatoId,
       regimeHoras: regimeHoras ?? undefined,
       escalaSemanal: escalaSemanal ?? undefined,
+      valorHoraCents: valorHoraText,
     });
     if (!parsed.success) {
       errors.push({ row: rowNumber, message: parsed.error.issues[0]?.message ?? "Dados inválidos" });

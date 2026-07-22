@@ -135,6 +135,10 @@ model Driver {
   photoUrl      String?
   regimeHoras   RegimeHoras?
   escalaSemanal EscalaSemanal?
+  // Valor-hora em centavos (evita float) — usado so para o card de custo
+  // de hora extra em /ponto/analise. Nulo = motorista fica de fora da
+  // soma de custo (nao trava o calculo dos demais).
+  valorHoraCents Int?
   active        Boolean   @default(true)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -211,6 +215,11 @@ model TimeClockEntry {
   // longos e o que alimenta o alerta de "intervalo nao registrado".
   intervaloInicio String? // HH:mm
   intervaloFim    String? // HH:mm
+  // Origem do registro: nulo para lancamento manual, "TIQUETAQUE" quando
+  // veio da importacao via src/lib/tiquetaque. So informativo — a
+  // importacao nunca sobrescreve um registro ja existente de nenhuma
+  // origem, ver src/app/(app)/ponto/actions.ts:importFromTiqueTaque.
+  fonte     String?
   notes     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -7,7 +7,7 @@ import {
   startOfMonth,
   subMonths,
 } from "date-fns";
-import { ChevronLeft, ChevronRight, Gavel, ScrollText, ShieldAlert } from "lucide-react";
+import { Banknote, CalendarX, ChevronLeft, ChevronRight, Coffee, Gavel, ScrollText, ShieldAlert, Trophy } from "lucide-react";
 import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass, inputClass } from "@/lib/ui";
@@ -18,15 +18,18 @@ import {
   MIN_INTERJORNADA_MINUTES,
   REGIME_12X36_REST_MINUTES,
   REGIME_12X36_WORK_MINUTES,
+  findAbsences,
   findInterjornadaViolations,
   findMissingIntervalViolations,
   findMissingWeeklyRestViolations,
+  intervalDurationMinutes,
   overtimeMinutes,
   workedMinutes,
   type RiskLevel,
 } from "@/lib/pontoCompliance";
-import { driverDailyLimitMinutes, driverRegime12x36 } from "@/lib/convencao";
+import { driverDailyLimitMinutes, driverRegime12x36, overtimeCostCents } from "@/lib/convencao";
 import { annotateJurisprudenceRisks, type DriverViolationSummary } from "@/lib/jurisprudencia";
+import { formatHoursMinutes } from "@/lib/time";
 
 type Categoria = "CLT" | "CCT/ACT" | "Jurisprudência";
 
@@ -94,6 +97,15 @@ export default async function AnaliseDeRiscosPage({
   );
   const entryIdsInMonth = new Set(entriesInMonth.map((e) => e.id));
 
+  const escalasInMonth = await prisma.escala.findMany({
+    where: {
+      companyId: session.companyId,
+      date: { gte: monthStart, lt: monthEnd },
+      ...(driverId ? { driverId } : {}),
+    },
+    select: { driverId: true, date: true },
+  });
+
   const dailyLimitByDriver = new Map(drivers.map((d) => [d.id, driverDailyLimitMinutes(d)]));
   const regime12x36ByDriver = new Map(drivers.map((d) => [d.id, driverRegime12x36(d)]));
 
@@ -108,6 +120,14 @@ export default async function AnaliseDeRiscosPage({
     return s;
   };
 
+  // Resumo agregado (cards no topo, inspirados no benchmarking de mercado):
+  // total de horas extras + custo financeiro, turnos >10h, e as metricas de
+  // intervalo/escala calculadas mais abaixo.
+  let totalOvertimeMinutes = 0;
+  let totalCostCents = 0;
+  let hasAnyCost = false;
+  const over10hCount = entriesInMonth.filter((e) => (workedMinutes(e) ?? 0) > 600).length;
+
   // Hora extra: usa o limite negociado (ACT/CCT) ou o regime 12x36 quando
   // vigente; a categoria muda conforme a fonte do limite aplicado.
   for (const entry of entriesInMonth) {
@@ -117,6 +137,16 @@ export default async function AnaliseDeRiscosPage({
     const worked = workedMinutes(entry);
     const overtime = overtimeMinutes(worked, effectiveLimit);
     if (overtime <= 0) continue;
+
+    totalOvertimeMinutes += overtime;
+    const driverForCost = driverById.get(entry.driverId);
+    if (driverForCost) {
+      const cost = overtimeCostCents(driverForCost, overtime);
+      if (cost !== null) {
+        totalCostCents += cost;
+        hasAnyCost = true;
+      }
+    }
 
     const excessive = overtime > EXCESSIVE_OVERTIME_MINUTES;
     if (excessive) getSummary(entry.driverId).excessiveOvertimeCount++;
@@ -207,6 +237,22 @@ export default async function AnaliseDeRiscosPage({
     s.missingRestStreaks = Math.max(s.missingRestStreaks, 1);
   }
 
+  // Card "Intervalo": mesmo layout de 3 numeros ja usado por concorrentes
+  // (benchmarking) — turnos com intervalo <1h, turnos sem NENHUM intervalo
+  // registrado (independente da duracao do turno), e turnos >=6h sem
+  // intervalo (esse ultimo e exatamente findMissingIntervalViolations).
+  const shortIntervalCount = entriesInMonth.filter((e) => {
+    const dur = intervalDurationMinutes(e);
+    return dur !== null && dur < 60;
+  }).length;
+  const noIntervalCount = entriesInMonth.filter((e) => !e.intervaloInicio || !e.intervaloFim).length;
+
+  // Card "Escala": violacoes de interjornada (ja computado acima) + dias
+  // sem registro (escala planejada sem TimeClockEntry correspondente) e o
+  // % de absenteismo sobre o total de escalas do periodo.
+  const absences = findAbsences(escalasInMonth, entriesInMonth);
+  const absenteeismPercent = escalasInMonth.length > 0 ? (absences.length / escalasInMonth.length) * 100 : 0;
+
   const jurisprudenceRisks = annotateJurisprudenceRisks([...summaryByDriver.values()]);
   for (const risk of jurisprudenceRisks) {
     rows.push({
@@ -244,6 +290,18 @@ export default async function AnaliseDeRiscosPage({
     });
   }
 
+  // Ranking "motoristas com mais ocorrencias de risco" — mesmo padrao de
+  // leaderboard ja usado em src/app/(app)/telemetria/page.tsx. Peso maior
+  // pro DSR (falta de descanso semanal e a violacao mais grave).
+  const ranking = [...summaryByDriver.entries()]
+    .map(([id, s]) => ({
+      name: driverName(id),
+      score: s.missingIntervalCount + s.interjornadaCount + s.excessiveOvertimeCount + s.missingRestStreaks * 3,
+    }))
+    .filter((r) => r.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+
   const sortLinkParams = { mes: format(monthStart, "yyyy-MM"), driverId };
   const countByCategoria = (categoria: Categoria) => rows.filter((r) => r.categoria === categoria).length;
 
@@ -253,6 +311,71 @@ export default async function AnaliseDeRiscosPage({
         title="Análise de riscos"
         subtitle="Marcações de ponto avaliadas sob três eixos: CLT, Convenção/Acordo Coletivo e decisões trabalhistas."
       />
+
+      <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className={cardClass}>
+          <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-purple-100 text-purple-700">
+            <Banknote className="h-4 w-4" />
+          </div>
+          <p className="text-sm text-slate-500">Horas extras</p>
+          <p className="mt-1 text-2xl font-semibold text-slate-900">{formatHoursMinutes(totalOvertimeMinutes)}</p>
+          <p className="text-xs text-slate-500">em horas extras</p>
+          <div className="mt-3 flex items-end justify-between border-t border-slate-100 pt-3 text-sm">
+            <div>
+              <p className="font-semibold text-slate-900">
+                {hasAnyCost
+                  ? (totalCostCents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+                  : "—"}
+              </p>
+              <p className="text-xs text-slate-500">
+                {hasAnyCost ? "em horas extras" : "configure o valor-hora dos motoristas"}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="font-semibold text-slate-900">{over10hCount}</p>
+              <p className="text-xs text-slate-500">excederam 10h por dia</p>
+            </div>
+          </div>
+        </div>
+
+        <div className={cardClass}>
+          <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-teal-100 text-teal-700">
+            <Coffee className="h-4 w-4" />
+          </div>
+          <p className="text-sm text-slate-500">Intervalo</p>
+          <p className="mt-1 text-2xl font-semibold text-slate-900">{shortIntervalCount}</p>
+          <p className="text-xs text-slate-500">fizeram menos de 1 hora de intervalo</p>
+          <div className="mt-3 flex items-end justify-between border-t border-slate-100 pt-3 text-sm">
+            <div>
+              <p className="font-semibold text-slate-900">{noIntervalCount}</p>
+              <p className="text-xs text-slate-500">não fizeram intervalo</p>
+            </div>
+            <div className="text-right">
+              <p className="font-semibold text-slate-900">{missingIntervalViolations.length}</p>
+              <p className="text-xs text-slate-500">excederam 6h sem intervalo</p>
+            </div>
+          </div>
+        </div>
+
+        <div className={cardClass}>
+          <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-100 text-indigo-700">
+            <CalendarX className="h-4 w-4" />
+          </div>
+          <p className="text-sm text-slate-500">Escala</p>
+          <p className="mt-1 text-2xl font-semibold text-slate-900">{interjornadaViolations.length}</p>
+          <p className="text-xs text-slate-500">menos de 11h interjornada</p>
+          <div className="mt-3 flex items-end justify-between border-t border-slate-100 pt-3 text-sm">
+            <div>
+              <p className="font-semibold text-slate-900">{absenteeismPercent.toFixed(2)}%</p>
+              <p className="text-xs text-slate-500">Absenteísmo</p>
+            </div>
+            <div className="text-right">
+              <p className="font-semibold text-slate-900">{absences.length}</p>
+              <p className="text-xs text-slate-500">dias sem registros</p>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         {(["CLT", "CCT/ACT", "Jurisprudência"] as const).map((categoria) => {
@@ -268,6 +391,22 @@ export default async function AnaliseDeRiscosPage({
           );
         })}
       </div>
+
+      {ranking.length > 0 && (
+        <div className={`${cardClass} mb-6`}>
+          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+            <Trophy className="h-4 w-4 text-amber-500" /> Motoristas com mais ocorrências de risco
+          </h2>
+          <ul className="flex flex-col gap-2">
+            {ranking.map((r) => (
+              <li key={r.name} className="flex items-center justify-between text-sm">
+                <span className="text-slate-700">{r.name}</span>
+                <span className={`${badgeClass} bg-red-100 text-red-700`}>{r.score} ocorrência(s)</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <form className="mb-4 flex flex-wrap items-end gap-3" method="get">
         <div>

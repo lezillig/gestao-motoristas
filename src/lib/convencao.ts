@@ -16,11 +16,16 @@ type ConvencaoLike = {
 
 type DriverWithConvencoes = {
   regimeHoras?: string | null;
+  valorHoraCents?: number | null;
   sindicato: {
     nome: string;
     convencoes: ConvencaoLike[];
   } | null;
 };
+
+// Percentual minimo de hora extra quando nao ha regra HORA_EXTRA vigente no
+// ACT/CCT do motorista (art. 7º, XVI, CF/88).
+export const HORA_EXTRA_PERCENTUAL_MINIMO = 50;
 
 export type RegraResolvida = {
   valorNumerico: number | null;
@@ -69,6 +74,23 @@ export function driverDailyLimitMinutes(
     return { minutes: regra.valorNumerico * 60, source: regra.fonte.nome };
   }
   return { minutes: STANDARD_DAILY_MINUTES, source: null };
+}
+
+// Custo (em centavos) de um turno com hora extra: valor-hora do motorista
+// multiplicado pelo percentual de adicional vigente (ACT/CCT do motorista,
+// resolveRegra ja aplica a precedencia ACT>CCT) ou o minimo legal de 50%
+// quando nao ha regra negociada. Retorna null se o motorista nao tem
+// valor-hora cadastrado — o chamador decide como tratar (normalmente,
+// deixar de fora da soma agregada em vez de travar o calculo).
+export function overtimeCostCents(
+  driver: DriverWithConvencoes,
+  overtimeMinutes: number,
+  today = new Date()
+): number | null {
+  if (!driver.valorHoraCents || overtimeMinutes <= 0) return driver.valorHoraCents ? 0 : null;
+  const regra = resolveRegra(driver, "HORA_EXTRA", today);
+  const percentual = regra.valorNumerico ?? HORA_EXTRA_PERCENTUAL_MINIMO;
+  return Math.round((overtimeMinutes / 60) * driver.valorHoraCents * (1 + percentual / 100));
 }
 
 // Indica se o motorista esta em regime 12x36 vigente. Precedencia: override

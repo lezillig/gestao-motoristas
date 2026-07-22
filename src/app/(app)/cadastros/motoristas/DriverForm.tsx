@@ -21,6 +21,7 @@ export default function DriverForm({
     sindicatoId: string | null;
     regimeHoras?: string | null;
     escalaSemanal?: string | null;
+    valorHoraCents?: number | null;
   };
 }) {
   return (
@@ -119,6 +120,21 @@ export default function DriverForm({
           </select>
           <p className="mt-1 text-xs text-slate-400">Ajusta o alerta de descanso semanal na análise de riscos.</p>
         </div>
+      </div>
+      <div>
+        <label className={labelClass}>Valor da hora (R$)</label>
+        <input
+          type="number"
+          name="valorHora"
+          step="0.01"
+          min="0"
+          defaultValue={
+            defaultValues?.valorHoraCents != null ? (defaultValues.valorHoraCents / 100).toFixed(2) : ""
+          }
+          className={`${inputClass} max-w-[160px]`}
+          placeholder="0,00"
+        />
+        <p className="mt-1 text-xs text-slate-400">Usado para calcular o custo de hora extra na análise de riscos.</p>
       </div>
       <div className="mt-2 flex gap-3">
         <button type="submit" className={primaryButtonClass}>

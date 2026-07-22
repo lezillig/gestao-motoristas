@@ -17,6 +17,7 @@ export async function GET() {
       "Ativo (SIM/NAO)",
       "Regime de Horas",
       "Escala",
+      "Valor da Hora (R$)",
     ],
     example: [
       "João da Silva",
@@ -29,6 +30,7 @@ export async function GET() {
       "SIM",
       "Padrão",
       "6x1",
+      "15,50",
     ],
   });
 
