@@ -80,6 +80,7 @@ model Company {
   usageLogs         VehicleUsageLog[]
   telemetryReadings TelemetryReading[]
   fuelTransactions  FuelTransaction[]
+  consumptionSummaries FuelConsumptionSummary[]
 }
 
 model User {
@@ -176,6 +177,7 @@ model Vehicle {
   usageLogs         VehicleUsageLog[]
   telemetryReadings TelemetryReading[]
   fuelTransactions  FuelTransaction[]
+  consumptionSummaries FuelConsumptionSummary[]
 }
 
 // ---------- Escala (MOD.02) ----------
@@ -376,4 +378,46 @@ model AnpPrecoReferencia {
 
   @@unique([uf, produto, semanaInicio])
   @@index([semanaInicio])
+}
+
+// Uma linha por veiculo x contrato x combustivel x periodo, direto do
+// "Relatorio Resumido de Consumo" do sistema de frota do usuario — um HTML
+// disfarçado de .xls (nao e Excel de verdade), agregado pro periodo
+// inteiro, sem data de abastecimento individual nem motorista (por isso e
+// um model separado de FuelTransaction, nao a mesma tabela). "Contrato" e
+// o cliente da AzulMob (ex. "FEMSA JUNDIAI", "ESCOLAR SP") — fica como
+// texto livre aqui, deliberadamente NAO promovido a campo do Veiculo por
+// enquanto (a lista varia muito mes a mes, alguns meses so tem "ND").
+// vehicleId nulo quando a placa nao bate com o cadastro — mesma filosofia
+// de FuelTransaction (visibilidade financeira antes de vinculo estrito).
+model FuelConsumptionSummary {
+  id                   String   @id @default(cuid())
+  companyId            String
+  company              Company  @relation(fields: [companyId], references: [id])
+  vehicleId            String?
+  vehicle              Vehicle? @relation(fields: [vehicleId], references: [id])
+  placaOriginal        String
+  contrato             String
+  tipoCombustivel      String
+  // Coluna "Ultima Km e/ou H" do relatorio — parte da chave de identidade
+  // da linha (nao so complemento). O mesmo veiculo/contrato/combustivel
+  // pode aparecer 2x legitimamente no mesmo periodo (2 leituras/lotes
+  // distintos); sem este campo na constraint unica, o createMany com
+  // skipDuplicates descarta a segunda linha como se fosse reimportacao —
+  // bug real encontrado testando dados de producao (perdeu R$1.694,94 de
+  // um mes real antes deste campo ser incluido).
+  ultimoKmOuHora       Float?
+  periodoInicio        DateTime
+  periodoFim           DateTime
+  kmRodados            Int?
+  horasTrabalhadas     Float?
+  litros               Float
+  valorMedioLitroCents Int?
+  kmPorLitro           Float?
+  litrosPorHora        Float?
+  totalCents           Int
+  createdAt            DateTime @default(now())
+
+  @@unique([companyId, placaOriginal, contrato, tipoCombustivel, periodoInicio, periodoFim, ultimoKmOuHora])
+  @@index([companyId, periodoInicio])
 }

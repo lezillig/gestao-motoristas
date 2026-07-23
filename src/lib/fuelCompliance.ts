@@ -1,4 +1,4 @@
-import type { FuelTransaction, Vehicle, Driver, AnpPrecoReferencia } from "@prisma/client";
+import type { FuelTransaction, Vehicle, Driver, AnpPrecoReferencia, FuelConsumptionSummary } from "@prisma/client";
 import { normalizeProduto } from "@/lib/anp/client";
 
 // Padrao "computado, nao persistido" (mesmo estilo de pontoCompliance.ts,
@@ -168,4 +168,16 @@ export function findOverpricedTransactions(
     }
   }
   return results;
+}
+
+// Ranking "contratos com maior gasto" pro Relatorio Resumido de Consumo
+// (src/app/(app)/combustivel/resumo) — mesmo padrao de spentByVehicle.
+export function spentByContrato(summaries: FuelConsumptionSummary[]) {
+  const totals = new Map<string, number>();
+  for (const s of summaries) {
+    totals.set(s.contrato, (totals.get(s.contrato) ?? 0) + s.totalCents);
+  }
+  return [...totals.entries()]
+    .map(([contrato, cents]) => ({ contrato, cents }))
+    .sort((a, b) => b.cents - a.cents);
 }

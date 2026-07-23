@@ -108,6 +108,11 @@ export default async function CombustivelPage({
         secondaryActionHref="/combustivel/importar"
         secondaryActionLabel="Importar extrato"
       />
+      <p className="mb-4 text-xs text-slate-400">
+        <Link href="/combustivel/resumo" className="text-blue-700 hover:underline">
+          Ver resumo de consumo por contrato →
+        </Link>
+      </p>
 
       <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-4">
         <div className={cardClass}>
