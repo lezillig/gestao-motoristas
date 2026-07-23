@@ -10,7 +10,7 @@ import {
 import { ChevronLeft, ChevronRight, Fuel, Gauge, Link2Off, TriangleAlert, Trophy } from "lucide-react";
 import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { cardClass, badgeClass, primaryButtonClass } from "@/lib/ui";
+import { cardClass, badgeClass, primaryButtonClass, inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import SortableTh from "@/components/ui/SortableTh";
 import {
@@ -34,13 +34,32 @@ function formatBRL(cents: number): string {
   return (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+const SITUACAO_OPTIONS = [
+  { value: "", label: "Todas" },
+  { value: "sem_veiculo", label: "Sem veículo" },
+  { value: "sem_motorista", label: "Sem motorista" },
+  { value: "inativo", label: "Vínculo inativo" },
+  { value: "duplicata", label: "Duplicata suspeita" },
+  { value: "hodometro", label: "Hodômetro retrocedido" },
+  { value: "anp", label: "Acima do ANP" },
+  { value: "ok", label: "OK" },
+] as const;
+
 export default async function CombustivelPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string; sort?: string; dir?: string }>;
+  searchParams: Promise<{
+    mes?: string;
+    sort?: string;
+    dir?: string;
+    placa?: string;
+    motorista?: string;
+    combustivel?: string;
+    situacao?: string;
+  }>;
 }) {
   const session = await requireSession();
-  const { mes, sort, dir } = await searchParams;
+  const { mes, sort, dir, placa, motorista, combustivel, situacao } = await searchParams;
 
   const anchor = mes ? new Date(`${mes}-01T00:00:00`) : new Date();
   const monthStart = startOfMonth(anchor);
@@ -98,7 +117,64 @@ export default async function CombustivelPage({
   const totalCents = totalSpentCents(txs);
   const avgPriceCents = averagePriceCentsPerLiter(txs);
 
-  const sortLinkParams = { mes: format(monthStart, "yyyy-MM") };
+  // Filtros (placa/motorista/combustivel/situacao) sao aplicados so na
+  // tabela — cards, ranking e as contagens acima refletem o mes inteiro,
+  // pra nao dar a impressao de que o KPI mudou quando na verdade so a
+  // lista visivel foi filtrada.
+  const combustiveisDisponiveis = [...new Set(txs.map((t) => t.combustivel).filter((c): c is string => !!c))].sort();
+
+  const matchesSituacao = (t: (typeof txs)[number]) => {
+    switch (situacao) {
+      case "sem_veiculo":
+        return !t.vehicleId;
+      case "sem_motorista":
+        return !t.driverId;
+      case "inativo":
+        return inactiveLinkIds.has(t.id);
+      case "duplicata":
+        return duplicateIds.has(t.id);
+      case "hodometro":
+        return regressionIds.has(t.id);
+      case "anp":
+        return overpricedById.has(t.id);
+      case "ok":
+        return (
+          !!t.vehicleId &&
+          !!t.driverId &&
+          !inactiveLinkIds.has(t.id) &&
+          !duplicateIds.has(t.id) &&
+          !regressionIds.has(t.id) &&
+          !overpricedById.has(t.id)
+        );
+      default:
+        return true;
+    }
+  };
+
+  const placaFiltro = placa?.trim().toUpperCase();
+  const motoristaFiltro = motorista?.trim().toLowerCase();
+  const filteredTxs = txs.filter((t) => {
+    if (placaFiltro && !(t.vehicle?.plate ?? t.placaOriginal).toUpperCase().includes(placaFiltro)) return false;
+    if (motoristaFiltro && !(t.driver?.name ?? t.motoristaOriginal ?? "").toLowerCase().includes(motoristaFiltro))
+      return false;
+    if (combustivel && t.combustivel !== combustivel) return false;
+    if (!matchesSituacao(t)) return false;
+    return true;
+  });
+
+  const sortLinkParams = { mes: format(monthStart, "yyyy-MM"), placa, motorista, combustivel, situacao };
+
+  const monthLinkHref = (mesAlvo: string) => {
+    const params = new URLSearchParams();
+    params.set("mes", mesAlvo);
+    if (placa) params.set("placa", placa);
+    if (motorista) params.set("motorista", motorista);
+    if (combustivel) params.set("combustivel", combustivel);
+    if (situacao) params.set("situacao", situacao);
+    if (sort) params.set("sort", sort);
+    if (dir) params.set("dir", dir);
+    return `/combustivel?${params.toString()}`;
+  };
 
   return (
     <div className="max-w-6xl">
@@ -216,19 +292,75 @@ export default async function CombustivelPage({
 
       <div className="mb-4 flex items-center justify-between">
         <Link
-          href={`/combustivel?mes=${prevMonth}`}
+          href={monthLinkHref(prevMonth)}
           className="flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
         >
           <ChevronLeft className="h-4 w-4" /> Mês anterior
         </Link>
         <p className="text-sm font-medium text-slate-700">{format(monthStart, "MMMM/yyyy")}</p>
         <Link
-          href={`/combustivel?mes=${nextMonth}`}
+          href={monthLinkHref(nextMonth)}
           className="flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
         >
           Próximo mês <ChevronRight className="h-4 w-4" />
         </Link>
       </div>
+
+      <form className="mb-4 flex flex-wrap items-end gap-3" method="get">
+        <input type="hidden" name="mes" value={format(monthStart, "yyyy-MM")} />
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">Placa</label>
+          <input
+            type="text"
+            name="placa"
+            defaultValue={placa ?? ""}
+            placeholder="ex.: ABC1D23"
+            className={`${inputClass} w-32`}
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">Motorista</label>
+          <input
+            type="text"
+            name="motorista"
+            defaultValue={motorista ?? ""}
+            placeholder="nome"
+            className={`${inputClass} w-44`}
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">Combustível</label>
+          <select name="combustivel" defaultValue={combustivel ?? ""} className={inputClass}>
+            <option value="">Todos</option>
+            {combustiveisDisponiveis.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">Situação</label>
+          <select name="situacao" defaultValue={situacao ?? ""} className={inputClass}>
+            {SITUACAO_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <button type="submit" className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+          Filtrar
+        </button>
+        {(placa || motorista || combustivel || situacao) && (
+          <Link
+            href={`/combustivel?mes=${format(monthStart, "yyyy-MM")}`}
+            className="text-sm text-slate-500 hover:underline"
+          >
+            Limpar filtros
+          </Link>
+        )}
+      </form>
 
       <div className={`${cardClass} p-0 overflow-hidden`}>
         <div className="overflow-x-auto">
@@ -240,19 +372,20 @@ export default async function CombustivelPage({
                 <SortableTh label="Motorista" field="motorista" basePath="/combustivel" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <SortableTh label="Valor" field="valor" basePath="/combustivel" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <th className="px-4 py-3">Litros</th>
+                <th className="px-4 py-3">Combustível</th>
                 <th className="px-4 py-3">Posto</th>
                 <th className="px-4 py-3">Situação</th>
               </tr>
             </thead>
             <tbody>
-              {txs.length === 0 && (
+              {filteredTxs.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
-                    Nenhuma transação de combustível neste período.
+                  <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                    Nenhuma transação de combustível encontrada.
                   </td>
                 </tr>
               )}
-              {txs.map((t) => (
+              {filteredTxs.map((t) => (
                 <tr key={t.id} className="border-b border-slate-100 last:border-0">
                   <td className="px-4 py-3 text-slate-600">{format(t.dataHora, "dd/MM/yyyy HH:mm")}</td>
                   <td className="px-4 py-3 font-mono text-xs text-slate-600">
@@ -261,6 +394,7 @@ export default async function CombustivelPage({
                   <td className="px-4 py-3 text-slate-600">{t.driver?.name ?? t.motoristaOriginal ?? "—"}</td>
                   <td className="px-4 py-3 font-medium text-slate-800">{formatBRL(t.valorCents)}</td>
                   <td className="px-4 py-3 text-slate-600">{t.volumeLitros.toLocaleString("pt-BR")} L</td>
+                  <td className="px-4 py-3 text-slate-600">{t.combustivel ?? "—"}</td>
                   <td className="px-4 py-3 text-slate-600">{t.posto ?? "—"}</td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap items-center gap-1.5">
