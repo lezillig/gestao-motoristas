@@ -350,7 +350,13 @@ model FuelTransaction {
   cidade            String?
   uf                String?
   hodometro         Int?
+  kmRodados         Int?
   numeroAutorizacao String?
+  // Codigo real e estavel do sistema de origem (coluna "CODIGO TRANSACAO"
+  // do extrato real RFCV) — quando presente, e o criterio de duplicata
+  // (muito mais confiavel que a heuristica de tempo+valor usada pro
+  // template manual, que nao tem esse codigo).
+  codigoTransacao   String?  @unique
   placaOriginal     String
   motoristaOriginal String?
   createdAt         DateTime @default(now())

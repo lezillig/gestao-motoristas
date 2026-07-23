@@ -8,7 +8,10 @@ import { readWorkbookRows, normalizeText } from "@/lib/spreadsheet";
 import { anpWeekRange, fetchAnpWeek } from "@/lib/anp/client";
 
 export type ImportRowError = { row: number; message: string };
-export type ImportResult = { created: number; errors: ImportRowError[] };
+// naoAbastecimento e opcional (so o extrato real RFCV preenche) — o
+// ImportSpreadsheetForm compartilhado (Motoristas/Veiculos) so mostra
+// created/errors, ignora campos extras com seguranca.
+export type ImportResult = { created: number; errors: ImportRowError[]; naoAbastecimento?: number };
 export type ImportState = { error?: string; result?: ImportResult };
 
 // Aceita celula Date do ExcelJS (datetime sempre vem em UTC-meia-noite-do-
@@ -43,11 +46,75 @@ function parseLitros(text: string): number | null {
   return Number.isFinite(num) && num > 0 ? num : null;
 }
 
+// Extrato real do sistema de frota (RFCV) — diferente do template manual:
+// a celula "DATA TRANSACAO" e um datetime completo, e o Date que o ExcelJS
+// devolve ja tem os getters LOCAIS certos (verificado com o arquivo real:
+// bruto "Thu Jan 01 2026 14:35:18", getHours() local = 14, getUTCHours() =
+// 17). NAO aplicar a extracao via UTC usada em parseDataHora (essa e so
+// pra celula de data-só, que sofre o bug contrario) — faria isso ficar 3h
+// errado.
+function parseDataHoraReal(value: unknown): Date | null {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  return null;
+}
+
+function toNumberBR(value: unknown): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  const num = parseFloat(normalizeText(value).replace(",", "."));
+  return Number.isFinite(num) ? num : null;
+}
+
+type FuelTxDraft = {
+  companyId: string;
+  vehicleId: string | null;
+  driverId: string | null;
+  dataHora: Date;
+  valorCents: number;
+  volumeLitros: number;
+  combustivel: string | null;
+  posto: string | null;
+  cidade: string | null;
+  uf: string | null;
+  hodometro: number | null;
+  kmRodados: number | null;
+  numeroAutorizacao: string | null;
+  codigoTransacao: string | null;
+  placaOriginal: string;
+  motoristaOriginal: string | null;
+};
+
+function matchVehicleAndDriver(
+  placaText: string,
+  motoristaText: string,
+  vehicleByPlate: Map<string, string>,
+  driverByCpf: Map<string, string>,
+  driverByName: Map<string, string>
+): { vehicleId: string | undefined; driverId: string | undefined } {
+  const placaNormalizada = placaText.toUpperCase().replace(/[\s-]/g, "");
+  const vehicleId = placaNormalizada ? vehicleByPlate.get(placaNormalizada) : undefined;
+
+  const cpfDigits = motoristaText.replace(/\D/g, "");
+  const driverId =
+    cpfDigits.length === 11
+      ? driverByCpf.get(cpfDigits)
+      : motoristaText
+        ? driverByName.get(motoristaText.trim().toLowerCase())
+        : undefined;
+
+  return { vehicleId, driverId };
+}
+
 // Mesmo padrao de importDrivers/importVehicles: melhor esforco linha a
 // linha, reaproveitando readWorkbookRows/normalizeText. Diferenca proposital:
 // placa/motorista sem match no cadastro NAO rejeitam a linha (visibilidade
 // financeira da transacao importa mais que o vinculo) — a transacao entra
 // com vehicleId/driverId nulos, so marcada como "sem vinculo" na UI.
+//
+// Aceita 2 formatos, auto-detectados pela presenca da coluna real
+// "CODIGO TRANSACAO": o extrato real do sistema de frota (RFCV), OU o
+// template manual proprio (planilha que o usuario preenche a mao). O
+// usuario nao precisa saber qual esta mandando — o mesmo botao/pagina
+// aceita os dois.
 export async function importFuelTransactions(
   _prevState: ImportState,
   formData: FormData
@@ -70,12 +137,18 @@ export async function importFuelTransactions(
     return { error: "A planilha está vazia." };
   }
 
-  const [vehicles, drivers, existingTxs] = await Promise.all([
+  const isRfcv = Object.prototype.hasOwnProperty.call(rows[0], "CODIGO TRANSACAO");
+
+  const [vehicles, drivers, existingTxs, existingCodigos] = await Promise.all([
     prisma.vehicle.findMany({ where: { companyId: session.companyId }, select: { id: true, plate: true } }),
     prisma.driver.findMany({ where: { companyId: session.companyId }, select: { id: true, cpf: true, name: true } }),
     prisma.fuelTransaction.findMany({
       where: { companyId: session.companyId },
       select: { vehicleId: true, dataHora: true, valorCents: true },
+    }),
+    prisma.fuelTransaction.findMany({
+      where: { codigoTransacao: { not: null } },
+      select: { codigoTransacao: true },
     }),
   ]);
   const vehicleByPlate = new Map(vehicles.map((v) => [v.plate, v.id]));
@@ -85,6 +158,7 @@ export async function importFuelTransactions(
   // casar de qualquer jeito.
   const driverByCpf = new Map(drivers.map((d) => [d.cpf.replace(/\D/g, ""), d.id]));
   const driverByName = new Map(drivers.map((d) => [d.name.trim().toLowerCase(), d.id]));
+  const codigosVistos = new Set(existingCodigos.map((t) => t.codigoTransacao as string));
 
   const DUPLICATE_TOLERANCE_CENTS = 2;
   const isDuplicate = (vehicleId: string | undefined, dataHora: Date, valorCents: number) =>
@@ -96,26 +170,76 @@ export async function importFuelTransactions(
     );
 
   const errors: ImportRowError[] = [];
-  const toCreate: {
-    companyId: string;
-    vehicleId: string | null;
-    driverId: string | null;
-    dataHora: Date;
-    valorCents: number;
-    volumeLitros: number;
-    combustivel: string | null;
-    posto: string | null;
-    cidade: string | null;
-    uf: string | null;
-    hodometro: number | null;
-    numeroAutorizacao: string | null;
-    placaOriginal: string;
-    motoristaOriginal: string | null;
-  }[] = [];
+  const toCreate: FuelTxDraft[] = [];
+  let naoAbastecimento = 0;
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     const rowNumber = i + 2; // linha 1 e o cabecalho
+
+    if (isRfcv) {
+      const placaText = normalizeText(row["PLACA"]);
+      const motoristaText = normalizeText(row["NOME MOTORISTA"]);
+      if (!placaText) continue; // linha em branco, ignora
+
+      const servico = normalizeText(row["SERVICO"]).toLowerCase();
+      if (servico && servico !== "abastecimento") {
+        naoAbastecimento++;
+        continue;
+      }
+
+      const dataHora = parseDataHoraReal(row["DATA TRANSACAO"]);
+      if (!dataHora) {
+        errors.push({ row: rowNumber, message: "DATA TRANSACAO ausente ou inválida." });
+        continue;
+      }
+      const valor = toNumberBR(row["VALOR EMISSAO"]);
+      if (valor === null || valor <= 0) {
+        errors.push({ row: rowNumber, message: "VALOR EMISSAO ausente ou inválido." });
+        continue;
+      }
+      const volumeLitros = toNumberBR(row["LITROS"]);
+      if (volumeLitros === null || volumeLitros <= 0) {
+        errors.push({ row: rowNumber, message: "LITROS ausente ou inválido." });
+        continue;
+      }
+      const valorCents = Math.round(valor * 100);
+
+      const codigoTransacao = normalizeText(row["CODIGO TRANSACAO"]) || null;
+      if (codigoTransacao && codigosVistos.has(codigoTransacao)) {
+        errors.push({ row: rowNumber, message: `Transação ${codigoTransacao} já importada.` });
+        continue;
+      }
+
+      const { vehicleId, driverId } = matchVehicleAndDriver(
+        placaText,
+        motoristaText,
+        vehicleByPlate,
+        driverByCpf,
+        driverByName
+      );
+
+      toCreate.push({
+        companyId: session.companyId,
+        vehicleId: vehicleId ?? null,
+        driverId: driverId ?? null,
+        dataHora,
+        valorCents,
+        volumeLitros,
+        combustivel: normalizeText(row["TIPO COMBUSTIVEL"]) || null,
+        posto: normalizeText(row["NOME ESTABELECIMENTO"]) || null,
+        cidade: normalizeText(row["CIDADE"]) || null,
+        uf: normalizeText(row["UF"]) || null,
+        hodometro: toNumberBR(row["HODOMETRO OU HORIMETRO"]),
+        kmRodados: toNumberBR(row["KM RODADOS OU HORAS TRABALHADAS"]),
+        numeroAutorizacao: null,
+        codigoTransacao,
+        placaOriginal: placaText,
+        motoristaOriginal: motoristaText || null,
+      });
+      if (codigoTransacao) codigosVistos.add(codigoTransacao);
+      continue;
+    }
 
     const placaText = normalizeText(row["Placa"]);
     const motoristaText = normalizeText(row["Motorista (CPF ou Nome)"]);
@@ -139,16 +263,13 @@ export async function importFuelTransactions(
       continue;
     }
 
-    const placaNormalizada = placaText.toUpperCase().replace(/[\s-]/g, "");
-    const vehicleId = placaNormalizada ? vehicleByPlate.get(placaNormalizada) : undefined;
-
-    const cpfDigits = motoristaText.replace(/\D/g, "");
-    const driverId =
-      cpfDigits.length === 11
-        ? driverByCpf.get(cpfDigits)
-        : motoristaText
-          ? driverByName.get(motoristaText.trim().toLowerCase())
-          : undefined;
+    const { vehicleId, driverId } = matchVehicleAndDriver(
+      placaText,
+      motoristaText,
+      vehicleByPlate,
+      driverByCpf,
+      driverByName
+    );
 
     if (isDuplicate(vehicleId, dataHora, valorCents)) {
       errors.push({ row: rowNumber, message: "Possível duplicata (mesmo veículo, data/hora e valor já importados)." });
@@ -170,7 +291,9 @@ export async function importFuelTransactions(
       cidade: normalizeText(row["Cidade"]) || null,
       uf: normalizeText(row["UF"]) || null,
       hodometro: Number.isFinite(hodometro) ? hodometro : null,
+      kmRodados: null,
       numeroAutorizacao: normalizeText(row["Nº Autorização (opcional)"]) || null,
+      codigoTransacao: null,
       placaOriginal: placaText,
       motoristaOriginal: motoristaText || null,
     });
@@ -185,7 +308,13 @@ export async function importFuelTransactions(
   }
 
   revalidatePath("/combustivel");
-  return { result: { created: toCreate.length, errors } };
+  return {
+    result: {
+      created: toCreate.length,
+      errors,
+      naoAbastecimento: isRfcv ? naoAbastecimento : undefined,
+    },
+  };
 }
 
 // Busca sob demanda (nunca automatico a cada render de pagina, ver comentario
