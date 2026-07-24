@@ -81,6 +81,7 @@ type FuelTxDraft = {
   codigoTransacao: string | null;
   placaOriginal: string;
   motoristaOriginal: string | null;
+  modeloOriginal: string | null;
 };
 
 function matchVehicleAndDriver(
@@ -236,6 +237,7 @@ export async function importFuelTransactions(
         codigoTransacao,
         placaOriginal: placaText,
         motoristaOriginal: motoristaText || null,
+        modeloOriginal: normalizeText(row["MODELO VEICULO"]) || null,
       });
       if (codigoTransacao) codigosVistos.add(codigoTransacao);
       continue;
@@ -296,6 +298,7 @@ export async function importFuelTransactions(
       codigoTransacao: null,
       placaOriginal: placaText,
       motoristaOriginal: motoristaText || null,
+      modeloOriginal: null,
     });
     // Evita duplicar dentro do mesmo arquivo se a mesma linha aparecer 2x.
     existingTxs.push({ vehicleId: vehicleId ?? null, dataHora, valorCents });

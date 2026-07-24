@@ -359,6 +359,11 @@ model FuelTransaction {
   codigoTransacao   String?  @unique
   placaOriginal     String
   motoristaOriginal String?
+  // Texto cru da coluna "MODELO VEICULO" do extrato real (RFCV) — mesma
+  // filosofia de placaOriginal/motoristaOriginal: a maioria das transacoes
+  // nao tem vehicleId vinculado ainda (cadastro de veiculos local incompleto
+  // frente a frota real), entao a UI usa vehicle?.model ?? modeloOriginal.
+  modeloOriginal    String?
   createdAt         DateTime @default(now())
 
   @@index([companyId, dataHora])

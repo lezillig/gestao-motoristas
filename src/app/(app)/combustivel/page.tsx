@@ -25,9 +25,19 @@ import {
 } from "@/lib/fuelCompliance";
 import { anpWeekRange } from "@/lib/anp/client";
 import { syncAnpPrices } from "./actions";
-import type { Prisma } from "@prisma/client";
 
-const SORT_FIELDS = ["dataHora", "placa", "motorista", "valor"] as const;
+const SORT_FIELDS = [
+  "dataHora",
+  "placa",
+  "motorista",
+  "modelo",
+  "valor",
+  "litros",
+  "combustivel",
+  "hodometro",
+  "kmPorLitro",
+  "posto",
+] as const;
 type SortField = (typeof SORT_FIELDS)[number];
 
 function formatBRL(cents: number): string {
@@ -54,12 +64,14 @@ export default async function CombustivelPage({
     dir?: string;
     placa?: string;
     motorista?: string;
+    modelo?: string;
     combustivel?: string;
+    posto?: string;
     situacao?: string;
   }>;
 }) {
   const session = await requireSession();
-  const { mes, sort, dir, placa, motorista, combustivel, situacao } = await searchParams;
+  const { mes, sort, dir, placa, motorista, modelo, combustivel, posto, situacao } = await searchParams;
 
   const anchor = mes ? new Date(`${mes}-01T00:00:00`) : new Date();
   const monthStart = startOfMonth(anchor);
@@ -69,20 +81,12 @@ export default async function CombustivelPage({
 
   const sortField: SortField = SORT_FIELDS.includes(sort as SortField) ? (sort as SortField) : "dataHora";
   const sortDir = dir === "asc" ? "asc" : "desc";
-  const orderBy: Prisma.FuelTransactionOrderByWithRelationInput =
-    sortField === "placa"
-      ? { vehicle: { plate: sortDir } }
-      : sortField === "motorista"
-        ? { driver: { name: sortDir } }
-        : sortField === "valor"
-          ? { valorCents: sortDir }
-          : { dataHora: sortDir };
 
   const [txs, vehicles, drivers, refPrices] = await Promise.all([
     prisma.fuelTransaction.findMany({
       where: { companyId: session.companyId, dataHora: { gte: monthStart, lt: monthEnd } },
       include: { vehicle: true, driver: true },
-      orderBy,
+      orderBy: { dataHora: "desc" },
     }),
     prisma.vehicle.findMany({ where: { companyId: session.companyId } }),
     prisma.driver.findMany({ where: { companyId: session.companyId } }),
@@ -153,23 +157,75 @@ export default async function CombustivelPage({
 
   const placaFiltro = placa?.trim().toUpperCase();
   const motoristaFiltro = motorista?.trim().toLowerCase();
+  const modeloFiltro = modelo?.trim().toLowerCase();
+  const postoFiltro = posto?.trim().toLowerCase();
   const filteredTxs = txs.filter((t) => {
     if (placaFiltro && !(t.vehicle?.plate ?? t.placaOriginal).toUpperCase().includes(placaFiltro)) return false;
     if (motoristaFiltro && !(t.driver?.name ?? t.motoristaOriginal ?? "").toLowerCase().includes(motoristaFiltro))
       return false;
+    if (modeloFiltro && !(t.vehicle?.model ?? t.modeloOriginal ?? "").toLowerCase().includes(modeloFiltro))
+      return false;
     if (combustivel && t.combustivel !== combustivel) return false;
+    if (postoFiltro && !(t.posto ?? "").toLowerCase().includes(postoFiltro)) return false;
     if (!matchesSituacao(t)) return false;
     return true;
   });
 
-  const sortLinkParams = { mes: format(monthStart, "yyyy-MM"), placa, motorista, combustivel, situacao };
+  // Ordenacao em memoria (nao via Prisma orderBy) pra sempre refletir o
+  // mesmo valor exibido na celula — sortear por "vehicle.plate" via Prisma
+  // nao funcionaria bem aqui, ja que a maioria das transacoes reais ainda
+  // nao tem vehicleId vinculado (fica null pra todo mundo, sort vira
+  // no-op); placaOriginal/motoristaOriginal/modeloOriginal sao preenchidos
+  // sempre, vinculado ou nao.
+  const sortValue = (t: (typeof txs)[number]): string | number => {
+    switch (sortField) {
+      case "placa":
+        return t.vehicle?.plate ?? t.placaOriginal;
+      case "motorista":
+        return t.driver?.name ?? t.motoristaOriginal ?? "";
+      case "modelo":
+        return t.vehicle?.model ?? t.modeloOriginal ?? "";
+      case "valor":
+        return t.valorCents;
+      case "litros":
+        return t.volumeLitros;
+      case "combustivel":
+        return t.combustivel ?? "";
+      case "hodometro":
+        return t.hodometro ?? -Infinity;
+      case "kmPorLitro":
+        return t.kmRodados && t.volumeLitros > 0 ? t.kmRodados / t.volumeLitros : -Infinity;
+      case "posto":
+        return t.posto ?? "";
+      default:
+        return t.dataHora.getTime();
+    }
+  };
+  filteredTxs.sort((a, b) => {
+    const av = sortValue(a);
+    const bv = sortValue(b);
+    const cmp = typeof av === "string" ? av.localeCompare(bv as string) : (av as number) - (bv as number);
+    return sortDir === "desc" ? -cmp : cmp;
+  });
+
+  const sortLinkParams = {
+    mes: format(monthStart, "yyyy-MM"),
+    placa,
+    motorista,
+    modelo,
+    combustivel,
+    posto,
+    situacao,
+  };
 
   const monthLinkHref = (mesAlvo: string) => {
     const params = new URLSearchParams();
     params.set("mes", mesAlvo);
     if (placa) params.set("placa", placa);
     if (motorista) params.set("motorista", motorista);
+    if (modelo) params.set("modelo", modelo);
     if (combustivel) params.set("combustivel", combustivel);
+    if (posto) params.set("posto", posto);
     if (situacao) params.set("situacao", situacao);
     if (sort) params.set("sort", sort);
     if (dir) params.set("dir", dir);
@@ -329,6 +385,16 @@ export default async function CombustivelPage({
           />
         </div>
         <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">Modelo</label>
+          <input
+            type="text"
+            name="modelo"
+            defaultValue={modelo ?? ""}
+            placeholder="ex.: MASTER"
+            className={`${inputClass} w-36`}
+          />
+        </div>
+        <div>
           <label className="mb-1 block text-xs font-medium text-slate-600">Combustível</label>
           <select name="combustivel" defaultValue={combustivel ?? ""} className={inputClass}>
             <option value="">Todos</option>
@@ -338,6 +404,16 @@ export default async function CombustivelPage({
               </option>
             ))}
           </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">Posto</label>
+          <input
+            type="text"
+            name="posto"
+            defaultValue={posto ?? ""}
+            placeholder="nome do posto"
+            className={`${inputClass} w-40`}
+          />
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-slate-600">Situação</label>
@@ -352,7 +428,7 @@ export default async function CombustivelPage({
         <button type="submit" className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
           Filtrar
         </button>
-        {(placa || motorista || combustivel || situacao) && (
+        {(placa || motorista || modelo || combustivel || posto || situacao) && (
           <Link
             href={`/combustivel?mes=${format(monthStart, "yyyy-MM")}`}
             className="text-sm text-slate-500 hover:underline"
@@ -370,19 +446,20 @@ export default async function CombustivelPage({
                 <SortableTh label="Data/Hora" field="dataHora" basePath="/combustivel" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <SortableTh label="Placa" field="placa" basePath="/combustivel" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <SortableTh label="Motorista" field="motorista" basePath="/combustivel" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="Modelo" field="modelo" basePath="/combustivel" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <SortableTh label="Valor" field="valor" basePath="/combustivel" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
-                <th className="px-4 py-3">Litros</th>
-                <th className="px-4 py-3">Combustível</th>
-                <th className="px-4 py-3">Hodômetro</th>
-                <th className="px-4 py-3">Km/L</th>
-                <th className="px-4 py-3">Posto</th>
+                <SortableTh label="Litros" field="litros" basePath="/combustivel" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="Combustível" field="combustivel" basePath="/combustivel" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="Hodômetro" field="hodometro" basePath="/combustivel" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="Km/L" field="kmPorLitro" basePath="/combustivel" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="Posto" field="posto" basePath="/combustivel" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <th className="px-4 py-3">Situação</th>
               </tr>
             </thead>
             <tbody>
               {filteredTxs.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={11} className="px-4 py-8 text-center text-slate-500">
                     Nenhuma transação de combustível encontrada.
                   </td>
                 </tr>
@@ -394,6 +471,7 @@ export default async function CombustivelPage({
                     {t.vehicle?.plate ?? t.placaOriginal}
                   </td>
                   <td className="px-4 py-3 text-slate-600">{t.driver?.name ?? t.motoristaOriginal ?? "—"}</td>
+                  <td className="px-4 py-3 text-slate-600">{t.vehicle?.model ?? t.modeloOriginal ?? "—"}</td>
                   <td className="px-4 py-3 font-medium text-slate-800">{formatBRL(t.valorCents)}</td>
                   <td className="px-4 py-3 text-slate-600">{t.volumeLitros.toLocaleString("pt-BR")} L</td>
                   <td className="px-4 py-3 text-slate-600">{t.combustivel ?? "—"}</td>
