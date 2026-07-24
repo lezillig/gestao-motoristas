@@ -373,6 +373,8 @@ export default async function CombustivelPage({
                 <SortableTh label="Valor" field="valor" basePath="/combustivel" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <th className="px-4 py-3">Litros</th>
                 <th className="px-4 py-3">Combustível</th>
+                <th className="px-4 py-3">Hodômetro</th>
+                <th className="px-4 py-3">Km/L</th>
                 <th className="px-4 py-3">Posto</th>
                 <th className="px-4 py-3">Situação</th>
               </tr>
@@ -380,7 +382,7 @@ export default async function CombustivelPage({
             <tbody>
               {filteredTxs.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={10} className="px-4 py-8 text-center text-slate-500">
                     Nenhuma transação de combustível encontrada.
                   </td>
                 </tr>
@@ -395,6 +397,14 @@ export default async function CombustivelPage({
                   <td className="px-4 py-3 font-medium text-slate-800">{formatBRL(t.valorCents)}</td>
                   <td className="px-4 py-3 text-slate-600">{t.volumeLitros.toLocaleString("pt-BR")} L</td>
                   <td className="px-4 py-3 text-slate-600">{t.combustivel ?? "—"}</td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {t.hodometro !== null ? t.hodometro.toLocaleString("pt-BR") : "—"}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {t.kmRodados && t.volumeLitros > 0
+                      ? (t.kmRodados / t.volumeLitros).toLocaleString("pt-BR", { maximumFractionDigits: 2 })
+                      : "—"}
+                  </td>
                   <td className="px-4 py-3 text-slate-600">{t.posto ?? "—"}</td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap items-center gap-1.5">
