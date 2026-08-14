@@ -6,6 +6,14 @@ export type TiqueTaqueEmployee = {
   dismissed: boolean;
   mobilePhone: string | null;
   hourRateCents: number | null;
+  // Departamento (contract_data.department), texto livre do TiqueTaque, so
+  // aparado. paymentSourceId referencia GET /payment-sources (razao social
+  // do empregador legal — a empresa tem mais de um CNPJ/empregador reais,
+  // ex. "Azul Transportes e Turismo LTDA", "MCZ Transportes..."), resolvido
+  // pra nome em fetchPaymentSources(). Nao existe campo "Unidade"/cliente na
+  // API publica — ver comentario no schema, model Driver.
+  department: string | null;
+  paymentSourceId: string | null;
 };
 
 export type TiqueTaquePunchPair = { entrada: string; saida: string | null };

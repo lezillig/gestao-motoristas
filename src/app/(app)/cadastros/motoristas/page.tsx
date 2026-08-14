@@ -10,16 +10,24 @@ import { cnhAlertLevel, daysUntil } from "@/lib/driverAlerts";
 import { toggleDriverActive } from "./actions";
 import type { Prisma } from "@prisma/client";
 
-const SORT_FIELDS = ["name", "cpf", "sindicato", "cnhExpiration"] as const;
+const SORT_FIELDS = ["name", "cpf", "sindicato", "cnhExpiration", "empregador", "departamento"] as const;
 type SortField = (typeof SORT_FIELDS)[number];
 
 export default async function MotoristasPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; sindicatoId?: string; status?: string; sort?: string; dir?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    sindicatoId?: string;
+    status?: string;
+    empregador?: string;
+    departamento?: string;
+    sort?: string;
+    dir?: string;
+  }>;
 }) {
   const session = await requireSession();
-  const { q, sindicatoId, status, sort, dir } = await searchParams;
+  const { q, sindicatoId, status, empregador, departamento, sort, dir } = await searchParams;
 
   const where: Prisma.DriverWhereInput = { companyId: session.companyId };
   if (q) {
@@ -31,6 +39,8 @@ export default async function MotoristasPage({
   if (sindicatoId) where.sindicatoId = sindicatoId;
   if (status === "ativo") where.active = true;
   if (status === "inativo") where.active = false;
+  if (empregador) where.empregador = empregador;
+  if (departamento) where.departamento = departamento;
 
   const sortField: SortField = SORT_FIELDS.includes(sort as SortField) ? (sort as SortField) : "name";
   const sortDir = dir === "desc" ? "desc" : "asc";
@@ -41,11 +51,15 @@ export default async function MotoristasPage({
         ? { cnhExpiration: { sort: sortDir, nulls: "last" } }
         : sortField === "cpf"
           ? { cpf: sortDir }
-          : { name: sortDir };
+          : sortField === "empregador"
+            ? { empregador: { sort: sortDir, nulls: "last" } }
+            : sortField === "departamento"
+              ? { departamento: { sort: sortDir, nulls: "last" } }
+              : { name: sortDir };
 
-  const sortLinkParams = { q, sindicatoId, status };
+  const sortLinkParams = { q, sindicatoId, status, empregador, departamento };
 
-  const [drivers, sindicatos] = await Promise.all([
+  const [drivers, sindicatos, empregadorRows, departamentoRows] = await Promise.all([
     prisma.driver.findMany({
       where,
       include: { sindicato: true },
@@ -55,7 +69,21 @@ export default async function MotoristasPage({
       where: { companyId: session.companyId, active: true },
       orderBy: { nome: "asc" },
     }),
+    prisma.driver.findMany({
+      where: { companyId: session.companyId, empregador: { not: null } },
+      select: { empregador: true },
+      distinct: ["empregador"],
+      orderBy: { empregador: "asc" },
+    }),
+    prisma.driver.findMany({
+      where: { companyId: session.companyId, departamento: { not: null } },
+      select: { departamento: true },
+      distinct: ["departamento"],
+      orderBy: { departamento: "asc" },
+    }),
   ]);
+  const empregadores = empregadorRows.map((r) => r.empregador!).sort((a, b) => a.localeCompare(b));
+  const departamentos = departamentoRows.map((r) => r.departamento!).sort((a, b) => a.localeCompare(b));
 
   return (
     <div className="max-w-6xl">
@@ -101,6 +129,28 @@ export default async function MotoristasPage({
             <option value="inativo">Inativo</option>
           </select>
         </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">Empregador</label>
+          <select name="empregador" defaultValue={empregador ?? ""} className={inputClass}>
+            <option value="">Todos</option>
+            {empregadores.map((e) => (
+              <option key={e} value={e}>
+                {e}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">Departamento</label>
+          <select name="departamento" defaultValue={departamento ?? ""} className={inputClass}>
+            <option value="">Todos</option>
+            {departamentos.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+        </div>
         <button type="submit" className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
           Filtrar
         </button>
@@ -114,6 +164,8 @@ export default async function MotoristasPage({
                 <SortableTh label="Nome" field="name" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <SortableTh label="CPF" field="cpf" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <SortableTh label="Sindicato" field="sindicato" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="Empregador" field="empregador" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="Departamento" field="departamento" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <SortableTh label="CNH" field="cnhExpiration" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3" />
@@ -122,7 +174,7 @@ export default async function MotoristasPage({
             <tbody>
               {drivers.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
                     Nenhum motorista encontrado.
                   </td>
                 </tr>
@@ -135,6 +187,8 @@ export default async function MotoristasPage({
                     <td className="px-4 py-3 font-medium text-slate-800">{d.name}</td>
                     <td className="px-4 py-3 text-slate-600">{d.cpf}</td>
                     <td className="px-4 py-3 text-slate-600">{d.sindicato?.nome ?? "—"}</td>
+                    <td className="px-4 py-3 text-slate-600">{d.empregador ?? "—"}</td>
+                    <td className="px-4 py-3 text-slate-600">{d.departamento ?? "—"}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         {level === "pendente" ? (

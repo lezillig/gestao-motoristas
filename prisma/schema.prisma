@@ -139,6 +139,16 @@ model Driver {
   cnhExpiration DateTime?
   phone         String?
   photoUrl      String?
+  // Empregador (razao social, resolvida de contract_data.payment_source via
+  // GET /payment-sources) e departamento (contract_data.department, texto
+  // livre do TiqueTaque, so aparado — nao normalizado alem disso) — os
+  // unicos dois campos organizacionais que a API do TiqueTaque realmente
+  // expoe por funcionario. O filtro "Unidade" visto no painel web do
+  // TiqueTaque (ex.: AACD, Banco de Alimentos) NAO existe na API publica
+  // v2.1 — investigado e confirmado ausente em /employees e em varios
+  // endpoints candidatos (todos 404), ver src/lib/tiquetaque/client.ts.
+  empregador    String?
+  departamento  String?
   regimeHoras   RegimeHoras?
   escalaSemanal EscalaSemanal?
   // Valor-hora em centavos (evita float) — usado so para o card de custo

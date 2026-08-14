@@ -13,12 +13,19 @@ export type DayCellView = {
 } | null;
 export type WeekStripView = { label: string; subtotal: string; days: DayCellView[] };
 
+const TIER_TEXT_CLASS: Record<"alto" | "medio" | "normal", string> = {
+  alto: "text-red-600",
+  medio: "text-amber-600",
+  normal: "text-slate-800",
+};
+
 export default function DriverMonthRow({
   driverName,
   totalLabel,
   weekTotals,
   gridTemplateColumns,
   weeks,
+  tier,
 }: {
   driverName: string;
   totalLabel: string;
@@ -28,8 +35,12 @@ export default function DriverMonthRow({
   weekTotals: string[];
   gridTemplateColumns: string;
   weeks: WeekStripView[];
+  // Faixa de risco por hora extra no mes (ranking fixo, calculado na
+  // pagina): 20% com mais hora extra = alto, proximos 40% = medio.
+  tier: "alto" | "medio" | "normal";
 }) {
   const [open, setOpen] = useState(false);
+  const tierClass = TIER_TEXT_CLASS[tier];
 
   return (
     <div className="border-b border-slate-100 last:border-0">
@@ -41,13 +52,13 @@ export default function DriverMonthRow({
           open ? "bg-blue-50/50" : ""
         }`}
       >
-        <span className="text-sm font-medium text-slate-800">{driverName}</span>
+        <span className={`text-sm font-medium ${tierClass}`}>{driverName}</span>
         {weekTotals.map((t, i) => (
           <span key={i} className="text-right text-sm text-slate-600">
             {t}
           </span>
         ))}
-        <span className="text-right text-sm font-semibold text-slate-900">{totalLabel}</span>
+        <span className={`text-right text-sm font-semibold ${tierClass}`}>{totalLabel}</span>
         <span className="flex justify-end text-slate-400">
           {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </span>

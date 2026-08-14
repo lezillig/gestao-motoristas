@@ -3,11 +3,18 @@
 import { useState } from "react";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { primaryButtonClass } from "@/lib/ui";
-import { importDriversFromTiqueTaque, type TiqueTaqueDriverImportState } from "./actions";
+import {
+  importDriversFromTiqueTaque,
+  syncDriversFromTiqueTaque,
+  type TiqueTaqueDriverImportState,
+  type TiqueTaqueSyncState,
+} from "./actions";
 
 export default function TiqueTaqueDriverImportButton() {
   const [running, setRunning] = useState(false);
   const [state, setState] = useState<TiqueTaqueDriverImportState | null>(null);
+  const [syncRunning, setSyncRunning] = useState(false);
+  const [syncState, setSyncState] = useState<TiqueTaqueSyncState | null>(null);
 
   async function handleClick() {
     setRunning(true);
@@ -15,6 +22,14 @@ export default function TiqueTaqueDriverImportButton() {
     const result = await importDriversFromTiqueTaque();
     setState(result);
     setRunning(false);
+  }
+
+  async function handleSyncClick() {
+    setSyncRunning(true);
+    setSyncState(null);
+    const result = await syncDriversFromTiqueTaque();
+    setSyncState(result);
+    setSyncRunning(false);
   }
 
   return (
@@ -56,6 +71,39 @@ export default function TiqueTaqueDriverImportButton() {
           )}
         </div>
       )}
+
+      <div className="border-t border-slate-200 pt-4">
+        <button
+          type="button"
+          onClick={handleSyncClick}
+          disabled={syncRunning}
+          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+        >
+          {syncRunning ? "Atualizando..." : "Atualizar empregador, departamento e status dos já cadastrados"}
+        </button>
+        <p className="mt-2 text-xs text-slate-400">
+          Casa por CPF com os motoristas já cadastrados e atualiza empregador, departamento e ativo/inativo
+          conforme o TiqueTaque — não cria nem apaga nenhum motorista, e quem não tem CPF correspondente no
+          TiqueTaque fica intocado.
+        </p>
+
+        {syncState?.error && (
+          <div className="mt-3 flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-700">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{syncState.error}</span>
+          </div>
+        )}
+
+        {syncState?.result && (
+          <div className="mt-3 flex items-start gap-2 rounded-lg bg-emerald-50 px-3 py-2.5 text-sm text-emerald-700">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              {syncState.result.updated} atualizado(s), {syncState.result.unchanged} já em dia,{" "}
+              {syncState.result.notFound} sem correspondência no TiqueTaque.
+            </span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

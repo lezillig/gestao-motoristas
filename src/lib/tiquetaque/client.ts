@@ -45,6 +45,8 @@ type EmployeesPage = {
       job_role?: string | null;
       dismissal_date?: string | null;
       hour_rate_cents?: number | null;
+      department?: string | null;
+      payment_source?: string | null;
     };
   }[];
 };
@@ -68,6 +70,8 @@ export async function fetchAllEmployees(): Promise<TiqueTaqueEmployee[]> {
           ? `${item.phone_country_code ?? ""}${item.mobile_phone}`
           : null,
         hourRateCents: item.contract_data?.hour_rate_cents ?? null,
+        department: item.contract_data?.department?.trim() || null,
+        paymentSourceId: item.contract_data?.payment_source ?? null,
       });
     }
     const total = data._meta?.total ?? employees.length;
@@ -75,6 +79,31 @@ export async function fetchAllEmployees(): Promise<TiqueTaqueEmployee[]> {
     page++;
   }
   return employees;
+}
+
+type PaymentSourcesPage = {
+  _meta?: { total?: number };
+  _items?: { _id: string; name: string }[];
+};
+
+// Resolve o id de contract_data.payment_source pro nome da razao social
+// (a empresa tem mais de um CNPJ real cadastrado como empregador distinto no
+// TiqueTaque — confirmado com o usuario via o campo "Empregador" no painel
+// deles, que mostra nomes diferentes como "Azul Transportes e Turismo LTDA"
+// e "MCZ Transportes e Turismo...").
+export async function fetchPaymentSources(): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  const maxResults = 200;
+  let page = 1;
+  for (;;) {
+    const data = (await tiqueTaqueFetch(`/payment-sources?max_results=${maxResults}&page=${page}`)) as PaymentSourcesPage;
+    const items = data._items ?? [];
+    for (const item of items) map.set(item._id, item.name);
+    const total = data._meta?.total ?? map.size;
+    if (map.size >= total || items.length < maxResults) break;
+    page++;
+  }
+  return map;
 }
 
 type TimesResponse = { times?: { time: string; approved: boolean }[] };

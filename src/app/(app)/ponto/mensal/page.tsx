@@ -33,10 +33,16 @@ export default async function PontoMensalPage({
 
   const report = await buildMonthlyReport(session.companyId, monthStart);
 
-  const rows = report.map((r) => ({
+  // So entram motoristas com pelo menos 1 minuto de hora extra no mes —
+  // pedido explicito do usuario, quem nao fez hora extra nao precisa
+  // aparecer neste relatorio.
+  const rows = report
+    .filter((r) => r.totalOvertimeMinutes > 0)
+    .map((r) => ({
     driverId: r.driverId,
     driverName: r.driverName,
     totalMinutes: r.totalMinutes,
+    totalOvertimeMinutes: r.totalOvertimeMinutes,
     totalLabel: formatHoursMinutes(r.totalMinutes),
     weekMinutes: r.weeks.map((w) => w.subtotalMinutes),
     weekTotals: r.weeks.map((w) => formatHoursMinutes(w.subtotalMinutes)),
@@ -86,6 +92,17 @@ export default async function PontoMensalPage({
           return sortDir === "desc" ? -cmp : cmp;
         })
       : rows; // padrao: ja vem alfabetico do orderBy do Prisma
+
+  // Faixa de risco por hora extra no mes — fixa (nao muda com a ordenacao
+  // da tabela), calculada sobre o ranking geral de horas extras: os 20%
+  // com mais hora extra ficam vermelhos, os proximos 40% ficam amarelos, o
+  // resto sem destaque.
+  const byOvertimeDesc = [...rows].sort((a, b) => b.totalOvertimeMinutes - a.totalOvertimeMinutes);
+  const redCount = Math.ceil(byOvertimeDesc.length * 0.2);
+  const amberCount = Math.ceil(byOvertimeDesc.length * 0.4);
+  const tierByDriverId = new Map<string, "alto" | "medio" | "normal">(
+    byOvertimeDesc.map((r, i) => [r.driverId, i < redCount ? "alto" : i < redCount + amberCount ? "medio" : "normal"])
+  );
 
   const sortLinkParams = { mes: mesAtual };
   const gridTemplateColumns = `1fr ${"92px ".repeat(weekCount)}110px 28px`;
@@ -148,7 +165,9 @@ export default async function PontoMensalPage({
             <div />
           </div>
           {sortedRows.length === 0 && (
-            <p className="px-4 py-8 text-center text-sm text-slate-500">Nenhum motorista ativo cadastrado.</p>
+            <p className="px-4 py-8 text-center text-sm text-slate-500">
+              Nenhum motorista com hora extra neste mês.
+            </p>
           )}
           {sortedRows.map((r) => (
             <DriverMonthRow
@@ -158,12 +177,15 @@ export default async function PontoMensalPage({
               weekTotals={r.weekTotals}
               gridTemplateColumns={gridTemplateColumns}
               weeks={r.weeks}
+              tier={tierByDriverId.get(r.driverId) ?? "normal"}
             />
           ))}
         </div>
       </div>
       <p className="mt-3 text-xs text-slate-500">
-        Clique num motorista pra ver o detalhamento diário. Âmbar = hora extra. Borda vermelha = descanso
+        Só aparecem motoristas com hora extra no mês. Nome em <span className="text-red-600">vermelho</span> = 20%
+        com mais hora extra no mês; em <span className="text-amber-600">âmbar</span> = próximos 40%. Clique num
+        motorista pra ver o detalhamento diário — âmbar no dia = turno com hora extra, borda vermelha = descanso
         insuficiente entre turnos ou intervalo intrajornada não registrado (ver{" "}
         <Link href="/ponto/analise" className="text-blue-600 hover:underline">
           Análise de riscos

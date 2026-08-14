@@ -7,7 +7,7 @@ import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { parseLocalDate } from "@/lib/date";
 import { readWorkbookRows, normalizeText, cellToLocalDateString } from "@/lib/spreadsheet";
-import { fetchAllEmployees } from "@/lib/tiquetaque/client";
+import { fetchAllEmployees, fetchPaymentSources } from "@/lib/tiquetaque/client";
 
 const schema = z.object({
   name: z.string().min(2, "Informe o nome do motorista"),
@@ -245,8 +245,9 @@ export async function importDriversFromTiqueTaque(): Promise<TiqueTaqueDriverImp
   const session = await requireRole("ADMIN", "GESTOR");
 
   let employees;
+  let paymentSources;
   try {
-    employees = await fetchAllEmployees();
+    [employees, paymentSources] = await Promise.all([fetchAllEmployees(), fetchPaymentSources()]);
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Falha ao buscar funcionários do TiqueTaque." };
   }
@@ -264,6 +265,8 @@ export async function importDriversFromTiqueTaque(): Promise<TiqueTaqueDriverImp
     cpf: string;
     phone: string | null;
     valorHoraCents: number | null;
+    empregador: string | null;
+    departamento: string | null;
   }[] = [];
 
   for (const emp of activeEmployees) {
@@ -283,6 +286,8 @@ export async function importDriversFromTiqueTaque(): Promise<TiqueTaqueDriverImp
       cpf,
       phone: emp.mobilePhone,
       valorHoraCents: emp.hourRateCents,
+      empregador: emp.paymentSourceId ? paymentSources.get(emp.paymentSourceId) ?? null : null,
+      departamento: emp.department,
     });
   }
 
@@ -293,4 +298,62 @@ export async function importDriversFromTiqueTaque(): Promise<TiqueTaqueDriverImp
   revalidatePath("/cadastros/motoristas");
   revalidatePath("/dashboard");
   return { result: { created: toCreate.length, errors } };
+}
+
+export type TiqueTaqueSyncResult = { updated: number; unchanged: number; notFound: number };
+export type TiqueTaqueSyncState = { error?: string; result?: TiqueTaqueSyncResult };
+
+// Ao contrario da importacao acima (que so cria motoristas novos, nunca
+// sobrescreve um existente), esta acao atualiza deliberadamente
+// empregador/departamento/status dos motoristas JA cadastrados, casando por
+// CPF — pedido explicito do usuario pra manter esses 3 campos em dia com
+// desligamentos e mudancas de empregador/departamento no TiqueTaque, sem
+// precisar reimportar. Motoristas sem correspondencia por CPF (cadastrados
+// manualmente, ou CPF desatualizado) ficam intocados e contam em `notFound`.
+export async function syncDriversFromTiqueTaque(): Promise<TiqueTaqueSyncState> {
+  const session = await requireRole("ADMIN", "GESTOR");
+
+  let employees;
+  let paymentSources;
+  try {
+    [employees, paymentSources] = await Promise.all([fetchAllEmployees(), fetchPaymentSources()]);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Falha ao buscar funcionários do TiqueTaque." };
+  }
+
+  const employeeByCpf = new Map(employees.map((e) => [e.cpf.replace(/\D/g, ""), e]));
+
+  const drivers = await prisma.driver.findMany({
+    where: { companyId: session.companyId },
+    select: { id: true, cpf: true, active: true, empregador: true, departamento: true },
+  });
+
+  let updated = 0;
+  let unchanged = 0;
+  let notFound = 0;
+  const writes: Promise<unknown>[] = [];
+
+  for (const driver of drivers) {
+    const emp = employeeByCpf.get(driver.cpf.replace(/\D/g, ""));
+    if (!emp) {
+      notFound++;
+      continue;
+    }
+    const empregador = emp.paymentSourceId ? paymentSources.get(emp.paymentSourceId) ?? null : null;
+    const departamento = emp.department;
+    const active = !emp.dismissed;
+
+    if (driver.empregador === empregador && driver.departamento === departamento && driver.active === active) {
+      unchanged++;
+      continue;
+    }
+    updated++;
+    writes.push(prisma.driver.update({ where: { id: driver.id }, data: { empregador, departamento, active } }));
+  }
+
+  await Promise.all(writes);
+
+  revalidatePath("/cadastros/motoristas");
+  revalidatePath("/dashboard");
+  return { result: { updated, unchanged, notFound } };
 }

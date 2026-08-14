@@ -1,4 +1,4 @@
-import { addDays, addMonths, format, isSameMonth, startOfMonth, startOfWeek } from "date-fns";
+import { addDays, addMonths, format, startOfMonth } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import {
   workedMinutes,
@@ -36,32 +36,40 @@ export type MonthlyDayCell = {
 };
 
 export type MonthlyWeekStrip = {
-  label: string; // "01/08–02/08 (semana parcial)" ou "03/08–09/08"
-  partial: boolean;
+  label: string; // "01/08–07/08" ou "29/08–31/08" (ultima, com menos de 7 dias)
+  partial: boolean; // true so na ultima semana quando o mes nao fecha em multiplo de 7
   subtotalMinutes: number;
-  // 7 posicoes (segunda a domingo) — null = dia fora do mes, celula em branco.
-  days: (MonthlyDayCell | null)[];
+  // Sempre dias reais do mes (nunca null) — ver comentario em buildWeekGrid.
+  days: MonthlyDayCell[];
 };
 
 export type DriverMonthlyReport = {
   driverId: string;
   driverName: string;
   totalMinutes: number;
+  totalOvertimeMinutes: number;
   weeks: MonthlyWeekStrip[];
 };
 
-// Grade de semanas segunda-domingo cobrindo o mes inteiro (do dia 1 ao ultimo
-// dia) — a primeira e a ultima semana ficam "parciais" quando o mes nao
-// comeca numa segunda ou nao termina num domingo; os dias de fora do mes
-// nessas semanas ficam como celula null (em branco), nunca com dado de outro
-// mes.
+// Blocos fixos de 7 dias a partir do dia 1 do mes (dia 1-7, 8-14, 15-21,
+// 22-28, 29-ate o fim) — deliberadamente NAO alinhado ao calendario
+// segunda-domingo. Um mes de 31 dias comecando proximo do fim de uma semana
+// (ex.: agosto/2026, que comeca num sabado) geraria uma 6a linha se a grade
+// fosse alinhada ao calendario (confirmado com o usuario, que preferiu no
+// maximo 5 blocos a manter o alinhamento por dia da semana). Cada dia dentro
+// do bloco continua mostrando seu proprio dia da semana real (EEE) na celula
+// — so a POSICAO da coluna deixa de corresponder sempre ao mesmo dia da
+// semana entre um bloco e outro.
 function buildWeekGrid(monthStart: Date, monthEndExclusive: Date) {
-  const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
   const weeks: Date[][] = [];
-  let cursor = gridStart;
+  let cursor = monthStart;
   while (cursor < monthEndExclusive) {
-    weeks.push(Array.from({ length: 7 }, (_, i) => addDays(cursor, i)));
-    cursor = addDays(cursor, 7);
+    const days: Date[] = [];
+    for (let i = 0; i < 7 && cursor < monthEndExclusive; i++) {
+      days.push(cursor);
+      cursor = addDays(cursor, 1);
+    }
+    weeks.push(days);
   }
   return weeks;
 }
@@ -69,32 +77,30 @@ function buildWeekGrid(monthStart: Date, monthEndExclusive: Date) {
 function buildDriverReport(
   driver: DriverWithConvencoes,
   weekGrid: Date[][],
-  monthStart: Date,
   entriesByDay: Map<string, TimeClockEntry[]>,
   violatedEntryIds: Set<string>,
   missingIntervalEntryIds: Set<string>
 ): DriverMonthlyReport {
   const limit = driverDailyLimitMinutes(driver);
   let totalMinutes = 0;
+  let totalOvertimeMinutes = 0;
 
   const weeks: MonthlyWeekStrip[] = weekGrid.map((weekDays) => {
     let subtotal = 0;
-    const inMonthDates = weekDays.filter((d) => isSameMonth(d, monthStart));
-    const partial = inMonthDates.length < 7;
-    const label = partial
-      ? `${format(inMonthDates[0], "dd/MM")}${
-          inMonthDates.length > 1 ? `–${format(inMonthDates[inMonthDates.length - 1], "dd/MM")}` : ""
-        } (semana parcial)`
-      : `${format(weekDays[0], "dd/MM")}–${format(weekDays[6], "dd/MM")}`;
+    const partial = weekDays.length < 7;
+    const label =
+      weekDays.length > 1
+        ? `${format(weekDays[0], "dd/MM")}–${format(weekDays[weekDays.length - 1], "dd/MM")}`
+        : format(weekDays[0], "dd/MM");
 
-    const days = weekDays.map((date): MonthlyDayCell | null => {
-      if (!isSameMonth(date, monthStart)) return null;
+    const days = weekDays.map((date): MonthlyDayCell => {
       const dayKey = format(date, "yyyy-MM-dd");
       const dayEntries = entriesByDay.get(`${driver.id}_${dayKey}`) ?? [];
       const workedList = dayEntries.map((e) => workedMinutes(e));
       const minutes = workedList.reduce((sum: number, m) => sum + (m ?? 0), 0);
       subtotal += minutes;
       const extra = overtimeMinutes(minutes, limit?.minutes);
+      totalOvertimeMinutes += extra;
       return {
         date,
         dayKey,
@@ -113,7 +119,7 @@ function buildDriverReport(
     return { label, partial, subtotalMinutes: subtotal, days };
   });
 
-  return { driverId: driver.id, driverName: driver.name, totalMinutes, weeks };
+  return { driverId: driver.id, driverName: driver.name, totalMinutes, totalOvertimeMinutes, weeks };
 }
 
 export async function buildMonthlyReport(
@@ -158,6 +164,6 @@ export async function buildMonthlyReport(
   const weekGrid = buildWeekGrid(monthStart, monthEnd);
 
   return drivers.map((driver) =>
-    buildDriverReport(driver, weekGrid, monthStart, entriesByDay, violatedEntryIds, missingIntervalEntryIds)
+    buildDriverReport(driver, weekGrid, entriesByDay, violatedEntryIds, missingIntervalEntryIds)
   );
 }
