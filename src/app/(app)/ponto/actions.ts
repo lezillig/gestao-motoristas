@@ -11,6 +11,23 @@ import { fetchAllEmployees, fetchEmployeeDays } from "@/lib/tiquetaque/client";
 
 export type PontoFormState = { error?: string };
 
+// Chave canonica pra comparar `punches` — nao dá pra usar JSON.stringify
+// direto: o Postgres (jsonb) reordena as chaves de cada objeto ao salvar,
+// entao um valor recem-lido do banco quase nunca bate byte-a-byte com o
+// mesmo valor recem-computado, mesmo quando o conteudo e identico (bug real
+// encontrado ao reimportar o mesmo periodo duas vezes e ver correcoes
+// fantasma serem criadas).
+function punchesKey(value: unknown): string {
+  if (!Array.isArray(value)) return "";
+  return value
+    .map((p) => {
+      if (typeof p !== "object" || p === null) return "";
+      const { entrada, saida } = p as { entrada?: unknown; saida?: unknown };
+      return `${entrada ?? ""}|${saida ?? ""}`;
+    })
+    .join(",");
+}
+
 const schema = z.object({
   driverId: z.string().min(1, "Selecione o motorista"),
   date: z
@@ -250,6 +267,7 @@ export async function importDriverFromTiqueTaque(
           clockOut: day.clockOut,
           intervaloInicio: day.intervaloInicio,
           intervaloFim: day.intervaloFim,
+          punches: day.pairs,
           fonte: "TIQUETAQUE",
         },
       });
@@ -262,15 +280,19 @@ export async function importDriverFromTiqueTaque(
       continue;
     }
 
-    // Registro ja veio do TiqueTaque antes: se os horarios vieram diferentes
-    // desta vez, e porque a correcao foi feita direto no TiqueTaque — atualiza
-    // e guarda o antes/depois em TimeClockCorrection (nunca sobrescreve sem
-    // deixar rastro), em vez de reportar como conflito.
+    // Registro ja veio do TiqueTaque antes: se os horarios ou os pares
+    // entrada/saida vieram diferentes desta vez, e porque a correcao foi
+    // feita direto no TiqueTaque — atualiza e guarda o antes/depois em
+    // TimeClockCorrection (nunca sobrescreve sem deixar rastro), em vez de
+    // reportar como conflito. Compara `punches` tambem (nao so os 4 campos
+    // planos) porque uma correcao dentro de uma pausa do meio do dia pode
+    // nao mudar o primeiro horario nem o ultimo.
     const changed =
       existing.clockIn !== day.clockIn ||
       existing.clockOut !== day.clockOut ||
       existing.intervaloInicio !== day.intervaloInicio ||
-      existing.intervaloFim !== day.intervaloFim;
+      existing.intervaloFim !== day.intervaloFim ||
+      punchesKey(existing.punches) !== punchesKey(day.pairs);
     if (!changed) continue;
 
     await prisma.$transaction([
@@ -281,6 +303,7 @@ export async function importDriverFromTiqueTaque(
           clockOut: day.clockOut,
           intervaloInicio: day.intervaloInicio,
           intervaloFim: day.intervaloFim,
+          punches: day.pairs,
         },
       }),
       prisma.timeClockCorrection.create({
@@ -293,10 +316,12 @@ export async function importDriverFromTiqueTaque(
           clockOutAntes: existing.clockOut,
           intervaloInicioAntes: existing.intervaloInicio,
           intervaloFimAntes: existing.intervaloFim,
+          punchesAntes: existing.punches ?? undefined,
           clockInDepois: day.clockIn,
           clockOutDepois: day.clockOut,
           intervaloInicioDepois: day.intervaloInicio,
           intervaloFimDepois: day.intervaloFim,
+          punchesDepois: day.pairs,
         },
       }),
     ]);

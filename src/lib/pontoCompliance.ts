@@ -15,6 +15,8 @@ export const INTRAJORNADA_THRESHOLD_MINUTES = 6 * 60;
 
 export type RiskLevel = "baixo" | "medio" | "alto";
 
+export type PunchPair = { entrada: string; saida: string | null };
+
 export type PontoEntryLike = {
   id: string;
   driverId: string;
@@ -23,11 +25,42 @@ export type PontoEntryLike = {
   clockOut: string | null;
   intervaloInicio?: string | null;
   intervaloFim?: string | null;
+  // Pares completos entrada/saida do dia (importacao TiqueTaque, quando ha
+  // mais de 1 pausa) — ver comentario no schema, model TimeClockEntry.
+  punches?: unknown;
 };
 
-export function workedMinutes(entry: Pick<PontoEntryLike, "clockIn" | "clockOut">) {
+export function parsePunches(value: unknown): PunchPair[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (v): v is PunchPair =>
+      typeof v === "object" &&
+      v !== null &&
+      typeof (v as Record<string, unknown>).entrada === "string" &&
+      ((v as Record<string, unknown>).saida === null || typeof (v as Record<string, unknown>).saida === "string")
+  );
+}
+
+// Soma o tempo de cada intervalo trabalhado (entrada->saida), nunca o vao
+// entre o primeiro registro e o ultimo — um dia com pausa no meio nao pode
+// contar a pausa como trabalhada. Quando `punches` esta presente (dias com
+// mais de 1 pausa, so possivel via importacao TiqueTaque), e a fonte de
+// verdade; senao usa clockIn/clockOut menos o unico intervalo registrado
+// (intervaloInicio/Fim), cobrindo lancamento manual e o caso de 1 pausa.
+export function workedMinutes(
+  entry: Pick<PontoEntryLike, "clockIn" | "clockOut" | "intervaloInicio" | "intervaloFim" | "punches">
+) {
+  const punches = parsePunches(entry.punches);
+  if (punches.length > 0) {
+    const last = punches[punches.length - 1];
+    if (!last.saida) return null; // turno ainda aberto
+    return punches.reduce((sum, p) => sum + (p.saida ? durationMinutes(p.entrada, p.saida) : 0), 0);
+  }
+
   if (!entry.clockOut) return null;
-  return durationMinutes(entry.clockIn, entry.clockOut);
+  const total = durationMinutes(entry.clockIn, entry.clockOut);
+  const intervalo = intervalDurationMinutes(entry);
+  return intervalo !== null ? total - intervalo : total;
 }
 
 export function intervalDurationMinutes(

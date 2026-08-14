@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import type { Role } from "@prisma/client";
 import {
   LayoutDashboard,
@@ -16,6 +17,8 @@ import {
   Satellite,
   Fuel,
   History,
+  FileSpreadsheet,
+  ChevronDown,
 } from "lucide-react";
 
 type NavItem = {
@@ -23,6 +26,7 @@ type NavItem = {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   roles?: Role[];
+  children?: NavItem[];
 };
 
 const NAV: NavItem[] = [
@@ -61,18 +65,11 @@ const NAV: NavItem[] = [
     label: "Ponto",
     icon: Clock,
     roles: ["ADMIN", "GESTOR"],
-  },
-  {
-    href: "/ponto/analise",
-    label: "Análise de riscos",
-    icon: ShieldAlert,
-    roles: ["ADMIN", "GESTOR"],
-  },
-  {
-    href: "/ponto/correcoes",
-    label: "Histórico de correções",
-    icon: History,
-    roles: ["ADMIN", "GESTOR"],
+    children: [
+      { href: "/ponto/analise", label: "Análise de riscos", icon: ShieldAlert },
+      { href: "/ponto/correcoes", label: "Histórico de correções", icon: History },
+      { href: "/ponto/mensal", label: "Relatório mensal", icon: FileSpreadsheet },
+    ],
   },
   {
     href: "/convencoes",
@@ -100,33 +97,83 @@ const NAV: NavItem[] = [
   },
 ];
 
+function isActive(pathname: string, href: string) {
+  return pathname === href || pathname.startsWith(href + "/");
+}
+
 export default function Sidebar({ role }: { role: Role }) {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
   const items = NAV.filter((item) => !item.roles || item.roles.includes(role));
-  // Quando a rota atual casa com mais de um href (ex.: /ponto/analise casa
-  // com "/ponto" e com "/ponto/analise"), so o mais especifico fica ativo.
-  const activeHref = [...items]
-    .sort((a, b) => b.href.length - a.href.length)
-    .find((item) => pathname === item.href || pathname?.startsWith(item.href + "/"))?.href;
+  // Grupos abertos manualmente (via chevron) — o grupo do item ativo abre
+  // sozinho independente disso, ver `open` abaixo.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  function toggleExpanded(href: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(href)) {
+        next.delete(href);
+      } else {
+        next.add(href);
+      }
+      return next;
+    });
+  }
 
   return (
     <nav className="flex h-full flex-col gap-1 p-3">
       {items.map((item) => {
-        const active = item.href === activeHref;
         const Icon = item.icon;
+        const hasChildren = !!item.children?.length;
+        // Filho ativo tem precedencia: "/ponto" nao fica marcado quando a
+        // rota atual e "/ponto/analise", por exemplo.
+        const childActive = item.children?.some((c) => isActive(pathname, c.href)) ?? false;
+        const selfActive = isActive(pathname, item.href) && !childActive;
+        const open = childActive || expanded.has(item.href);
+
         return (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-              active
-                ? "bg-blue-700 text-white"
-                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-            }`}
-          >
-            <Icon className="h-4 w-4 shrink-0" />
-            {item.label}
-          </Link>
+          <div key={item.href}>
+            <div
+              className={`flex items-center gap-1 rounded-lg pr-1 text-sm font-medium transition-colors ${
+                selfActive ? "bg-blue-700 text-white" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              }`}
+            >
+              <Link href={item.href} className="flex flex-1 items-center gap-3 px-3 py-2">
+                <Icon className="h-4 w-4 shrink-0" />
+                {item.label}
+              </Link>
+              {hasChildren && (
+                <button
+                  type="button"
+                  onClick={() => toggleExpanded(item.href)}
+                  className={`rounded p-1 ${selfActive ? "hover:bg-blue-800" : "hover:bg-slate-200"}`}
+                  aria-label={open ? `Recolher ${item.label}` : `Expandir ${item.label}`}
+                >
+                  <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
+                </button>
+              )}
+            </div>
+            {hasChildren && open && (
+              <div className="ml-4 mt-1 flex flex-col gap-1 border-l border-slate-200 pl-3">
+                {item.children!.map((child) => {
+                  const ChildIcon = child.icon;
+                  const active = isActive(pathname, child.href);
+                  return (
+                    <Link
+                      key={child.href}
+                      href={child.href}
+                      className={`flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                        active ? "bg-blue-700 text-white" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                      }`}
+                    >
+                      <ChildIcon className="h-3.5 w-3.5 shrink-0" />
+                      {child.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         );
       })}
     </nav>

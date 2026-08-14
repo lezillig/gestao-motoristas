@@ -225,6 +225,15 @@ model TimeClockEntry {
   // longos e o que alimenta o alerta de "intervalo nao registrado".
   intervaloInicio String? // HH:mm
   intervaloFim    String? // HH:mm
+  // Lista ordenada de pares {entrada, saida} do dia — so populado pra
+  // importacao TiqueTaque (a API devolve batidas avulsas, sem rotulo de
+  // entrada/saida, so pareaveis por ordem cronologica; um dia pode ter mais
+  // de 1 intervalo, o que os dois campos acima nao conseguem representar).
+  // Quando presente, e a fonte de verdade pro calculo de horas trabalhadas
+  // (soma de cada par fechado) em vez do span bruto clockIn->clockOut — ver
+  // src/lib/pontoCompliance.ts:workedMinutes. Nulo para lancamento manual
+  // (um unico intervalo, os campos acima bastam).
+  punches   Json?
   // Origem do registro: nulo para lancamento manual, "TIQUETAQUE" quando
   // veio da importacao via src/lib/tiquetaque. So informativo — a
   // importacao nunca sobrescreve um registro ja existente de nenhuma
@@ -263,11 +272,13 @@ model TimeClockCorrection {
   clockOutAntes         String?
   intervaloInicioAntes String?
   intervaloFimAntes    String?
+  punchesAntes         Json?
 
   clockInDepois         String
   clockOutDepois         String?
   intervaloInicioDepois String?
   intervaloFimDepois    String?
+  punchesDepois         Json?
 
   corrigidoEm DateTime @default(now())
 

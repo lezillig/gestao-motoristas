@@ -334,11 +334,13 @@ export default async function PontoPage({
                               <Link
                                 key={e.id}
                                 href={`/ponto/${e.id}`}
-                                className={`block rounded-md px-2 py-1 text-center text-xs font-medium hover:opacity-80 ${tone} ${
+                                className={`block rounded-md px-1.5 py-1 text-center text-xs font-medium hover:opacity-80 ${tone} ${
                                   violated ? "ring-2 ring-red-400" : ""
                                 }`}
                               >
-                                {e.clockIn}–{e.clockOut ?? "?"}
+                                <span className="block whitespace-nowrap text-[10px]">
+                                  {e.clockIn}–{e.clockOut ?? "?"}
+                                </span>
                                 <span className="block text-[10px]">
                                   {worked !== null ? formatHoursMinutes(worked) : "em aberto"}
                                 </span>

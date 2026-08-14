@@ -6,11 +6,19 @@ import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
-import { durationMinutes, formatHoursMinutes } from "@/lib/time";
+import { formatHoursMinutes } from "@/lib/time";
+import { workedMinutes } from "@/lib/pontoCompliance";
 
-function turno(clockIn: string, clockOut: string | null) {
+function turno(
+  clockIn: string,
+  clockOut: string | null,
+  intervaloInicio: string | null,
+  intervaloFim: string | null,
+  punches: unknown
+) {
   if (!clockOut) return { range: `${clockIn}–?`, worked: "em aberto" };
-  return { range: `${clockIn}–${clockOut}`, worked: formatHoursMinutes(durationMinutes(clockIn, clockOut)) };
+  const minutes = workedMinutes({ clockIn, clockOut, intervaloInicio, intervaloFim, punches });
+  return { range: `${clockIn}–${clockOut}`, worked: minutes !== null ? formatHoursMinutes(minutes) : "em aberto" };
 }
 
 export default async function PontoCorrecoesPage({
@@ -97,8 +105,8 @@ export default async function PontoCorrecoesPage({
                 </tr>
               )}
               {corrections.map((c) => {
-                const antes = turno(c.clockInAntes, c.clockOutAntes);
-                const depois = turno(c.clockInDepois, c.clockOutDepois);
+                const antes = turno(c.clockInAntes, c.clockOutAntes, c.intervaloInicioAntes, c.intervaloFimAntes, c.punchesAntes);
+                const depois = turno(c.clockInDepois, c.clockOutDepois, c.intervaloInicioDepois, c.intervaloFimDepois, c.punchesDepois);
                 return (
                   <tr key={c.id} className="border-b border-slate-100 last:border-0">
                     <td className="px-4 py-2.5 font-medium text-slate-800">{c.driver.name}</td>
