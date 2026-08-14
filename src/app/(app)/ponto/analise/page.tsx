@@ -295,12 +295,23 @@ export default async function AnaliseDeRiscosPage({
   // pro DSR (falta de descanso semanal e a violacao mais grave).
   const ranking = [...summaryByDriver.entries()]
     .map(([id, s]) => ({
+      id,
       name: driverName(id),
       score: s.missingIntervalCount + s.interjornadaCount + s.excessiveOvertimeCount + s.missingRestStreaks * 3,
     }))
     .filter((r) => r.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, 5);
+
+  // Clique no ranking funciona como drop on/off: clicar filtra pelo
+  // motorista (mesmo parametro driverId do formulario abaixo); clicar de
+  // novo no mesmo motorista ja selecionado remove o filtro.
+  const rankingHref = (id: string) => {
+    const params = new URLSearchParams();
+    params.set("mes", format(monthStart, "yyyy-MM"));
+    if (driverId !== id) params.set("driverId", id);
+    return `/ponto/analise?${params.toString()}`;
+  };
 
   const sortLinkParams = { mes: format(monthStart, "yyyy-MM"), driverId };
   const countByCategoria = (categoria: Categoria) => rows.filter((r) => r.categoria === categoria).length;
@@ -311,6 +322,22 @@ export default async function AnaliseDeRiscosPage({
         title="Análise de riscos"
         subtitle="Marcações de ponto avaliadas sob três eixos: CLT, Convenção/Acordo Coletivo e decisões trabalhistas."
       />
+
+      <div className="mb-6 flex items-center justify-between">
+        <Link
+          href={`/ponto/analise?mes=${prevMonth}${driverId ? `&driverId=${driverId}` : ""}`}
+          className="flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          <ChevronLeft className="h-4 w-4" /> Mês anterior
+        </Link>
+        <p className="text-sm font-medium text-slate-700">{format(monthStart, "MMMM/yyyy")}</p>
+        <Link
+          href={`/ponto/analise?mes=${nextMonth}${driverId ? `&driverId=${driverId}` : ""}`}
+          className="flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          Próximo mês <ChevronRight className="h-4 w-4" />
+        </Link>
+      </div>
 
       <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
         <div className={cardClass}>
@@ -397,13 +424,23 @@ export default async function AnaliseDeRiscosPage({
           <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
             <Trophy className="h-4 w-4 text-amber-500" /> Motoristas com mais ocorrências de risco
           </h2>
-          <ul className="flex flex-col gap-2">
-            {ranking.map((r) => (
-              <li key={r.name} className="flex items-center justify-between text-sm">
-                <span className="text-slate-700">{r.name}</span>
-                <span className={`${badgeClass} bg-red-100 text-red-700`}>{r.score} ocorrência(s)</span>
-              </li>
-            ))}
+          <ul className="flex flex-col gap-1">
+            {ranking.map((r) => {
+              const selecionado = driverId === r.id;
+              return (
+                <li key={r.id}>
+                  <Link
+                    href={rankingHref(r.id)}
+                    className={`flex items-center justify-between rounded-lg px-2 py-1.5 text-sm transition-colors ${
+                      selecionado ? "bg-blue-50 ring-1 ring-blue-300" : "hover:bg-slate-50"
+                    }`}
+                  >
+                    <span className={selecionado ? "font-medium text-blue-700" : "text-slate-700"}>{r.name}</span>
+                    <span className={`${badgeClass} bg-red-100 text-red-700`}>{r.score} ocorrência(s)</span>
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
@@ -425,22 +462,6 @@ export default async function AnaliseDeRiscosPage({
           Filtrar
         </button>
       </form>
-
-      <div className="mb-4 flex items-center justify-between">
-        <Link
-          href={`/ponto/analise?mes=${prevMonth}${driverId ? `&driverId=${driverId}` : ""}`}
-          className="flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-        >
-          <ChevronLeft className="h-4 w-4" /> Mês anterior
-        </Link>
-        <p className="text-sm font-medium text-slate-700">{format(monthStart, "MMMM/yyyy")}</p>
-        <Link
-          href={`/ponto/analise?mes=${nextMonth}${driverId ? `&driverId=${driverId}` : ""}`}
-          className="flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-        >
-          Próximo mês <ChevronRight className="h-4 w-4" />
-        </Link>
-      </div>
 
       <div className={`${cardClass} p-0 overflow-hidden`}>
         <div className="overflow-x-auto">

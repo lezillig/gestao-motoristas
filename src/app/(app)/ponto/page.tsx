@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { addDays, addWeeks, format, startOfWeek, subWeeks } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { AlertTriangle, ChevronLeft, ChevronRight, Clock, Plus } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Clock, Plus } from "lucide-react";
 import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { cardClass, badgeClass } from "@/lib/ui";
+import { cardClass, badgeClass, inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
+import KpiCard from "@/components/ui/KpiCard";
+import { buildSortHref, nextSortDir } from "@/lib/sort";
 import {
   findInterjornadaViolations,
   overtimeMinutes,
@@ -18,10 +20,10 @@ import { isTiqueTaqueAvailable } from "@/lib/tiquetaque/client";
 export default async function PontoPage({
   searchParams,
 }: {
-  searchParams: Promise<{ semana?: string }>;
+  searchParams: Promise<{ semana?: string; motorista?: string; sort?: string; dir?: string }>;
 }) {
   const session = await requireSession();
-  const { semana } = await searchParams;
+  const { semana, motorista, sort, dir } = await searchParams;
 
   const anchor = semana ? new Date(`${semana}T00:00:00`) : new Date();
   const weekStart = startOfWeek(anchor, { weekStartsOn: 1 });
@@ -57,10 +59,51 @@ export default async function PontoPage({
   const dailyLimitFor = (driverId: string) =>
     dailyLimitByDriver.get(driverId)?.minutes ?? undefined;
 
-  const overtimeCount = entriesInWeek.filter(
+  const overtimeEntries = entriesInWeek.filter(
     (e) => overtimeMinutes(workedMinutes(e), dailyLimitFor(e.driverId)) > 0
-  ).length;
-  const openShiftsCount = entriesInWeek.filter((e) => !e.clockOut).length;
+  );
+  const overtimeCount = overtimeEntries.length;
+  const openShiftEntries = entriesInWeek.filter((e) => !e.clockOut);
+  const openShiftsCount = openShiftEntries.length;
+
+  const driverNameById = new Map(drivers.map((d) => [d.id, d.name]));
+  const entryById = new Map(entriesInWeek.map((e) => [e.id, e]));
+
+  const overtimeDetailRows = overtimeEntries
+    .map((e) => ({
+      id: e.id,
+      href: `/ponto/${e.id}`,
+      cells: [
+        driverNameById.get(e.driverId) ?? "—",
+        format(e.date, "dd/MM/yyyy"),
+        `${e.clockIn}–${e.clockOut ?? "?"}`,
+        formatHoursMinutes(overtimeMinutes(workedMinutes(e), dailyLimitFor(e.driverId))),
+      ],
+    }))
+    .sort((a, b) => b.cells[1].localeCompare(a.cells[1]));
+
+  const violationDetailRows = violationsInWeek
+    .map((v) => {
+      const next = entryById.get(v.nextEntryId);
+      return {
+        id: v.nextEntryId,
+        href: `/ponto/${v.nextEntryId}`,
+        cells: [
+          driverNameById.get(v.driverId) ?? "—",
+          next ? format(next.date, "dd/MM/yyyy") : "—",
+          formatHoursMinutes(v.gapMinutes),
+        ],
+      };
+    })
+    .sort((a, b) => b.cells[1].localeCompare(a.cells[1]));
+
+  const openShiftDetailRows = openShiftEntries
+    .map((e) => ({
+      id: e.id,
+      href: `/ponto/${e.id}`,
+      cells: [driverNameById.get(e.driverId) ?? "—", format(e.date, "dd/MM/yyyy"), e.clockIn],
+    }))
+    .sort((a, b) => b.cells[1].localeCompare(a.cells[1]));
 
   const cell = new Map<string, typeof entriesInWeek>();
   for (const e of entriesInWeek) {
@@ -69,6 +112,35 @@ export default async function PontoPage({
     list.push(e);
     cell.set(key, list);
   }
+
+  // Total trabalhado por motorista+dia (soma quando ha mais de 1 registro no
+  // dia) — usado tanto pra ordenar por um dia especifico quanto, no futuro,
+  // qualquer outro agregado por dia.
+  const dayKeys = days.map((d) => format(d, "yyyy-MM-dd"));
+  const workedByDriverDay = new Map<string, number>();
+  for (const driver of drivers) {
+    for (const dayKey of dayKeys) {
+      const items = cell.get(`${driver.id}_${dayKey}`) ?? [];
+      const total = items.reduce((sum, e) => sum + (workedMinutes(e) ?? 0), 0);
+      workedByDriverDay.set(`${driver.id}_${dayKey}`, total);
+    }
+  }
+
+  const motoristaFiltro = motorista?.trim().toLowerCase();
+  const filteredDrivers = motoristaFiltro
+    ? drivers.filter((d) => d.name.toLowerCase().includes(motoristaFiltro))
+    : drivers;
+
+  const sortDir = dir === "asc" ? "asc" : "desc";
+  const sortedDrivers = dayKeys.includes(sort ?? "")
+    ? [...filteredDrivers].sort((a, b) => {
+        const av = workedByDriverDay.get(`${a.id}_${sort}`) ?? 0;
+        const bv = workedByDriverDay.get(`${b.id}_${sort}`) ?? 0;
+        return sortDir === "desc" ? bv - av : av - bv;
+      })
+    : filteredDrivers; // padrao: ja vem alfabetico do orderBy do Prisma
+
+  const sortLinkParams = { semana: format(weekStart, "yyyy-MM-dd"), motorista };
 
   return (
     <div className="max-w-6xl">
@@ -82,31 +154,35 @@ export default async function PontoPage({
       />
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className={cardClass}>
-          <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
-            <AlertTriangle className="h-4 w-4" />
-          </div>
-          <p className="text-2xl font-semibold text-slate-900">{overtimeCount}</p>
-          <p className="mt-0.5 text-xs text-slate-500">Turnos com hora extra nesta semana</p>
-        </div>
-        <div className={cardClass}>
-          <div
-            className={`mb-2 flex h-9 w-9 items-center justify-center rounded-lg ${
-              violationsInWeek.length > 0 ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"
-            }`}
-          >
-            <AlertTriangle className="h-4 w-4" />
-          </div>
-          <p className="text-2xl font-semibold text-slate-900">{violationsInWeek.length}</p>
-          <p className="mt-0.5 text-xs text-slate-500">Violações de interjornada (descanso &lt; 11h)</p>
-        </div>
-        <div className={cardClass}>
-          <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
-            <Clock className="h-4 w-4" />
-          </div>
-          <p className="text-2xl font-semibold text-slate-900">{openShiftsCount}</p>
-          <p className="mt-0.5 text-xs text-slate-500">Turnos ainda em aberto</p>
-        </div>
+        <KpiCard
+          icon={<AlertTriangle className="h-4 w-4" />}
+          iconBgClass="bg-amber-100 text-amber-700"
+          value={overtimeCount}
+          label="Turnos com hora extra nesta semana"
+          columns={["Motorista", "Data", "Horário", "Hora extra"]}
+          rows={overtimeDetailRows}
+          emptyMessage="Nenhum turno com hora extra nesta semana."
+        />
+        <KpiCard
+          icon={<AlertTriangle className="h-4 w-4" />}
+          iconBgClass={
+            violationsInWeek.length > 0 ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"
+          }
+          value={violationsInWeek.length}
+          label="Violações de interjornada (descanso < 11h)"
+          columns={["Motorista", "Data", "Descanso"]}
+          rows={violationDetailRows}
+          emptyMessage="Nenhuma violação de interjornada nesta semana."
+        />
+        <KpiCard
+          icon={<Clock className="h-4 w-4" />}
+          iconBgClass="bg-slate-100 text-slate-600"
+          value={openShiftsCount}
+          label="Turnos ainda em aberto"
+          columns={["Motorista", "Data", "Entrada"]}
+          rows={openShiftDetailRows}
+          emptyMessage="Nenhum turno em aberto nesta semana."
+        />
       </div>
 
       <div className="mb-4 flex items-center justify-between">
@@ -127,31 +203,72 @@ export default async function PontoPage({
         </Link>
       </div>
 
+      <form className="mb-4 flex flex-wrap items-end gap-3" method="get">
+        <input type="hidden" name="semana" value={format(weekStart, "yyyy-MM-dd")} />
+        {sort && <input type="hidden" name="sort" value={sort} />}
+        {dir && <input type="hidden" name="dir" value={dir} />}
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">Motorista</label>
+          <input
+            type="text"
+            name="motorista"
+            defaultValue={motorista ?? ""}
+            placeholder="nome"
+            className={`${inputClass} w-56`}
+          />
+        </div>
+        <button type="submit" className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+          Filtrar
+        </button>
+        {motorista && (
+          <Link
+            href={`/ponto?semana=${format(weekStart, "yyyy-MM-dd")}${sort ? `&sort=${sort}&dir=${sortDir}` : ""}`}
+            className="text-sm text-slate-500 hover:underline"
+          >
+            Limpar filtro
+          </Link>
+        )}
+      </form>
+
       <div className={`${cardClass} p-0 overflow-hidden`}>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
                 <th className="sticky left-0 bg-slate-50 px-4 py-3">Motorista</th>
-                {days.map((d) => (
-                  <th key={d.toISOString()} className="px-3 py-3 text-center">
-                    {format(d, "EEE", { locale: ptBR })}
-                    <span className="block font-normal normal-case text-slate-400">
-                      {format(d, "dd/MM")}
-                    </span>
-                  </th>
-                ))}
+                {days.map((d) => {
+                  const dayKey = format(d, "yyyy-MM-dd");
+                  const active = sort === dayKey;
+                  const linkDir = nextSortDir(sort, sortDir, dayKey);
+                  const Icon = active ? (sortDir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
+                  return (
+                    <th key={d.toISOString()} className="px-3 py-3 text-center">
+                      <Link
+                        href={buildSortHref("/ponto", sortLinkParams, dayKey, linkDir)}
+                        className={`inline-flex flex-col items-center gap-0.5 hover:text-slate-700 ${active ? "text-slate-800" : ""}`}
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          {format(d, "EEE", { locale: ptBR })}
+                          <Icon className="h-3 w-3" />
+                        </span>
+                        <span className="block font-normal normal-case text-slate-400">
+                          {format(d, "dd/MM")}
+                        </span>
+                      </Link>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
-              {drivers.length === 0 && (
+              {sortedDrivers.length === 0 && (
                 <tr>
                   <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
-                    Nenhum motorista ativo cadastrado.
+                    {drivers.length === 0 ? "Nenhum motorista ativo cadastrado." : "Nenhum motorista encontrado."}
                   </td>
                 </tr>
               )}
-              {drivers.map((driver) => (
+              {sortedDrivers.map((driver) => (
                 <tr key={driver.id} className="border-b border-slate-100 last:border-0">
                   <td className="sticky left-0 bg-white px-4 py-2.5 font-medium text-slate-800">
                     {driver.name}
