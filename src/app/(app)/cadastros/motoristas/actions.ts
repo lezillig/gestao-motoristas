@@ -267,6 +267,7 @@ export async function importDriversFromTiqueTaque(): Promise<TiqueTaqueDriverImp
     valorHoraCents: number | null;
     empregador: string | null;
     departamento: string | null;
+    funcao: string | null;
   }[] = [];
 
   for (const emp of activeEmployees) {
@@ -288,6 +289,7 @@ export async function importDriversFromTiqueTaque(): Promise<TiqueTaqueDriverImp
       valorHoraCents: emp.hourRateCents,
       empregador: emp.paymentSourceId ? paymentSources.get(emp.paymentSourceId) ?? null : null,
       departamento: emp.department,
+      funcao: emp.jobRole || null,
     });
   }
 
@@ -325,7 +327,7 @@ export async function syncDriversFromTiqueTaque(): Promise<TiqueTaqueSyncState> 
 
   const drivers = await prisma.driver.findMany({
     where: { companyId: session.companyId },
-    select: { id: true, cpf: true, active: true, empregador: true, departamento: true },
+    select: { id: true, cpf: true, active: true, empregador: true, departamento: true, funcao: true },
   });
 
   let updated = 0;
@@ -341,14 +343,22 @@ export async function syncDriversFromTiqueTaque(): Promise<TiqueTaqueSyncState> 
     }
     const empregador = emp.paymentSourceId ? paymentSources.get(emp.paymentSourceId) ?? null : null;
     const departamento = emp.department;
+    const funcao = emp.jobRole || null;
     const active = !emp.dismissed;
 
-    if (driver.empregador === empregador && driver.departamento === departamento && driver.active === active) {
+    if (
+      driver.empregador === empregador &&
+      driver.departamento === departamento &&
+      driver.funcao === funcao &&
+      driver.active === active
+    ) {
       unchanged++;
       continue;
     }
     updated++;
-    writes.push(prisma.driver.update({ where: { id: driver.id }, data: { empregador, departamento, active } }));
+    writes.push(
+      prisma.driver.update({ where: { id: driver.id }, data: { empregador, departamento, funcao, active } })
+    );
   }
 
   await Promise.all(writes);

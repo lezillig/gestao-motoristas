@@ -149,6 +149,11 @@ model Driver {
   // endpoints candidatos (todos 404), ver src/lib/tiquetaque/client.ts.
   empregador    String?
   departamento  String?
+  // Cargo/funcao real do funcionario no TiqueTaque (contract_data.job_role,
+  // ex. "MOTORISTA DE MICRO ONIBUS", "VIGILANTE", "AJUDANTE DE MOTORISTA") —
+  // ja era buscado pela integracao (TiqueTaqueEmployee.jobRole, usado so
+  // pra filtrar quem importar) mas nao ficava salvo no cadastro.
+  funcao        String?
   regimeHoras   RegimeHoras?
   escalaSemanal EscalaSemanal?
   // Valor-hora em centavos (evita float) — usado so para o card de custo
