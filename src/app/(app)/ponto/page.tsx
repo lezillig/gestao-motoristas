@@ -126,16 +126,29 @@ export default async function PontoPage({
     }
   }
 
+  // Total trabalhado na semana por motorista — soma dos 7 dias acima, usado
+  // tanto na coluna "Total" quanto pra ordenar por ela.
+  const TOTAL_SORT_KEY = "total";
+  const workedByDriverWeek = new Map<string, number>();
+  for (const driver of drivers) {
+    const total = dayKeys.reduce(
+      (sum, dayKey) => sum + (workedByDriverDay.get(`${driver.id}_${dayKey}`) ?? 0),
+      0
+    );
+    workedByDriverWeek.set(driver.id, total);
+  }
+
   const motoristaFiltro = motorista?.trim().toLowerCase();
   const filteredDrivers = motoristaFiltro
     ? drivers.filter((d) => d.name.toLowerCase().includes(motoristaFiltro))
     : drivers;
 
+  const sortableKeys = new Set([...dayKeys, TOTAL_SORT_KEY]);
   const sortDir = dir === "asc" ? "asc" : "desc";
-  const sortedDrivers = dayKeys.includes(sort ?? "")
+  const sortedDrivers = sort && sortableKeys.has(sort)
     ? [...filteredDrivers].sort((a, b) => {
-        const av = workedByDriverDay.get(`${a.id}_${sort}`) ?? 0;
-        const bv = workedByDriverDay.get(`${b.id}_${sort}`) ?? 0;
+        const av = sort === TOTAL_SORT_KEY ? workedByDriverWeek.get(a.id) ?? 0 : workedByDriverDay.get(`${a.id}_${sort}`) ?? 0;
+        const bv = sort === TOTAL_SORT_KEY ? workedByDriverWeek.get(b.id) ?? 0 : workedByDriverDay.get(`${b.id}_${sort}`) ?? 0;
         return sortDir === "desc" ? bv - av : av - bv;
       })
     : filteredDrivers; // padrao: ja vem alfabetico do orderBy do Prisma
@@ -258,12 +271,28 @@ export default async function PontoPage({
                     </th>
                   );
                 })}
+                {(() => {
+                  const active = sort === TOTAL_SORT_KEY;
+                  const linkDir = nextSortDir(sort, sortDir, TOTAL_SORT_KEY);
+                  const Icon = active ? (sortDir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
+                  return (
+                    <th className="sticky right-0 bg-slate-50 px-3 py-3 text-center">
+                      <Link
+                        href={buildSortHref("/ponto", sortLinkParams, TOTAL_SORT_KEY, linkDir)}
+                        className={`inline-flex items-center gap-1 hover:text-slate-700 ${active ? "text-slate-800" : ""}`}
+                      >
+                        Total
+                        <Icon className="h-3 w-3" />
+                      </Link>
+                    </th>
+                  );
+                })()}
               </tr>
             </thead>
             <tbody>
               {sortedDrivers.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
                     {drivers.length === 0 ? "Nenhum motorista ativo cadastrado." : "Nenhum motorista encontrado."}
                   </td>
                 </tr>
@@ -325,6 +354,9 @@ export default async function PontoPage({
                       </td>
                     );
                   })}
+                  <td className="sticky right-0 bg-white px-3 py-2.5 text-center font-medium text-slate-800">
+                    {formatHoursMinutes(workedByDriverWeek.get(driver.id) ?? 0)}
+                  </td>
                 </tr>
               ))}
             </tbody>
