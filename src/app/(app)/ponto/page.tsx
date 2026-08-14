@@ -276,7 +276,7 @@ export default async function PontoPage({
                   const linkDir = nextSortDir(sort, sortDir, TOTAL_SORT_KEY);
                   const Icon = active ? (sortDir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
                   return (
-                    <th className="sticky right-0 bg-slate-50 px-3 py-3 text-center">
+                    <th className="border-l border-slate-200 bg-slate-100 px-3 py-3 text-center">
                       <Link
                         href={buildSortHref("/ponto", sortLinkParams, TOTAL_SORT_KEY, linkDir)}
                         className={`inline-flex items-center gap-1 hover:text-slate-700 ${active ? "text-slate-800" : ""}`}
@@ -299,7 +299,7 @@ export default async function PontoPage({
               )}
               {sortedDrivers.map((driver) => (
                 <tr key={driver.id} className="border-b border-slate-100 last:border-0">
-                  <td className="sticky left-0 bg-white px-4 py-2.5 font-medium text-slate-800">
+                  <td className="sticky left-0 bg-white px-4 py-2.5 text-xs font-medium text-slate-800">
                     {driver.name}
                   </td>
                   {days.map((d) => {
@@ -354,7 +354,7 @@ export default async function PontoPage({
                       </td>
                     );
                   })}
-                  <td className="sticky right-0 bg-white px-3 py-2.5 text-center font-medium text-slate-800">
+                  <td className="border-l border-slate-100 bg-slate-50/60 px-3 py-2.5 text-center font-medium text-slate-800">
                     {formatHoursMinutes(workedByDriverWeek.get(driver.id) ?? 0)}
                   </td>
                 </tr>
