@@ -142,7 +142,11 @@ export async function deleteEntry(id: string) {
 }
 
 export type TiqueTaqueImportRowError = { driverName: string; date?: string; message: string };
-export type TiqueTaqueDriverImportResult = { created: number; errors: TiqueTaqueImportRowError[] };
+export type TiqueTaqueDriverImportResult = {
+  created: number;
+  corrected: number;
+  errors: TiqueTaqueImportRowError[];
+};
 export type TiqueTaquePlanItem = { driverId: string; driverName: string; employeeId: string | null };
 export type TiqueTaquePlanResult = { error?: string; plan?: TiqueTaquePlanItem[] };
 
@@ -206,7 +210,7 @@ export async function importDriverFromTiqueTaque(
 
   const driver = await prisma.driver.findUnique({ where: { id: driverId, companyId: session.companyId } });
   if (!driver) {
-    return { created: 0, errors: [{ driverName: "—", message: "Motorista não encontrado." }] };
+    return { created: 0, corrected: 0, errors: [{ driverName: "—", message: "Motorista não encontrado." }] };
   }
 
   let days;
@@ -215,6 +219,7 @@ export async function importDriverFromTiqueTaque(
   } catch (e) {
     return {
       created: 0,
+      corrected: 0,
       errors: [{ driverName: driver.name, message: e instanceof Error ? e.message : "Falha ao buscar batidas do TiqueTaque." }],
     };
   }
@@ -225,36 +230,81 @@ export async function importDriverFromTiqueTaque(
       driverId,
       date: { gte: parseLocalDate(startDate), lte: parseLocalDate(endDate) },
     },
-    select: { date: true },
   });
-  const existingDates = new Set(existingEntries.map((e) => format(e.date, "yyyy-MM-dd")));
+  const existingByDate = new Map(existingEntries.map((e) => [format(e.date, "yyyy-MM-dd"), e]));
 
   const errors: TiqueTaqueImportRowError[] = [];
   let created = 0;
+  let corrected = 0;
 
   for (const day of days) {
-    if (existingDates.has(day.date)) {
+    const existing = existingByDate.get(day.date);
+
+    if (!existing) {
+      await prisma.timeClockEntry.create({
+        data: {
+          companyId: session.companyId,
+          driverId: driver.id,
+          date: parseLocalDate(day.date),
+          clockIn: day.clockIn,
+          clockOut: day.clockOut,
+          intervaloInicio: day.intervaloInicio,
+          intervaloFim: day.intervaloFim,
+          fonte: "TIQUETAQUE",
+        },
+      });
+      created++;
+      continue;
+    }
+
+    if (existing.fonte !== "TIQUETAQUE") {
       errors.push({ driverName: driver.name, date: day.date, message: "Já existe registro de ponto nesta data — não sobrescrito." });
       continue;
     }
 
-    await prisma.timeClockEntry.create({
-      data: {
-        companyId: session.companyId,
-        driverId: driver.id,
-        date: parseLocalDate(day.date),
-        clockIn: day.clockIn,
-        clockOut: day.clockOut,
-        intervaloInicio: day.intervaloInicio,
-        intervaloFim: day.intervaloFim,
-        fonte: "TIQUETAQUE",
-      },
-    });
-    existingDates.add(day.date);
-    created++;
+    // Registro ja veio do TiqueTaque antes: se os horarios vieram diferentes
+    // desta vez, e porque a correcao foi feita direto no TiqueTaque — atualiza
+    // e guarda o antes/depois em TimeClockCorrection (nunca sobrescreve sem
+    // deixar rastro), em vez de reportar como conflito.
+    const changed =
+      existing.clockIn !== day.clockIn ||
+      existing.clockOut !== day.clockOut ||
+      existing.intervaloInicio !== day.intervaloInicio ||
+      existing.intervaloFim !== day.intervaloFim;
+    if (!changed) continue;
+
+    await prisma.$transaction([
+      prisma.timeClockEntry.update({
+        where: { id: existing.id },
+        data: {
+          clockIn: day.clockIn,
+          clockOut: day.clockOut,
+          intervaloInicio: day.intervaloInicio,
+          intervaloFim: day.intervaloFim,
+        },
+      }),
+      prisma.timeClockCorrection.create({
+        data: {
+          companyId: session.companyId,
+          driverId: driver.id,
+          entryId: existing.id,
+          date: existing.date,
+          clockInAntes: existing.clockIn,
+          clockOutAntes: existing.clockOut,
+          intervaloInicioAntes: existing.intervaloInicio,
+          intervaloFimAntes: existing.intervaloFim,
+          clockInDepois: day.clockIn,
+          clockOutDepois: day.clockOut,
+          intervaloInicioDepois: day.intervaloInicio,
+          intervaloFimDepois: day.intervaloFim,
+        },
+      }),
+    ]);
+    corrected++;
   }
 
   revalidatePath("/ponto");
   revalidatePath("/ponto/analise");
-  return { created, errors };
+  revalidatePath("/ponto/correcoes");
+  return { created, corrected, errors };
 }

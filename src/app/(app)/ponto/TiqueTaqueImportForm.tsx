@@ -15,7 +15,11 @@ export default function TiqueTaqueImportForm() {
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ created: number; errors: TiqueTaqueImportRowError[] } | null>(null);
+  const [result, setResult] = useState<{
+    created: number;
+    corrected: number;
+    errors: TiqueTaqueImportRowError[];
+  } | null>(null);
 
   async function handleSubmit(formData: FormData) {
     const startDate = String(formData.get("startDate") ?? "");
@@ -39,6 +43,7 @@ export default function TiqueTaqueImportForm() {
 
     const plan = planResult.plan;
     let created = 0;
+    let corrected = 0;
     const errors: TiqueTaqueImportRowError[] = [];
 
     for (let i = 0; i < plan.length; i++) {
@@ -52,11 +57,12 @@ export default function TiqueTaqueImportForm() {
 
       const driverResult = await importDriverFromTiqueTaque(item.driverId, item.employeeId, startDate, endDate);
       created += driverResult.created;
+      corrected += driverResult.corrected;
       errors.push(...driverResult.errors);
     }
 
     setProgress({ done: plan.length, total: plan.length });
-    setResult({ created, errors });
+    setResult({ created, corrected, errors });
     setRunning(false);
   }
 
@@ -106,7 +112,15 @@ export default function TiqueTaqueImportForm() {
           <div className="flex items-start gap-2 rounded-lg bg-emerald-50 px-3 py-2.5 text-sm text-emerald-700">
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
             <span>
-              Importação concluída — {result.created} registro(s) de ponto importado(s) com sucesso.
+              Importação concluída — {result.created} registro(s) novo(s) importado(s)
+              {result.corrected > 0 && `, ${result.corrected} registro(s) corrigido(s) (ver `}
+              {result.corrected > 0 && (
+                <a href="/ponto/correcoes" className="underline">
+                  histórico de correções
+                </a>
+              )}
+              {result.corrected > 0 && ")"}
+              .
             </span>
           </div>
           {result.errors.length > 0 && (

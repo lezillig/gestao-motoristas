@@ -81,6 +81,7 @@ model Company {
   telemetryReadings TelemetryReading[]
   fuelTransactions  FuelTransaction[]
   consumptionSummaries FuelConsumptionSummary[]
+  timeClockCorrections TimeClockCorrection[]
 }
 
 model User {
@@ -150,6 +151,7 @@ model Driver {
 
   escalas          Escala[]
   timeClockEntries TimeClockEntry[]
+  timeClockCorrections TimeClockCorrection[]
   usageLogs        VehicleUsageLog[]
   fuelTransactions FuelTransaction[]
 }
@@ -232,7 +234,44 @@ model TimeClockEntry {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  corrections TimeClockCorrection[]
+
   @@index([companyId, date])
+  @@index([driverId, date])
+}
+
+// Historico append-only de correcoes aplicadas por reimportacao do
+// TiqueTaque: quando uma nova importacao encontra um TimeClockEntry ja
+// existente com fonte "TIQUETAQUE" e os horarios vieram diferentes (a
+// correcao foi feita direto no TiqueTaque, nao neste sistema), o registro e
+// atualizado e uma linha e criada aqui com o valor antes/depois — nunca
+// atualizada/apagada depois, e a base do relatorio /ponto/correcoes. Um
+// TimeClockEntry de origem manual ou sem fonte nunca gera correcao (a
+// importacao continua reportando esses casos como conflito, sem tocar no
+// registro) — ver src/app/(app)/ponto/actions.ts:importDriverFromTiqueTaque.
+model TimeClockCorrection {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+  driverId  String
+  driver    Driver   @relation(fields: [driverId], references: [id])
+  entryId   String
+  entry     TimeClockEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  date      DateTime // data do turno corrigido, para listar/filtrar sem join
+
+  clockInAntes         String
+  clockOutAntes         String?
+  intervaloInicioAntes String?
+  intervaloFimAntes    String?
+
+  clockInDepois         String
+  clockOutDepois         String?
+  intervaloInicioDepois String?
+  intervaloFimDepois    String?
+
+  corrigidoEm DateTime @default(now())
+
+  @@index([companyId, corrigidoEm])
   @@index([driverId, date])
 }
 

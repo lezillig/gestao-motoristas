@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { addDays, addWeeks, format, startOfWeek, subWeeks } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Clock, Plus } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Clock, History, Plus } from "lucide-react";
 import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass, inputClass } from "@/lib/ui";
@@ -48,6 +48,18 @@ export default async function PontoPage({
       where: { companyId: session.companyId, date: { gte: addDays(weekStart, -1), lt: weekEnd } },
     }),
   ]);
+
+  // Turnos com pelo menos uma correcao (reimportacao do TiqueTaque que
+  // atualizou um registro ja existente) — so pra decidir o selo "corrigido"
+  // no chip; o detalhe do antes/depois fica em /ponto/correcoes.
+  const correctedEntryIds = new Set(
+    (
+      await prisma.timeClockCorrection.findMany({
+        where: { companyId: session.companyId, entryId: { in: entriesInWeek.map((e) => e.id) } },
+        select: { entryId: true },
+      })
+    ).map((c) => c.entryId)
+  );
 
   const violations = findInterjornadaViolations(entriesForInterjornada);
   const violationsInWeek = violations.filter((v) =>
@@ -337,6 +349,14 @@ export default async function PontoPage({
                                 )}
                                 {e.fonte === "TIQUETAQUE" && (
                                   <span className="block text-[9px] italic text-slate-500">TiqueTaque</span>
+                                )}
+                                {correctedEntryIds.has(e.id) && (
+                                  <span
+                                    className="mt-0.5 flex items-center justify-center gap-0.5 text-[9px] font-medium text-amber-700"
+                                    title="Atualizado numa reimportação do TiqueTaque — ver histórico de correções"
+                                  >
+                                    <History className="h-2.5 w-2.5" /> corrigido
+                                  </span>
                                 )}
                               </Link>
                             );

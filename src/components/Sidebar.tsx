@@ -15,6 +15,7 @@ import {
   Route,
   Satellite,
   Fuel,
+  History,
 } from "lucide-react";
 
 type NavItem = {
@@ -65,6 +66,12 @@ const NAV: NavItem[] = [
     href: "/ponto/analise",
     label: "Análise de riscos",
     icon: ShieldAlert,
+    roles: ["ADMIN", "GESTOR"],
+  },
+  {
+    href: "/ponto/correcoes",
+    label: "Histórico de correções",
+    icon: History,
     roles: ["ADMIN", "GESTOR"],
   },
   {
