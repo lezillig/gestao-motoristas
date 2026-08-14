@@ -16,10 +16,17 @@ export type WeekStripView = { label: string; subtotal: string; days: DayCellView
 export default function DriverMonthRow({
   driverName,
   totalLabel,
+  weekTotals,
+  gridTemplateColumns,
   weeks,
 }: {
   driverName: string;
   totalLabel: string;
+  // Total de cada semana do mes, na mesma ordem de `weeks" — resumo visivel
+  // na linha, sem precisar abrir o drill on/off pra ver o detalhamento
+  // diario.
+  weekTotals: string[];
+  gridTemplateColumns: string;
   weeks: WeekStripView[];
 }) {
   const [open, setOpen] = useState(false);
@@ -29,11 +36,17 @@ export default function DriverMonthRow({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className={`grid w-full grid-cols-[1fr_120px_28px] items-center gap-2 px-4 py-3 text-left hover:bg-slate-50 ${
+        style={{ gridTemplateColumns }}
+        className={`grid w-full items-center gap-2 px-4 py-3 text-left hover:bg-slate-50 ${
           open ? "bg-blue-50/50" : ""
         }`}
       >
         <span className="text-sm font-medium text-slate-800">{driverName}</span>
+        {weekTotals.map((t, i) => (
+          <span key={i} className="text-right text-sm text-slate-600">
+            {t}
+          </span>
+        ))}
         <span className="text-right text-sm font-semibold text-slate-900">{totalLabel}</span>
         <span className="flex justify-end text-slate-400">
           {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
