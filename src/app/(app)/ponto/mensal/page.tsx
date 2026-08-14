@@ -14,6 +14,8 @@ import ExportBar from "./ExportBar";
 const TOTAL_SORT_KEY = "total";
 const MOTORISTA_SORT_KEY = "motorista";
 const semanaSortKey = (i: number) => `semana-${i}`;
+const ORDINAIS = ["1ª", "2ª", "3ª", "4ª", "5ª", "6ª", "7ª"];
+const ordinalDaSemana = (i: number) => ORDINAIS[i] ?? `${i + 1}ª`;
 
 export default async function PontoMensalPage({
   searchParams,
@@ -39,8 +41,8 @@ export default async function PontoMensalPage({
     weekMinutes: r.weeks.map((w) => w.subtotalMinutes),
     weekTotals: r.weeks.map((w) => formatHoursMinutes(w.subtotalMinutes)),
     weeks: r.weeks.map(
-      (w): WeekStripView => ({
-        label: w.label,
+      (w, i): WeekStripView => ({
+        label: `${ordinalDaSemana(i)} Semana · ${w.label}`,
         subtotal: formatHoursMinutes(w.subtotalMinutes),
         days: w.days.map((d) =>
           d
@@ -59,11 +61,13 @@ export default async function PontoMensalPage({
   }));
 
   const weekCount = report[0]?.weeks.length ?? 0;
-  // Rotulo curto pro cabecalho da coluna ("03/08–09/08"), sem o sufixo
-  // "(semana parcial)" — o rotulo completo continua no titulo (tooltip) e
-  // dentro do drill on/off.
-  const weekHeaderLabels = (report[0]?.weeks ?? []).map((w) => ({
-    short: w.label.replace(" (semana parcial)", ""),
+  // "1ª Sem", "2ª Sem"... no cabecalho da coluna ("Sem" em vez de "Semana"
+  // pra caber nas 92px por coluna sem quebrar linha) — o periodo exato (com
+  // o sufixo "(semana parcial)" quando for o caso) fica no titulo (tooltip)
+  // e dentro do drill on/off, que repete o mesmo ordinal por extenso antes
+  // da data.
+  const weekHeaderLabels = (report[0]?.weeks ?? []).map((w, i) => ({
+    short: `${ordinalDaSemana(i)} Sem`,
     full: w.label,
   }));
 
