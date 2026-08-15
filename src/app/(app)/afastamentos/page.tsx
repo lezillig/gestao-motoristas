@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { addDays, addMonths, differenceInCalendarDays, format, startOfDay, startOfMonth, subMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { CalendarClock, CalendarOff, ChevronLeft, ChevronRight, ListChecks } from "lucide-react";
+import { AlertTriangle, CalendarClock, CalendarOff, ChevronLeft, ChevronRight, ListChecks } from "lucide-react";
 import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass, inputClass } from "@/lib/ui";
@@ -9,7 +9,13 @@ import PageHeader from "@/components/ui/PageHeader";
 import SortableTh from "@/components/ui/SortableTh";
 import { isTiqueTaqueAvailable } from "@/lib/tiquetaque/client";
 import LeaveImportButton from "./LeaveImportButton";
+import KpiCard, { type KpiDetailRow } from "@/components/ui/KpiCard";
+import { checkFolgaCompensada, folgaIssueLabel, parseDataReferencia } from "@/lib/afastamentoCompliance";
 import type { Prisma } from "@prisma/client";
+
+const DRIVER_CCT_INCLUDE = {
+  sindicato: { include: { convencoes: { include: { regras: true } } } },
+} satisfies Prisma.DriverInclude;
 
 const LEAVE_TYPE_LABELS: Record<string, string> = {
   folga: "Folga",
@@ -52,7 +58,7 @@ export default async function AfastamentosPage({
     // de CNH no painel).
     prisma.driverLeave.findMany({
       where: { companyId: session.companyId, startDate: { lte: today }, endDate: { gte: today } },
-      include: { driver: { select: { name: true } } },
+      include: { driver: { include: DRIVER_CCT_INCLUDE } },
       orderBy: { endDate: "asc" },
     }),
     prisma.driver.findMany({
@@ -91,9 +97,63 @@ export default async function AfastamentosPage({
 
   const registros = await prisma.driverLeave.findMany({
     where,
-    include: { driver: { select: { name: true } } },
+    include: { driver: { include: DRIVER_CCT_INCLUDE } },
     orderBy,
   });
+
+  // Checagem de legalidade das "folgas compensadas": cruza a data de hora
+  // extra citada no texto (`details`, cru do TiqueTaque, ex. "FOLGA
+  // COMPENSADA 02/08") com o ponto real do motorista naquele dia — ver
+  // src/lib/afastamentoCompliance.ts pros criterios (art. 59 CLT, Sumula
+  // 85 TST). So se aplica a folga; atestado/ferias/abono nao tem checagem
+  // automatica aqui (ver comentario no lib).
+  const leavesToCheck = [...ativos, ...registros];
+  const referencias = leavesToCheck
+    .map((l) => {
+      if (l.leaveType !== "folga") return null;
+      const date = parseDataReferencia(l.details, l.startDate);
+      return date ? { driverId: l.driverId, date } : null;
+    })
+    .filter((r): r is { driverId: string; date: Date } => r !== null);
+  const refEntries =
+    referencias.length > 0
+      ? await prisma.timeClockEntry.findMany({
+          where: { companyId: session.companyId, OR: referencias.map((r) => ({ driverId: r.driverId, date: r.date })) },
+        })
+      : [];
+  const entryByKey = new Map(refEntries.map((e) => [`${e.driverId}_${format(e.date, "yyyy-MM-dd")}`, e]));
+
+  function complianceFor(l: (typeof registros)[number]) {
+    if (l.leaveType !== "folga") return null;
+    const ref = parseDataReferencia(l.details, l.startDate);
+    const entry = ref ? entryByKey.get(`${l.driverId}_${format(ref, "yyyy-MM-dd")}`) : undefined;
+    return checkFolgaCompensada(l.leaveType, l.details, l.startDate, l.driver, entry);
+  }
+
+  // Linhas de detalhe pro modal de duplo clique de cada KPI (mesmo padrao
+  // ja usado em /ponto) — reaproveita leaveTone/leaveLabel e o calculo de
+  // "retorna em Xd" ja feitos acima pra lista de afastados agora.
+  const ativosRows: KpiDetailRow[] = ativos.map((a) => {
+    const dias = differenceInCalendarDays(a.endDate, today);
+    return {
+      id: a.id,
+      href: `/afastamentos?driverId=${a.driverId}`,
+      cells: [a.driver.name, leaveLabel(a.leaveType), dias <= 0 ? "hoje" : `em ${dias}d (${format(a.endDate, "dd/MM")})`],
+    };
+  });
+  const retornandoRows: KpiDetailRow[] = retornandoLogo.map((a) => {
+    const dias = differenceInCalendarDays(a.endDate, today);
+    return {
+      id: a.id,
+      href: `/afastamentos?driverId=${a.driverId}`,
+      cells: [a.driver.name, leaveLabel(a.leaveType), dias <= 0 ? "hoje" : `em ${dias}d (${format(a.endDate, "dd/MM")})`],
+    };
+  });
+  const registrosRows: KpiDetailRow[] = registros.map((r) => ({
+    id: r.id,
+    href: `/afastamentos?driverId=${r.driverId}`,
+    cells: [r.driver.name, leaveLabel(r.leaveType), format(r.startDate, "dd/MM/yyyy"), format(r.endDate, "dd/MM/yyyy")],
+  }));
 
   const sortLinkParams = { mes: format(monthStart, "yyyy-MM"), tipo, driverId };
 
@@ -111,27 +171,33 @@ export default async function AfastamentosPage({
       )}
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className={cardClass}>
-          <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-red-100 text-red-700">
-            <CalendarOff className="h-4 w-4" />
-          </div>
-          <p className="text-2xl font-semibold text-slate-900">{ativos.length}</p>
-          <p className="mt-0.5 text-xs text-slate-500">Afastados hoje</p>
-        </div>
-        <div className={cardClass}>
-          <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
-            <CalendarClock className="h-4 w-4" />
-          </div>
-          <p className="text-2xl font-semibold text-slate-900">{retornandoLogo.length}</p>
-          <p className="mt-0.5 text-xs text-slate-500">Retornam em até 7 dias</p>
-        </div>
-        <div className={cardClass}>
-          <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
-            <ListChecks className="h-4 w-4" />
-          </div>
-          <p className="text-2xl font-semibold text-slate-900">{registros.length}</p>
-          <p className="mt-0.5 text-xs text-slate-500">Registros no mês selecionado</p>
-        </div>
+        <KpiCard
+          icon={<CalendarOff className="h-4 w-4" />}
+          iconBgClass="bg-red-100 text-red-700"
+          value={ativos.length}
+          label="Afastados hoje"
+          columns={["Motorista", "Tipo", "Retorna"]}
+          rows={ativosRows}
+          emptyMessage="Nenhum motorista afastado hoje."
+        />
+        <KpiCard
+          icon={<CalendarClock className="h-4 w-4" />}
+          iconBgClass="bg-amber-100 text-amber-700"
+          value={retornandoLogo.length}
+          label="Retornam em até 7 dias"
+          columns={["Motorista", "Tipo", "Retorna"]}
+          rows={retornandoRows}
+          emptyMessage="Nenhum motorista retornando nos próximos 7 dias."
+        />
+        <KpiCard
+          icon={<ListChecks className="h-4 w-4" />}
+          iconBgClass="bg-slate-100 text-slate-600"
+          value={registros.length}
+          label="Registros no mês selecionado"
+          columns={["Motorista", "Tipo", "Início", "Fim"]}
+          rows={registrosRows}
+          emptyMessage="Nenhum registro neste mês."
+        />
       </div>
 
       {ativos.length > 0 && (
@@ -140,9 +206,16 @@ export default async function AfastamentosPage({
           <ul className="flex flex-col gap-1">
             {ativos.map((a) => {
               const dias = differenceInCalendarDays(a.endDate, today);
+              const compliance = complianceFor(a);
+              const hasRisk = !!compliance && compliance.issues.length > 0;
               return (
                 <li key={a.id} className="flex items-center justify-between rounded-lg px-2 py-1.5 text-sm">
-                  <span className="text-slate-700">{a.driver.name}</span>
+                  <span
+                    className={hasRisk ? "font-medium text-red-600" : "text-slate-700"}
+                    title={hasRisk ? compliance!.issues.map(folgaIssueLabel).join(" · ") : undefined}
+                  >
+                    {a.driver.name}
+                  </span>
                   <span className="flex items-center gap-2">
                     <span className={`${badgeClass} ${leaveTone(a.leaveType)}`}>{leaveLabel(a.leaveType)}</span>
                     <span className="text-xs text-slate-500">
@@ -229,22 +302,42 @@ export default async function AfastamentosPage({
                   </td>
                 </tr>
               )}
-              {registros.map((r) => (
-                <tr key={r.id} className="border-b border-slate-100 last:border-0">
-                  <td className="px-4 py-2.5 font-medium text-slate-800">{r.driver.name}</td>
-                  <td className="px-4 py-2.5">
-                    <span className={`${badgeClass} ${leaveTone(r.leaveType)}`}>{leaveLabel(r.leaveType)}</span>
-                  </td>
-                  <td className="px-4 py-2.5 text-slate-600">{format(r.startDate, "dd/MM/yyyy")}</td>
-                  <td className="px-4 py-2.5 text-slate-600">{format(r.endDate, "dd/MM/yyyy")}</td>
-                  <td className="px-4 py-2.5 text-slate-500">{r.details ?? "—"}</td>
-                  <td className="px-4 py-2.5 text-slate-600">{r.paidLeave ? "Sim" : "Não"}</td>
-                </tr>
-              ))}
+              {registros.map((r) => {
+                const compliance = complianceFor(r);
+                const hasRisk = !!compliance && compliance.issues.length > 0;
+                const riskTitle = hasRisk ? compliance!.issues.map(folgaIssueLabel).join(" · ") : undefined;
+                return (
+                  <tr key={r.id} className="border-b border-slate-100 last:border-0">
+                    <td
+                      className={`px-4 py-2.5 font-medium ${hasRisk ? "text-red-600" : "text-slate-800"}`}
+                      title={riskTitle}
+                    >
+                      {r.driver.name}
+                      {hasRisk && <AlertTriangle className="ml-1 inline h-3.5 w-3.5 align-text-bottom" />}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <span className={`${badgeClass} ${leaveTone(r.leaveType)}`}>{leaveLabel(r.leaveType)}</span>
+                    </td>
+                    <td className="px-4 py-2.5 text-slate-600">{format(r.startDate, "dd/MM/yyyy")}</td>
+                    <td className="px-4 py-2.5 text-slate-600">{format(r.endDate, "dd/MM/yyyy")}</td>
+                    <td className={`px-4 py-2.5 ${hasRisk ? "font-medium text-red-600" : "text-slate-500"}`} title={riskTitle}>
+                      {r.details ?? "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-slate-600">{r.paidLeave ? "Sim" : "Não"}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       </div>
+      <p className="mt-3 text-xs text-slate-500">
+        Nome em <span className="font-medium text-red-600">vermelho</span> = folga compensada cujo cruzamento com o
+        ponto real do motorista aponta risco trabalhista (sem hora extra que a justifique, hora extra do dia acima
+        de 2h que deveria ter sido paga em vez de compensada, ou compensação fora da mesma semana sem confirmação de
+        acordo de banco de horas). Passe o mouse sobre o nome para ver o motivo. Não é aconselhamento jurídico —
+        atestado, férias e abono não têm checagem automática aqui.
+      </p>
     </div>
   );
 }
