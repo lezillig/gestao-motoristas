@@ -82,6 +82,7 @@ model Company {
   fuelTransactions  FuelTransaction[]
   consumptionSummaries FuelConsumptionSummary[]
   timeClockCorrections TimeClockCorrection[]
+  driverLeaves      DriverLeave[]
 }
 
 model User {
@@ -140,13 +141,16 @@ model Driver {
   phone         String?
   photoUrl      String?
   // Empregador (razao social, resolvida de contract_data.payment_source via
-  // GET /payment-sources) e departamento (contract_data.department, texto
-  // livre do TiqueTaque, so aparado — nao normalizado alem disso) — os
-  // unicos dois campos organizacionais que a API do TiqueTaque realmente
-  // expoe por funcionario. O filtro "Unidade" visto no painel web do
-  // TiqueTaque (ex.: AACD, Banco de Alimentos) NAO existe na API publica
-  // v2.1 — investigado e confirmado ausente em /employees e em varios
-  // endpoints candidatos (todos 404), ver src/lib/tiquetaque/client.ts.
+  // GET /payment-sources) e unidade de alocacao/centro de custos do
+  // motorista (campo `departamento`, vem de contract_data.department —
+  // texto livre do TiqueTaque, so aparado, nao normalizado alem disso; na
+  // pratica e a granularidade de contrato/rota, ex. "ESCOLAR - SUL 01" vs
+  // "ESCOLAR - SUL 02", nao um departamento de RH) — exibido na UI como
+  // "Unidade de alocação" a pedido do usuario. O filtro "Unidade" visto no
+  // painel web do TiqueTaque (ex.: AACD, Banco de Alimentos) e um campo
+  // DIFERENTE, que nao existe na API publica v2.1 — investigado e
+  // confirmado ausente em /employees e em varios endpoints candidatos
+  // (todos 404), ver src/lib/tiquetaque/client.ts.
   empregador    String?
   departamento  String?
   // Cargo/funcao real do funcionario no TiqueTaque (contract_data.job_role,
@@ -169,6 +173,37 @@ model Driver {
   timeClockCorrections TimeClockCorrection[]
   usageLogs        VehicleUsageLog[]
   fuelTransactions FuelTransaction[]
+  leaves           DriverLeave[]
+}
+
+// Folga/atestado/ferias/abono do motorista, importado do TiqueTaque
+// (GET /work-leaves?employee_id=...) — cobre 3 itens do menu "Gestao de
+// ponto" do TiqueTaque de uma vez (Escala de folgas, Afastamentos, Ferias),
+// que nao tinham fonte nenhuma no sistema ate agora. `tiquetaqueId` guarda
+// o _id real de la pra reimportar sem duplicar (mesmo espirito do
+// codigoTransacao em FuelTransaction). "Banco de horas" (saldo) e
+// "Sobreaviso" NAO tem endpoint publico na API do TiqueTaque — investigado
+// e confirmado ausente, ver src/lib/tiquetaque/client.ts.
+model DriverLeave {
+  id           String   @id @default(cuid())
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id])
+  driverId     String
+  driver       Driver   @relation(fields: [driverId], references: [id])
+  tiquetaqueId String?  @unique
+  // Texto cru do TiqueTaque: "folga" | "atestado" | "ferias" | "abono" —
+  // nao normalizado pra enum de proposito, caso apareçam outros valores no
+  // futuro que a gente ainda nao viu na base real.
+  leaveType    String
+  startDate    DateTime
+  endDate      DateTime
+  details      String?
+  paidLeave    Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([companyId, startDate])
+  @@index([driverId, startDate])
 }
 
 // ---------- Veiculo ----------

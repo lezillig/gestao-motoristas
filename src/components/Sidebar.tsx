@@ -19,6 +19,7 @@ import {
   History,
   FileSpreadsheet,
   ChevronDown,
+  CalendarOff,
 } from "lucide-react";
 
 type NavItem = {
@@ -70,6 +71,12 @@ const NAV: NavItem[] = [
       { href: "/ponto/correcoes", label: "Histórico de correções", icon: History },
       { href: "/ponto/mensal", label: "Relatório mensal", icon: FileSpreadsheet },
     ],
+  },
+  {
+    href: "/afastamentos",
+    label: "Afastamentos",
+    icon: CalendarOff,
+    roles: ["ADMIN", "GESTOR"],
   },
   {
     href: "/convencoes",

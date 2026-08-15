@@ -16,6 +16,21 @@ export type TiqueTaqueEmployee = {
   paymentSourceId: string | null;
 };
 
+// Folga/atestado/ferias/abono — GET /work-leaves?employee_id=... Datas vem
+// como datetime completo no meio-dia UTC (ex. "2026-07-18T12:00:00+00:00"),
+// entao nunca cruzam meia-noite local mesmo em UTC-3 — so pegamos os 10
+// primeiros caracteres (AAAA-MM-DD), sem o mesmo cuidado de fuso que as
+// celulas de data-só do Excel precisam.
+export type TiqueTaqueLeave = {
+  id: string;
+  employeeId: string;
+  leaveType: string; // "folga" | "atestado" | "ferias" | "abono", texto cru
+  startDate: string; // AAAA-MM-DD
+  endDate: string; // AAAA-MM-DD
+  details: string | null;
+  paidLeave: boolean;
+};
+
 export type TiqueTaquePunchPair = { entrada: string; saida: string | null };
 
 // Um dia de trabalho ja pareado a partir das batidas avulsas do TiqueTaque

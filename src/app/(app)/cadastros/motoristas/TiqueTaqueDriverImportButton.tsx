@@ -79,12 +79,14 @@ export default function TiqueTaqueDriverImportButton() {
           disabled={syncRunning}
           className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
         >
-          {syncRunning ? "Atualizando..." : "Atualizar empregador, departamento e status dos já cadastrados"}
+          {syncRunning
+            ? "Atualizando..."
+            : "Atualizar empregador, cargo, unidade de alocação e status dos já cadastrados"}
         </button>
         <p className="mt-2 text-xs text-slate-400">
-          Casa por CPF com os motoristas já cadastrados e atualiza empregador, departamento e ativo/inativo
-          conforme o TiqueTaque — não cria nem apaga nenhum motorista, e quem não tem CPF correspondente no
-          TiqueTaque fica intocado.
+          Casa por CPF com os motoristas já cadastrados e atualiza empregador, cargo, unidade de alocação
+          (centro de custos) e ativo/inativo conforme o TiqueTaque — não cria nem apaga nenhum motorista, e
+          quem não tem CPF correspondente no TiqueTaque fica intocado.
         </p>
 
         {syncState?.error && (

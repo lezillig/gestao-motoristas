@@ -1,4 +1,4 @@
-import type { TiqueTaqueEmployee, TiqueTaqueDayEntry } from "./types";
+import type { TiqueTaqueEmployee, TiqueTaqueDayEntry, TiqueTaqueLeave } from "./types";
 import { pairPunchesIntoDays } from "./pairing";
 
 const BASE_URL = "https://api.tiquetaque.com/v2.1";
@@ -117,4 +117,49 @@ export async function fetchEmployeeDays(
     `/times?start_date=${startDate}&end_date=${endDate}&employee_id=${employeeId}`
   )) as TimesResponse;
   return pairPunchesIntoDays(data.times ?? []);
+}
+
+type WorkLeavesPage = {
+  _meta?: { total?: number };
+  _items?: {
+    _id: string;
+    employee_id: string;
+    leave_type: string;
+    start_date: string;
+    end_date: string;
+    details?: string | null;
+    paid_leave?: boolean;
+  }[];
+};
+
+// GET /work-leaves — cobre folga/atestado/ferias/abono (confirmado real,
+// diferente de varios outros candidatos que deram 404 nesta mesma API, ver
+// comentario no schema em DriverLeave). start_date/end_date sempre vem como
+// "AAAA-MM-DDT12:00:00+00:00" (meio-dia UTC) — os 10 primeiros caracteres ja
+// sao a data local correta, sem risco do bug de fuso de celula-de-data-so.
+export async function fetchEmployeeLeaves(employeeId: string): Promise<TiqueTaqueLeave[]> {
+  const leaves: TiqueTaqueLeave[] = [];
+  const maxResults = 200;
+  let page = 1;
+  for (;;) {
+    const data = (await tiqueTaqueFetch(
+      `/work-leaves?employee_id=${employeeId}&max_results=${maxResults}&page=${page}`
+    )) as WorkLeavesPage;
+    const items = data._items ?? [];
+    for (const item of items) {
+      leaves.push({
+        id: item._id,
+        employeeId: item.employee_id,
+        leaveType: item.leave_type,
+        startDate: item.start_date.slice(0, 10),
+        endDate: item.end_date.slice(0, 10),
+        details: item.details?.trim() || null,
+        paidLeave: item.paid_leave ?? true,
+      });
+    }
+    const total = data._meta?.total ?? leaves.length;
+    if (leaves.length >= total || items.length < maxResults) break;
+    page++;
+  }
+  return leaves;
 }
