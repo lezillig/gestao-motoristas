@@ -26,7 +26,7 @@ export default async function PontoPage({
   const { semana, motorista, sort, dir } = await searchParams;
 
   const anchor = semana ? new Date(`${semana}T00:00:00`) : new Date();
-  const weekStart = startOfWeek(anchor, { weekStartsOn: 1 });
+  const weekStart = startOfWeek(anchor, { weekStartsOn: 0 });
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const weekEnd = addDays(weekStart, 7);
 

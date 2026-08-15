@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { History, DollarSign, Users } from "lucide-react";
+import { History, DollarSign, Users, Clock } from "lucide-react";
 import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, inputClass } from "@/lib/ui";
@@ -64,24 +64,27 @@ export default async function PontoCorrecoesPage({
   // mesmo padrao ja usado no card de custo de hora extra de /ponto/analise.
   let impactCents = 0;
   let semValorHora = 0;
+  let overtimeDeltaTotalMinutes = 0;
   const rows = corrections.map((c) => {
     const driver = c.driver as DriverWithConvencoes;
     const antes = turno(c.clockInAntes, c.clockOutAntes, c.intervaloInicioAntes, c.intervaloFimAntes, c.punchesAntes);
     const depois = turno(c.clockInDepois, c.clockOutDepois, c.intervaloInicioDepois, c.intervaloFimDepois, c.punchesDepois);
 
     let impactoCents: number | null = null;
+    let overtimeDeltaMinutes: number | null = null;
     if (antes.minutes !== null && depois.minutes !== null) {
       const limit = driverDailyLimitMinutes(driver, c.date).minutes;
       const overtimeAntes = overtimeMinutes(antes.minutes, limit);
       const overtimeDepois = overtimeMinutes(depois.minutes, limit);
+      // Positivo = a hora extra antiga (errada) era MAIOR que a correta —
+      // ou seja, quanto estava sendo indevidamente atribuido a mais.
+      // Negativo indicaria o oposto (subestimando a hora extra real).
+      overtimeDeltaMinutes = overtimeAntes - overtimeDepois;
+      overtimeDeltaTotalMinutes += overtimeDeltaMinutes;
+
       const costAntes = overtimeCostCents(driver, overtimeAntes, c.date);
       const costDepois = overtimeCostCents(driver, overtimeDepois, c.date);
       if (costAntes !== null && costDepois !== null) {
-        // Positivo = o valor antigo (errado) calculava MAIS hora extra do
-        // que o correto — ou seja, o quanto estava sendo indevidamente
-        // atribuido a mais (risco de pagar hora extra que nao existiu).
-        // Negativo indicaria o oposto (bateria menos hora extra do que o
-        // real, subestimando).
         impactoCents = costAntes - costDepois;
         impactCents += impactoCents;
       } else {
@@ -89,8 +92,23 @@ export default async function PontoCorrecoesPage({
       }
     }
 
-    return { c, antes, depois, impactoCents };
+    return { c, antes, depois, impactoCents, overtimeDeltaMinutes };
   });
+
+  // Quebra por mes (mes do turno, nao da data em que a correcao foi feita) —
+  // responde "quantas horas extras a mais por mes" sem precisar navegar
+  // periodo a periodo.
+  const byMonth = new Map<string, { count: number; drivers: Set<string>; overtimeDeltaMinutes: number; impactCents: number }>();
+  for (const { c, overtimeDeltaMinutes, impactoCents } of rows) {
+    const key = format(c.date, "yyyy-MM");
+    const bucket = byMonth.get(key) ?? { count: 0, drivers: new Set<string>(), overtimeDeltaMinutes: 0, impactCents: 0 };
+    bucket.count++;
+    bucket.drivers.add(c.driverId);
+    bucket.overtimeDeltaMinutes += overtimeDeltaMinutes ?? 0;
+    bucket.impactCents += impactoCents ?? 0;
+    byMonth.set(key, bucket);
+  }
+  const monthRows = [...byMonth.entries()].sort((a, b) => b[0].localeCompare(a[0]));
 
   const periodLabel =
     de || ate
@@ -123,7 +141,7 @@ export default async function PontoCorrecoesPage({
         )}
       </form>
 
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-4">
         <div className={cardClass}>
           <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
             <History className="h-4 w-4" />
@@ -139,15 +157,59 @@ export default async function PontoCorrecoesPage({
           <p className="mt-0.5 text-xs text-slate-500">Motoristas afetados</p>
         </div>
         <div className={cardClass}>
+          <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-blue-100 text-blue-700">
+            <Clock className="h-4 w-4" />
+          </div>
+          <p className="text-2xl font-semibold text-slate-900">
+            {overtimeDeltaTotalMinutes < 0 ? "−" : ""}
+            {formatHoursMinutes(Math.abs(overtimeDeltaTotalMinutes))}
+          </p>
+          <p className="mt-0.5 text-xs text-slate-500">Horas extras calculadas a mais</p>
+        </div>
+        <div className={cardClass}>
           <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
             <DollarSign className="h-4 w-4" />
           </div>
           <p className="text-2xl font-semibold text-slate-900">{currency(impactCents)}</p>
           <p className="mt-0.5 text-xs text-slate-500">
-            Hora extra calculada a mais antes da correção{semValorHora > 0 ? ` · ${semValorHora} sem valor-hora, fora da soma` : ""}
+            Impacto financeiro{semValorHora > 0 ? ` · ${semValorHora} sem valor-hora, fora da soma` : ""}
           </p>
         </div>
       </div>
+
+      {monthRows.length > 1 && (
+        <div className={`${cardClass} mb-6 p-0 overflow-hidden`}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
+                  <th className="px-4 py-3">Mês</th>
+                  <th className="px-3 py-3">Correções</th>
+                  <th className="px-3 py-3">Motoristas</th>
+                  <th className="px-3 py-3">Horas extras a mais</th>
+                  <th className="px-3 py-3">Impacto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {monthRows.map(([key, bucket]) => (
+                  <tr key={key} className="border-b border-slate-100 last:border-0">
+                    <td className="px-4 py-2.5 font-medium capitalize text-slate-800">
+                      {format(parseLocalDate(`${key}-01`), "MMMM/yyyy", { locale: ptBR })}
+                    </td>
+                    <td className="px-3 py-2.5 text-slate-600">{bucket.count}</td>
+                    <td className="px-3 py-2.5 text-slate-600">{bucket.drivers.size}</td>
+                    <td className="px-3 py-2.5 font-medium text-blue-700">
+                      {bucket.overtimeDeltaMinutes < 0 ? "−" : ""}
+                      {formatHoursMinutes(Math.abs(bucket.overtimeDeltaMinutes))}
+                    </td>
+                    <td className="px-3 py-2.5 font-medium text-slate-700">{currency(bucket.impactCents)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <div className={`${cardClass} p-0 overflow-hidden`}>
         <div className="overflow-x-auto">
