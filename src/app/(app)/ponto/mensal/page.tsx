@@ -69,6 +69,20 @@ export default async function PontoMensalPage({
                   saida: p.saida,
                   duracaoLabel: p.saida ? formatHoursMinutes(durationMinutes(p.entrada, p.saida)) : "em aberto",
                 })),
+                // Intervalo entre um par e o seguinte (ex.: almoço) — so
+                // existe quando ha 2+ marcacoes fechadas no dia. Um dia com
+                // 3+ pares pode ter mais de um intervalo (2+ pausas).
+                intervalos: d.punchPairs.slice(0, -1).flatMap((p, i) => {
+                  const next = d.punchPairs[i + 1];
+                  if (!p.saida || !next) return [];
+                  return [
+                    {
+                      inicio: p.saida,
+                      fim: next.entrada,
+                      duracaoLabel: formatHoursMinutes(durationMinutes(p.saida, next.entrada)),
+                    },
+                  ];
+                }),
               }
             : null
         ),

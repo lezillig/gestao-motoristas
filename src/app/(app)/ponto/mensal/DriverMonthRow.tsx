@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 
 export type DayMarcacaoView = { entrada: string; saida: string | null; duracaoLabel: string };
+export type DayIntervaloView = { inicio: string; fim: string; duracaoLabel: string };
 export type DayCellView = {
   dayKey: string;
   label: string;
@@ -16,6 +17,7 @@ export type DayCellView = {
   workedLabel: string;
   overtimeLabel: string;
   marcacoes: DayMarcacaoView[];
+  intervalos: DayIntervaloView[];
 } | null;
 export type WeekStripView = { label: string; subtotal: string; days: DayCellView[] };
 
@@ -139,6 +141,30 @@ export default function DriverMonthRow({
                         ))}
                       </tbody>
                     </table>
+
+                    {openDay.intervalos.length > 0 && (
+                      <div className="mt-2 rounded-md border border-slate-200 bg-white p-2">
+                        <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                          {openDay.intervalos.length > 1 ? "Intervalos" : "Intervalo (almoço)"}
+                        </p>
+                        <table className="w-full text-xs">
+                          <tbody>
+                            {openDay.intervalos.map((intervalo, ii) => (
+                              <tr key={ii} className="border-b border-slate-50 last:border-0">
+                                <td className="py-1 text-slate-500">
+                                  {openDay.intervalos.length > 1 ? `Intervalo ${ii + 1}` : "Almoço"}
+                                </td>
+                                <td className="py-1 text-right font-medium text-slate-800">
+                                  {intervalo.inicio} → {intervalo.fim}
+                                </td>
+                                <td className="py-1 pl-2.5 text-right text-slate-500">{intervalo.duracaoLabel}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
                     <div className="mt-2 flex gap-2">
                       <div className="flex-1 rounded-md border border-blue-100 bg-white px-2.5 py-1.5">
                         <p className="text-[10px] text-slate-500">Total trabalhado no dia</p>
