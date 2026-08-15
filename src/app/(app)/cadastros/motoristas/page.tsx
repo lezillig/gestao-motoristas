@@ -23,9 +23,6 @@ const SORT_FIELDS = [
 ] as const;
 type SortField = (typeof SORT_FIELDS)[number];
 
-const REGIME_LABELS: Record<string, string> = { PADRAO: "Padrão", DOZE_X_TRINTA_SEIS: "12x36" };
-const ESCALA_LABELS: Record<string, string> = { SEIS_UM: "6x1", CINCO_DOIS: "5x2" };
-
 export default async function MotoristasPage({
   searchParams,
 }: {
@@ -220,14 +217,10 @@ export default async function MotoristasPage({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
-                <SortableTh label="Nome" field="name" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
-                <SortableTh label="CPF" field="cpf" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
-                <SortableTh label="Sindicato" field="sindicato" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
-                <SortableTh label="Empregador" field="empregador" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <SortableTh label="Unidade de alocação" field="departamento" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <SortableTh label="Cargo" field="funcao" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
-                <SortableTh label="Regime" field="regimeHoras" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
-                <SortableTh label="Escala" field="escalaSemanal" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="Nome" field="name" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="CPF" field="cpf" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <SortableTh label="CNH" field="cnhExpiration" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3" />
@@ -236,7 +229,7 @@ export default async function MotoristasPage({
             <tbody>
               {drivers.length === 0 && (
                 <tr>
-                  <td colSpan={11} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
                     Nenhum motorista encontrado.
                   </td>
                 </tr>
@@ -246,14 +239,10 @@ export default async function MotoristasPage({
                 const days = d.cnhExpiration ? daysUntil(d.cnhExpiration) : null;
                 return (
                   <tr key={d.id} className="border-b border-slate-100 last:border-0">
-                    <td className="px-4 py-3 font-medium text-slate-800">{d.name}</td>
-                    <td className="px-4 py-3 text-slate-600">{d.cpf}</td>
-                    <td className="px-4 py-3 text-slate-600">{d.sindicato?.nome ?? "—"}</td>
-                    <td className="px-4 py-3 text-slate-600">{d.empregador ?? "—"}</td>
                     <td className="px-4 py-3 text-slate-600">{d.departamento ?? "—"}</td>
                     <td className="px-4 py-3 text-slate-600">{d.funcao ?? "—"}</td>
-                    <td className="px-4 py-3 text-slate-600">{d.regimeHoras ? REGIME_LABELS[d.regimeHoras] : "—"}</td>
-                    <td className="px-4 py-3 text-slate-600">{d.escalaSemanal ? ESCALA_LABELS[d.escalaSemanal] : "—"}</td>
+                    <td className="px-4 py-3 font-medium text-slate-800">{d.name}</td>
+                    <td className="px-4 py-3 text-slate-600">{d.cpf}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         {level === "pendente" ? (

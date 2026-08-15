@@ -7,6 +7,13 @@ import { parsePunches } from "@/lib/pontoCompliance";
 
 export type ExportRow = string[];
 
+// CPF entra em toda exportacao (resumo e detalhado) mas comeca oculto na
+// coluna do Excel — pedido explicito do usuario pra cruzar com outro
+// sistema depois, sem poluir a visualizacao padrao do relatorio. CSV/PDF nao
+// tem conceito de coluna oculta, entao o CPF fica visivel neles (o CSV em
+// particular e o formato mais provavel de ser usado pro cruzamento real).
+export const CPF_COLUMN_INDEX = 1; // 0-indexed, logo apos "Motorista"
+
 // Resumo: uma linha por motorista (nome + total do mes). Detalhado: uma
 // linha por dia com registro, no mesmo formato do relatorio nativo do
 // TiqueTaque (colunas Entrada/Saida por par, ate o maior numero de pares
@@ -18,8 +25,8 @@ export function buildExportTable(
 ): { headers: string[]; rows: ExportRow[] } {
   if (!detalhe) {
     return {
-      headers: ["Motorista", "Total do mês"],
-      rows: report.map((r) => [r.driverName, formatHoursMinutes(r.totalMinutes)]),
+      headers: ["Motorista", "CPF", "Total do mês"],
+      rows: report.map((r) => [r.driverName, r.driverCpf, formatHoursMinutes(r.totalMinutes)]),
     };
   }
 
@@ -38,7 +45,7 @@ export function buildExportTable(
     }
   }
 
-  const headers = ["Motorista", "Data", "Dia da semana"];
+  const headers = ["Motorista", "CPF", "Data", "Dia da semana"];
   for (let i = 1; i <= maxPairs; i++) headers.push(`Entrada ${i}`, `Saída ${i}`);
   headers.push("Hora extra (50%)", "Total");
 
@@ -51,7 +58,12 @@ export function buildExportTable(
           const pairs = entry.punches
             ? parsePunches(entry.punches)
             : [{ entrada: entry.clockIn, saida: entry.clockOut }];
-          const row: string[] = [r.driverName, format(day.date, "dd/MM/yyyy"), format(day.date, "EEEE", { locale: ptBR })];
+          const row: string[] = [
+            r.driverName,
+            r.driverCpf,
+            format(day.date, "dd/MM/yyyy"),
+            format(day.date, "EEEE", { locale: ptBR }),
+          ];
           for (let i = 0; i < maxPairs; i++) {
             row.push(pairs[i]?.entrada ?? "", pairs[i]?.saida ?? "");
           }
@@ -63,7 +75,7 @@ export function buildExportTable(
         }
       }
     }
-    rows.push([r.driverName, "", "Total do mês", ...Array(maxPairs * 2).fill(""), "", formatHoursMinutes(r.totalMinutes)]);
+    rows.push([r.driverName, r.driverCpf, "", "Total do mês", ...Array(maxPairs * 2).fill(""), "", formatHoursMinutes(r.totalMinutes)]);
   }
   return { headers, rows };
 }
@@ -74,7 +86,7 @@ export async function buildExportXlsx(headers: string[], rows: ExportRow[], shee
   sheet.addRow(headers);
   sheet.getRow(1).font = { bold: true };
   rows.forEach((r) => sheet.addRow(r));
-  sheet.columns = headers.map(() => ({ width: 24 }));
+  sheet.columns = headers.map((h, i) => ({ width: 24, hidden: h === "CPF" && i === CPF_COLUMN_INDEX }));
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);
 }

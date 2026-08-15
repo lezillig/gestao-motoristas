@@ -3,13 +3,19 @@
 import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 
+export type DayMarcacaoView = { entrada: string; saida: string | null; duracaoLabel: string };
 export type DayCellView = {
+  dayKey: string;
   label: string;
+  dateLabel: string;
   value: string;
   hasEntry: boolean;
   overtime: boolean;
   interjornadaViolation: boolean;
   missingInterval: boolean;
+  workedLabel: string;
+  overtimeLabel: string;
+  marcacoes: DayMarcacaoView[];
 } | null;
 export type WeekStripView = { label: string; subtotal: string; days: DayCellView[] };
 
@@ -22,6 +28,7 @@ const TIER_TEXT_CLASS: Record<"alto" | "medio" | "normal", string> = {
 export default function DriverMonthRow({
   driverName,
   totalLabel,
+  dailyLimitLabel,
   weekTotals,
   gridTemplateColumns,
   weeks,
@@ -29,6 +36,9 @@ export default function DriverMonthRow({
 }: {
   driverName: string;
   totalLabel: string;
+  // Limite diario (escala/regime do motorista) usado pro card de hora extra
+  // no drill-down por dia — mesmo valor pra todos os dias do motorista.
+  dailyLimitLabel: string;
   // Total de cada semana do mes, na mesma ordem de `weeks" — resumo visivel
   // na linha, sem precisar abrir o drill on/off pra ver o detalhamento
   // diario.
@@ -40,6 +50,9 @@ export default function DriverMonthRow({
   tier: "alto" | "medio" | "normal";
 }) {
   const [open, setOpen] = useState(false);
+  // So um dia aberto por vez, em qualquer semana do motorista — mesmo
+  // espirito do drill on/off por motorista, um nivel abaixo.
+  const [openDayKey, setOpenDayKey] = useState<string | null>(null);
   const tierClass = TIER_TEXT_CLASS[tier];
 
   return (
@@ -79,25 +92,66 @@ export default function DriverMonthRow({
                     day.missingInterval && "turno de 6h+ sem intervalo intrajornada registrado",
                   ].filter(Boolean) as string[];
                   const violated = issues.length > 0;
+                  const dayOpen = openDayKey === day.dayKey;
+                  const baseClass = `mt-1 w-full rounded-md px-1 py-1.5 text-xs font-medium ${
+                    !day.hasEntry
+                      ? "border border-dashed border-slate-200 text-slate-300"
+                      : day.overtime
+                        ? "bg-amber-50 text-amber-800"
+                        : "bg-blue-50 text-blue-800"
+                  } ${violated ? "ring-2 ring-red-400" : dayOpen ? "ring-2 ring-blue-400" : ""}`;
                   return (
                     <div key={i} className="text-center">
                       <p className="text-[10px] uppercase text-slate-400">{day.label}</p>
-                      <p
-                        title={issues.join(" · ") || undefined}
-                        className={`mt-1 rounded-md px-1 py-1.5 text-xs font-medium ${
-                          !day.hasEntry
-                            ? "border border-dashed border-slate-200 text-slate-300"
-                            : day.overtime
-                              ? "bg-amber-50 text-amber-800"
-                              : "bg-blue-50 text-blue-800"
-                        } ${violated ? "ring-2 ring-red-400" : ""}`}
-                      >
-                        {day.value}
-                      </p>
+                      {day.hasEntry ? (
+                        <button
+                          type="button"
+                          title={issues.join(" · ") || undefined}
+                          onClick={() => setOpenDayKey(dayOpen ? null : day.dayKey)}
+                          className={baseClass}
+                        >
+                          {day.value}
+                        </button>
+                      ) : (
+                        <p className={baseClass}>{day.value}</p>
+                      )}
                     </div>
                   );
                 })}
               </div>
+
+              {(() => {
+                const openDay = week.days.find((d) => d?.dayKey === openDayKey);
+                if (!openDay) return null;
+                return (
+                  <div className="mt-2 rounded-lg border border-blue-200 bg-blue-50/50 p-3">
+                    <p className="mb-2 text-xs font-medium capitalize text-slate-700">{openDay.dateLabel}</p>
+                    <table className="w-full overflow-hidden rounded-md border border-blue-100 bg-white text-xs">
+                      <tbody>
+                        {openDay.marcacoes.map((m, mi) => (
+                          <tr key={mi} className="border-b border-blue-50 last:border-0">
+                            <td className="px-2.5 py-1.5 text-slate-500">Marcação {mi + 1}</td>
+                            <td className="px-2.5 py-1.5 text-right font-medium text-slate-800">
+                              {m.entrada} → {m.saida ?? "em aberto"}
+                            </td>
+                            <td className="px-2.5 py-1.5 text-right text-slate-500">{m.duracaoLabel}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div className="mt-2 flex gap-2">
+                      <div className="flex-1 rounded-md border border-blue-100 bg-white px-2.5 py-1.5">
+                        <p className="text-[10px] text-slate-500">Total trabalhado no dia</p>
+                        <p className="text-sm font-medium text-slate-800">{openDay.workedLabel}</p>
+                      </div>
+                      <div className="flex-1 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5">
+                        <p className="text-[10px] text-amber-800">Horas extras no dia (escala: {dailyLimitLabel})</p>
+                        <p className="text-sm font-medium text-amber-800">{openDay.overtimeLabel}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           ))}
         </div>

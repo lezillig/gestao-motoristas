@@ -5,11 +5,31 @@ import {
   overtimeMinutes,
   findInterjornadaViolations,
   findMissingIntervalViolations,
+  parsePunches,
   MIN_INTERJORNADA_MINUTES,
   REGIME_12X36_REST_MINUTES,
+  STANDARD_DAILY_MINUTES,
+  type PunchPair,
 } from "@/lib/pontoCompliance";
 import { driverDailyLimitMinutes, driverRegime12x36 } from "@/lib/convencao";
 import type { Prisma, TimeClockEntry } from "@prisma/client";
+
+// Pares entrada/saida reais do dia, pro drill-down por dia no relatorio
+// mensal. Reusa `punches` (importacao TiqueTaque com 2+ pausas) quando
+// presente; senao reconstroi a partir de clockIn/intervalo*/clockOut
+// (lancamento manual ou importacao de 1 pausa so) — mesma logica de
+// precedencia ja usada em `workedMinutes`.
+function resolveDayPairs(entry: TimeClockEntry): PunchPair[] {
+  const punches = parsePunches(entry.punches);
+  if (punches.length > 0) return punches;
+  if (entry.intervaloInicio && entry.intervaloFim) {
+    return [
+      { entrada: entry.clockIn, saida: entry.intervaloInicio },
+      { entrada: entry.intervaloFim, saida: entry.clockOut },
+    ];
+  }
+  return [{ entrada: entry.clockIn, saida: entry.clockOut }];
+}
 
 type DriverWithConvencoes = Prisma.DriverGetPayload<{
   include: { sindicato: { include: { convencoes: { include: { regras: true } } } } };
@@ -33,50 +53,58 @@ export type MonthlyDayCell = {
   // detalhada, que mostra os pares entrada/saida reais, no formato nativo
   // do TiqueTaque.
   entries: TimeClockEntry[];
+  // Pares entrada/saida ja resolvidos (ver resolveDayPairs) — usado pelo
+  // drill-down por dia em /ponto/mensal.
+  punchPairs: PunchPair[];
 };
 
 export type MonthlyWeekStrip = {
-  label: string; // "01/08–07/08" ou "29/08–31/08" (ultima, com menos de 7 dias)
-  partial: boolean; // true so na ultima semana quando o mes nao fecha em multiplo de 7
+  label: string; // "01/08–07/08" ou "29/08–31/08" (semana parcial no inicio/fim do mes)
+  partial: boolean; // true quando a semana tem menos de 7 dias reais do mes
   subtotalMinutes: number;
-  // Sempre dias reais do mes (nunca null) — ver comentario em buildWeekGrid.
-  days: MonthlyDayCell[];
+  // Grade fixa Domingo(0)..Sabado(6) — null nas posicoes fora do mes (inicio
+  // da primeira semana / fim da ultima), ver buildWeekGrid.
+  days: (MonthlyDayCell | null)[];
 };
 
 export type DriverMonthlyReport = {
   driverId: string;
   driverName: string;
+  driverCpf: string;
   totalMinutes: number;
   totalOvertimeMinutes: number;
+  dailyLimitMinutes: number;
   weeks: MonthlyWeekStrip[];
 };
 
-// Blocos fixos de 7 dias a partir do dia 1 do mes (dia 1-7, 8-14, 15-21,
-// 22-28, 29-ate o fim) — deliberadamente NAO alinhado ao calendario
-// segunda-domingo. Um mes de 31 dias comecando proximo do fim de uma semana
-// (ex.: agosto/2026, que comeca num sabado) geraria uma 6a linha se a grade
-// fosse alinhada ao calendario (confirmado com o usuario, que preferiu no
-// maximo 5 blocos a manter o alinhamento por dia da semana). Cada dia dentro
-// do bloco continua mostrando seu proprio dia da semana real (EEE) na celula
-// — so a POSICAO da coluna deixa de corresponder sempre ao mesmo dia da
-// semana entre um bloco e outro.
-function buildWeekGrid(monthStart: Date, monthEndExclusive: Date) {
-  const weeks: Date[][] = [];
+// Semanas reais do calendario, Domingo(coluna 0) a Sabado(coluna 6) — pedido
+// explicito do usuario pra manter sempre essa ordem de colunas, mesmo
+// sabendo que isso pode gerar uma 1a/ultima linha parcial e, em alguns
+// meses, ate 6 linhas (ex.: agosto/2026, que comeca num sabado). Posicoes
+// fora do mes (antes do dia 1 ou depois do ultimo dia) ficam null — a
+// coluna nunca muda de dia da semana entre uma linha e outra.
+function buildWeekGrid(monthStart: Date, monthEndExclusive: Date): (Date | null)[][] {
+  const weeks: (Date | null)[][] = [];
   let cursor = monthStart;
+  let week: (Date | null)[] = new Array(monthStart.getDay()).fill(null);
   while (cursor < monthEndExclusive) {
-    const days: Date[] = [];
-    for (let i = 0; i < 7 && cursor < monthEndExclusive; i++) {
-      days.push(cursor);
-      cursor = addDays(cursor, 1);
+    week.push(cursor);
+    if (week.length === 7) {
+      weeks.push(week);
+      week = [];
     }
-    weeks.push(days);
+    cursor = addDays(cursor, 1);
+  }
+  if (week.length > 0) {
+    while (week.length < 7) week.push(null);
+    weeks.push(week);
   }
   return weeks;
 }
 
 function buildDriverReport(
   driver: DriverWithConvencoes,
-  weekGrid: Date[][],
+  weekGrid: (Date | null)[][],
   entriesByDay: Map<string, TimeClockEntry[]>,
   violatedEntryIds: Set<string>,
   missingIntervalEntryIds: Set<string>
@@ -85,15 +113,17 @@ function buildDriverReport(
   let totalMinutes = 0;
   let totalOvertimeMinutes = 0;
 
-  const weeks: MonthlyWeekStrip[] = weekGrid.map((weekDays) => {
+  const weeks: MonthlyWeekStrip[] = weekGrid.map((weekSlots) => {
     let subtotal = 0;
-    const partial = weekDays.length < 7;
+    const realDays = weekSlots.filter((d): d is Date => d !== null);
+    const partial = realDays.length < 7;
     const label =
-      weekDays.length > 1
-        ? `${format(weekDays[0], "dd/MM")}–${format(weekDays[weekDays.length - 1], "dd/MM")}`
-        : format(weekDays[0], "dd/MM");
+      realDays.length > 1
+        ? `${format(realDays[0], "dd/MM")}–${format(realDays[realDays.length - 1], "dd/MM")}`
+        : format(realDays[0], "dd/MM");
 
-    const days = weekDays.map((date): MonthlyDayCell => {
+    const days = weekSlots.map((date): MonthlyDayCell | null => {
+      if (!date) return null;
       const dayKey = format(date, "yyyy-MM-dd");
       const dayEntries = entriesByDay.get(`${driver.id}_${dayKey}`) ?? [];
       const workedList = dayEntries.map((e) => workedMinutes(e));
@@ -112,6 +142,7 @@ function buildDriverReport(
         interjornadaViolation: dayEntries.some((e) => violatedEntryIds.has(e.id)),
         missingInterval: dayEntries.some((e) => missingIntervalEntryIds.has(e.id)),
         entries: dayEntries,
+        punchPairs: dayEntries[0] ? resolveDayPairs(dayEntries[0]) : [],
       };
     });
 
@@ -119,7 +150,15 @@ function buildDriverReport(
     return { label, partial, subtotalMinutes: subtotal, days };
   });
 
-  return { driverId: driver.id, driverName: driver.name, totalMinutes, totalOvertimeMinutes, weeks };
+  return {
+    driverId: driver.id,
+    driverName: driver.name,
+    driverCpf: driver.cpf,
+    totalMinutes,
+    totalOvertimeMinutes,
+    dailyLimitMinutes: limit?.minutes ?? STANDARD_DAILY_MINUTES,
+    weeks,
+  };
 }
 
 export async function buildMonthlyReport(

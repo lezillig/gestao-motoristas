@@ -6,7 +6,7 @@ import { requireSession } from "@/lib/auth";
 import { cardClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import { buildMonthlyReport } from "@/lib/pontoMensal";
-import { formatHoursMinutes } from "@/lib/time";
+import { formatHoursMinutes, durationMinutes } from "@/lib/time";
 import { buildSortHref, nextSortDir } from "@/lib/sort";
 import DriverMonthRow, { type WeekStripView } from "./DriverMonthRow";
 import ExportBar from "./ExportBar";
@@ -44,6 +44,7 @@ export default async function PontoMensalPage({
     totalMinutes: r.totalMinutes,
     totalOvertimeMinutes: r.totalOvertimeMinutes,
     totalLabel: formatHoursMinutes(r.totalMinutes),
+    dailyLimitLabel: formatHoursMinutes(r.dailyLimitMinutes),
     weekMinutes: r.weeks.map((w) => w.subtotalMinutes),
     weekTotals: r.weeks.map((w) => formatHoursMinutes(w.subtotalMinutes)),
     weeks: r.weeks.map(
@@ -53,12 +54,21 @@ export default async function PontoMensalPage({
         days: w.days.map((d) =>
           d
             ? {
+                dayKey: d.dayKey,
                 label: format(d.date, "EEE dd/MM", { locale: ptBR }),
+                dateLabel: format(d.date, "EEEE, dd/MM/yyyy", { locale: ptBR }),
                 value: d.open ? "em aberto" : d.hasEntry ? formatHoursMinutes(d.minutes) : "—",
                 hasEntry: d.hasEntry,
                 overtime: d.overtime,
                 interjornadaViolation: d.interjornadaViolation,
                 missingInterval: d.missingInterval,
+                workedLabel: d.open ? "em aberto" : d.hasEntry ? formatHoursMinutes(d.minutes) : "—",
+                overtimeLabel: formatHoursMinutes(d.overtimeMinutes),
+                marcacoes: d.punchPairs.map((p) => ({
+                  entrada: p.entrada,
+                  saida: p.saida,
+                  duracaoLabel: p.saida ? formatHoursMinutes(durationMinutes(p.entrada, p.saida)) : "em aberto",
+                })),
               }
             : null
         ),
@@ -174,6 +184,7 @@ export default async function PontoMensalPage({
               key={r.driverId}
               driverName={r.driverName}
               totalLabel={r.totalLabel}
+              dailyLimitLabel={r.dailyLimitLabel}
               weekTotals={r.weekTotals}
               gridTemplateColumns={gridTemplateColumns}
               weeks={r.weeks}
