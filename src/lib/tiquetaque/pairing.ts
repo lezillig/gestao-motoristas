@@ -2,40 +2,73 @@ import type { TiqueTaqueDayEntry, TiqueTaquePunchPair } from "./types";
 
 type RawPunch = { time: string; approved: boolean };
 
-// Pareia TODAS as batidas aprovadas em ordem cronologica ABSOLUTA (nao por
-// dia calendario) e so DEPOIS agrupa os pares resultantes pelo dia da
-// entrada. So usa batidas aprovadas — uma pendente de aprovacao no
-// TiqueTaque nao deveria virar um registro de ponto confirmado no nosso
-// sistema.
+// Nenhum turno real e mais longo que isso — usado como teto de plausibilidade
+// pra decidir se duas batidas consecutivas formam um par (ver mais abaixo).
+// Maior que qualquer turno real ja visto em dados de producao (o mais longo
+// confirmado ficou em ~12h), com folga.
+const MAX_PLAUSIBLE_SHIFT_MINUTES = 16 * 60;
+
+function minutesBetween(aFull: string, bFull: string): number {
+  return (new Date(bFull).getTime() - new Date(aFull).getTime()) / 60000;
+}
+
+// Pareia batidas aprovadas em ordem cronologica ABSOLUTA (nao por dia
+// calendario) e so DEPOIS agrupa os pares resultantes pelo dia da entrada.
+// So usa batidas aprovadas — uma pendente de aprovacao no TiqueTaque nao
+// deveria virar um registro de ponto confirmado no nosso sistema.
 //
-// Bug real corrigido aqui (2026-08-16, achado pelo usuario comparando com o
-// extrato real de um motorista de turno noturno): a versao anterior
-// agrupava as batidas pelo DIA CALENDARIO de cada marca individual, antes
-// de parear. Isso quebra qualquer turno que cruza a meia-noite — a saida de
-// madrugada (ex. 00:28) cai no dia calendario seguinte ao da entrada (ex.
-// 20:25 do dia anterior), entao ela ficava "sobrando" nesse dia seguinte e
-// virava par com a PROXIMA entrada daquele mesmo dia (ex. 20:25, inicio do
-// turno seguinte) — produzindo um "turno" de ~20h que na real e o DESCANSO
-// entre dois turnos reais, invertido em horas trabalhadas. Pareando primeiro
-// (cronologia absoluta, atravessando meia-noite) e so depois decidindo a
-// qual dia cada PAR pertence (pelo dia da entrada — mesma convencao do
-// extrato nativo do TiqueTaque, confirmado comparando um turno real: entrada
-// 28/07 20:25 -> saida 29/07 00:22 aparece no relatorio deles como o turno
-// de 28/07), o turno noturno inteiro fica corretamente atribuido a um unico
-// dia e `durationMinutes` (que ja soma 24h quando a saida e "menor" que a
-// entrada) calcula a duracao certa.
+// Bug #1 corrigido aqui (2026-08-16, achado pelo usuario comparando com o
+// extrato real de um motorista de turno noturno): a versao antiga agrupava
+// as batidas pelo DIA CALENDARIO de cada marca antes de parear. Isso quebra
+// qualquer turno que cruza a meia-noite — a saida de madrugada (ex. 00:28)
+// cai no dia calendario seguinte ao da entrada (ex. 20:25 do dia anterior),
+// entao ela ficava "sobrando" nesse dia seguinte e virava par com a PROXIMA
+// entrada daquele mesmo dia — produzindo um "turno" de ~20h que na real e o
+// DESCANSO entre dois turnos reais, invertido em horas trabalhadas.
+//
+// Bug #2 corrigido aqui (mesmo dia, achado reimportando o mes inteiro de
+// producao pra varios motoristas de uma vez): pareando TODAS as batidas do
+// periodo inteiro em sequencia simples (1a-2a, 3a-4a, ...) sem nenhum
+// criterio de plausibilidade, uma UNICA batida a mais em QUALQUER lugar do
+// periodo (ex. dupla marcacao por engano, bem comum em 300 motoristas ao
+// longo de 7+ meses) desalinha a paridade de TODAS as batidas seguintes,
+// para o resto inteiro do periodo — motoristas com turno diurno normal
+// (entrada de manha, saida no meio do dia, sem cruzar meia-noite nenhuma)
+// comecaram a aparecer com turnos de ~18-20h, misturando a saida de um dia
+// com a entrada do dia seguinte. So aceita um par se o intervalo entre as
+// duas batidas for plausivel como turno (`MAX_PLAUSIBLE_SHIFT_MINUTES`); do
+// contrario, a primeira batida vira um registro isolado (turno em aberto,
+// sem saida) e o pareamento recomeca do zero a partir da batida seguinte —
+// uma batida extra fica isolada num unico "turno aberto" cosmetico (nao
+// entra na soma de horas trabalhadas, que so soma pares com saida), sem
+// arrastar erro pros dias seguintes. Verificado com o extrato real de um
+// motorista com uma marcacao duplicada no meio do mes: o pareamento erra so
+// aquele dia e volta a bater com a producao no dia seguinte.
 export function pairPunchesIntoDays(punches: RawPunch[]): TiqueTaqueDayEntry[] {
   const sorted = punches
     .filter((p) => p.approved)
     .map((p) => p.time)
     .sort();
 
+  const rawPairs: { entradaFull: string; saidaFull: string | null }[] = [];
+  let i = 0;
+  while (i < sorted.length) {
+    const entradaFull = sorted[i];
+    const nextFull = sorted[i + 1];
+    if (nextFull && minutesBetween(entradaFull, nextFull) <= MAX_PLAUSIBLE_SHIFT_MINUTES) {
+      rawPairs.push({ entradaFull, saidaFull: nextFull });
+      i += 2;
+    } else {
+      rawPairs.push({ entradaFull, saidaFull: null });
+      i += 1;
+    }
+  }
+
   const byDate = new Map<string, TiqueTaquePunchPair[]>();
-  for (let i = 0; i < sorted.length; i += 2) {
-    const [date, entradaHhmm] = sorted[i].split("T");
+  for (const { entradaFull, saidaFull } of rawPairs) {
+    const [date, entradaHhmm] = entradaFull.split("T");
     if (!date || !entradaHhmm) continue;
-    const saidaFull = sorted[i + 1];
-    const saidaHhmm = saidaFull ? saidaFull.split("T")[1] : undefined;
+    const saidaHhmm = saidaFull ? saidaFull.split("T")[1] : null;
 
     const list = byDate.get(date) ?? [];
     list.push({ entrada: entradaHhmm.slice(0, 5), saida: saidaHhmm ? saidaHhmm.slice(0, 5) : null });
