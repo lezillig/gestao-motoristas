@@ -8,6 +8,10 @@ export type DriverAnnualReport = {
   // 12 posicoes, Janeiro (indice 0) a Dezembro (indice 11).
   monthlyOvertimeMinutes: number[];
   totalOvertimeMinutes: number;
+  // Horas totais trabalhadas por mes — visao alternativa a hora extra, mesma
+  // ideia da alternancia ja existente em /ponto/mensal.
+  monthlyWorkedMinutes: number[];
+  totalWorkedMinutes: number;
 };
 
 // Hora extra por mes (nao total trabalhado) — o objetivo explicito deste
@@ -31,23 +35,39 @@ export async function buildAnnualReport(companyId: string, year: number): Promis
   const dailyLimitByDriver = new Map(drivers.map((d) => [d.id, driverDailyLimitMinutes(d)]));
   const regime12x36ByDriver = new Map(drivers.map((d) => [d.id, driverRegime12x36(d)]));
 
-  const monthlyByDriver = new Map<string, number[]>();
+  const overtimeByDriver = new Map<string, number[]>();
+  const workedByDriver = new Map<string, number[]>();
   for (const entry of entries) {
     const regime = regime12x36ByDriver.get(entry.driverId);
     const limit = dailyLimitByDriver.get(entry.driverId);
     const effectiveLimit = regime?.ativo ? REGIME_12X36_WORK_MINUTES : limit?.minutes;
-    const overtime = overtimeMinutes(workedMinutes(entry), effectiveLimit);
+    const worked = workedMinutes(entry);
+    const overtime = overtimeMinutes(worked, effectiveLimit);
+
+    const workedArr = workedByDriver.get(entry.driverId) ?? new Array(12).fill(0);
+    workedArr[entry.date.getMonth()] += worked ?? 0;
+    workedByDriver.set(entry.driverId, workedArr);
+
     if (overtime <= 0) continue;
-    const arr = monthlyByDriver.get(entry.driverId) ?? new Array(12).fill(0);
-    arr[entry.date.getMonth()] += overtime;
-    monthlyByDriver.set(entry.driverId, arr);
+    const overtimeArr = overtimeByDriver.get(entry.driverId) ?? new Array(12).fill(0);
+    overtimeArr[entry.date.getMonth()] += overtime;
+    overtimeByDriver.set(entry.driverId, overtimeArr);
   }
 
   return drivers
     .map((driver) => {
-      const monthlyOvertimeMinutes = monthlyByDriver.get(driver.id) ?? new Array(12).fill(0);
+      const monthlyOvertimeMinutes = overtimeByDriver.get(driver.id) ?? new Array(12).fill(0);
       const totalOvertimeMinutes = monthlyOvertimeMinutes.reduce((sum, m) => sum + m, 0);
-      return { driverId: driver.id, driverName: driver.name, monthlyOvertimeMinutes, totalOvertimeMinutes };
+      const monthlyWorkedMinutes = workedByDriver.get(driver.id) ?? new Array(12).fill(0);
+      const totalWorkedMinutes = monthlyWorkedMinutes.reduce((sum, m) => sum + m, 0);
+      return {
+        driverId: driver.id,
+        driverName: driver.name,
+        monthlyOvertimeMinutes,
+        totalOvertimeMinutes,
+        monthlyWorkedMinutes,
+        totalWorkedMinutes,
+      };
     })
     .filter((r) => r.totalOvertimeMinutes > 0);
 }

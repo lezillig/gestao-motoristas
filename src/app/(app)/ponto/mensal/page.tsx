@@ -8,8 +8,10 @@ import PageHeader from "@/components/ui/PageHeader";
 import { buildMonthlyReport } from "@/lib/pontoMensal";
 import { formatHoursMinutes, durationMinutes } from "@/lib/time";
 import { buildSortHref, nextSortDir } from "@/lib/sort";
-import DriverMonthRow, { type WeekStripView } from "./DriverMonthRow";
+import { type WeekStripView } from "./DriverMonthRow";
+import MonthlyDriverTable, { type MonthlyDriverRow } from "./MonthlyDriverTable";
 import ExportBar from "./ExportBar";
+import ViewToggle, { type VisaoHoras } from "@/components/ui/ViewToggle";
 
 const TOTAL_SORT_KEY = "total";
 const MOTORISTA_SORT_KEY = "motorista";
@@ -20,10 +22,11 @@ const ordinalDaSemana = (i: number) => ORDINAIS[i] ?? `${i + 1}ª`;
 export default async function PontoMensalPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string; sort?: string; dir?: string }>;
+  searchParams: Promise<{ mes?: string; sort?: string; dir?: string; visao?: string }>;
 }) {
   const session = await requireSession();
-  const { mes, sort, dir } = await searchParams;
+  const { mes, sort, dir, visao: visaoParam } = await searchParams;
+  const visao: VisaoHoras = visaoParam === "extras" ? "extras" : "totais";
 
   const anchor = mes ? new Date(`${mes}-01T00:00:00`) : new Date();
   const monthStart = startOfMonth(anchor);
@@ -44,9 +47,12 @@ export default async function PontoMensalPage({
     totalMinutes: r.totalMinutes,
     totalOvertimeMinutes: r.totalOvertimeMinutes,
     totalLabel: formatHoursMinutes(r.totalMinutes),
+    totalOvertimeLabel: formatHoursMinutes(r.totalOvertimeMinutes),
     dailyLimitLabel: formatHoursMinutes(r.dailyLimitMinutes),
     weekMinutes: r.weeks.map((w) => w.subtotalMinutes),
+    weekOvertimeMinutes: r.weeks.map((w) => w.subtotalOvertimeMinutes),
     weekTotals: r.weeks.map((w) => formatHoursMinutes(w.subtotalMinutes)),
+    weekOvertimeTotals: r.weeks.map((w) => formatHoursMinutes(w.subtotalOvertimeMinutes)),
     weeks: r.weeks.map(
       (w, i): WeekStripView => ({
         label: `${ordinalDaSemana(i)} Semana · ${w.label}`,
@@ -103,15 +109,20 @@ export default async function PontoMensalPage({
 
   const sortDir = dir === "asc" ? "asc" : "desc";
   const sortableKeys = new Set([MOTORISTA_SORT_KEY, TOTAL_SORT_KEY, ...weekHeaderLabels.map((_, i) => semanaSortKey(i))]);
+  // Ordena pelos numeros da visao ativa (extras ou totais) — clicar "1ª Sem"
+  // no modo "Horas extras" ordena pela hora extra daquela semana, nao pelo
+  // total trabalhado.
+  const activeWeekMinutes = (r: (typeof rows)[number]) => (visao === "extras" ? r.weekOvertimeMinutes : r.weekMinutes);
+  const activeTotalMinutes = (r: (typeof rows)[number]) => (visao === "extras" ? r.totalOvertimeMinutes : r.totalMinutes);
   const sortedRows =
     sort && sortableKeys.has(sort)
       ? [...rows].sort((a, b) => {
           let cmp: number;
           if (sort === MOTORISTA_SORT_KEY) cmp = a.driverName.localeCompare(b.driverName);
-          else if (sort === TOTAL_SORT_KEY) cmp = a.totalMinutes - b.totalMinutes;
+          else if (sort === TOTAL_SORT_KEY) cmp = activeTotalMinutes(a) - activeTotalMinutes(b);
           else {
             const idx = Number(sort.slice("semana-".length));
-            cmp = (a.weekMinutes[idx] ?? 0) - (b.weekMinutes[idx] ?? 0);
+            cmp = (activeWeekMinutes(a)[idx] ?? 0) - (activeWeekMinutes(b)[idx] ?? 0);
           }
           return sortDir === "desc" ? -cmp : cmp;
         })
@@ -128,7 +139,7 @@ export default async function PontoMensalPage({
     byOvertimeDesc.map((r, i) => [r.driverId, i < redCount ? "alto" : i < redCount + amberCount ? "medio" : "normal"])
   );
 
-  const sortLinkParams = { mes: mesAtual };
+  const sortLinkParams = { mes: mesAtual, visao };
   const gridTemplateColumns = `1fr ${"92px ".repeat(weekCount)}110px 28px`;
 
   const headerCell = (label: string, field: string, title?: string, align: "left" | "right" = "right") => {
@@ -153,7 +164,7 @@ export default async function PontoMensalPage({
     <div className="max-w-6xl">
       <PageHeader
         title="Relatório mensal"
-        subtitle="Total de horas trabalhadas por motorista no mês, com detalhamento diário e exportação."
+        subtitle="Horas trabalhadas ou horas extras por motorista no mês, com detalhamento diário e exportação."
       />
 
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -172,7 +183,10 @@ export default async function PontoMensalPage({
             Próximo mês <ChevronRight className="h-4 w-4" />
           </Link>
         </div>
-        <ExportBar mes={mesAtual} />
+        <div className="flex items-center gap-3">
+          <ViewToggle basePath="/ponto/mensal" params={{ mes: mesAtual }} current={visao} />
+          <ExportBar mes={mesAtual} />
+        </div>
       </div>
 
       <div className={`${cardClass} overflow-hidden p-0`}>
@@ -188,23 +202,20 @@ export default async function PontoMensalPage({
             <div>{headerCell("Total do mês", TOTAL_SORT_KEY)}</div>
             <div />
           </div>
-          {sortedRows.length === 0 && (
-            <p className="px-4 py-8 text-center text-sm text-slate-500">
-              Nenhum motorista com hora extra neste mês.
-            </p>
-          )}
-          {sortedRows.map((r) => (
-            <DriverMonthRow
-              key={r.driverId}
-              driverName={r.driverName}
-              totalLabel={r.totalLabel}
-              dailyLimitLabel={r.dailyLimitLabel}
-              weekTotals={r.weekTotals}
-              gridTemplateColumns={gridTemplateColumns}
-              weeks={r.weeks}
-              tier={tierByDriverId.get(r.driverId) ?? "normal"}
-            />
-          ))}
+          <MonthlyDriverTable
+            gridTemplateColumns={gridTemplateColumns}
+            rows={sortedRows.map(
+              (r): MonthlyDriverRow => ({
+                driverId: r.driverId,
+                driverName: r.driverName,
+                totalLabel: visao === "extras" ? r.totalOvertimeLabel : r.totalLabel,
+                dailyLimitLabel: r.dailyLimitLabel,
+                weekTotals: visao === "extras" ? r.weekOvertimeTotals : r.weekTotals,
+                weeks: r.weeks,
+                tier: tierByDriverId.get(r.driverId) ?? "normal",
+              })
+            )}
+          />
         </div>
       </div>
       <p className="mt-3 text-xs text-slate-500">

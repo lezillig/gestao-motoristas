@@ -6,28 +6,30 @@ import PageHeader from "@/components/ui/PageHeader";
 import { buildAnnualReport } from "@/lib/pontoAnual";
 import { formatHoursMinutes } from "@/lib/time";
 import { buildSortHref, nextSortDir } from "@/lib/sort";
+import AnnualDriverTable, { type AnnualDriverRow } from "./AnnualDriverTable";
+import ViewToggle, { type VisaoHoras } from "@/components/ui/ViewToggle";
 
 const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const mesSortKey = (i: number) => `mes-${i}`;
 const TOTAL_SORT_KEY = "total";
 const MOTORISTA_SORT_KEY = "motorista";
 
-const TIER_TEXT_CLASS: Record<"alto" | "medio" | "normal", string> = {
-  alto: "text-red-600",
-  medio: "text-amber-600",
-  normal: "text-slate-800",
-};
-
 export default async function PontoAnualPage({
   searchParams,
 }: {
-  searchParams: Promise<{ ano?: string; sort?: string; dir?: string }>;
+  searchParams: Promise<{ ano?: string; sort?: string; dir?: string; visao?: string }>;
 }) {
   const session = await requireSession();
-  const { ano, sort, dir } = await searchParams;
+  const { ano, sort, dir, visao: visaoParam } = await searchParams;
   const year = ano ? parseInt(ano, 10) : new Date().getFullYear();
+  const visao: VisaoHoras = visaoParam === "extras" ? "extras" : "totais";
 
   const report = await buildAnnualReport(session.companyId, year);
+
+  const activeMonthly = (r: (typeof report)[number]) =>
+    visao === "extras" ? r.monthlyOvertimeMinutes : r.monthlyWorkedMinutes;
+  const activeTotal = (r: (typeof report)[number]) =>
+    visao === "extras" ? r.totalOvertimeMinutes : r.totalWorkedMinutes;
 
   const sortDir = dir === "asc" ? "asc" : "desc";
   const sortableKeys = new Set([MOTORISTA_SORT_KEY, TOTAL_SORT_KEY, ...MESES.map((_, i) => mesSortKey(i))]);
@@ -36,20 +38,22 @@ export default async function PontoAnualPage({
       ? [...report].sort((a, b) => {
           let cmp: number;
           if (sort === MOTORISTA_SORT_KEY) cmp = a.driverName.localeCompare(b.driverName);
-          else if (sort === TOTAL_SORT_KEY) cmp = a.totalOvertimeMinutes - b.totalOvertimeMinutes;
+          else if (sort === TOTAL_SORT_KEY) cmp = activeTotal(a) - activeTotal(b);
           else {
             const idx = Number(sort.slice("mes-".length));
-            cmp = a.monthlyOvertimeMinutes[idx] - b.monthlyOvertimeMinutes[idx];
+            cmp = activeMonthly(a)[idx] - activeMonthly(b)[idx];
           }
           return sortDir === "desc" ? -cmp : cmp;
         })
       : // Padrao sem clique: mais hora extra no ano primeiro — e exatamente o
         // que o relatorio existe pra mostrar, os casos mais recorrentes ja no
-        // topo sem precisar clicar em nada.
+        // topo sem precisar clicar em nada. Ranking fixo sempre por hora
+        // extra, mesmo na visao "Horas totais" (nao muda com a visao).
         [...report].sort((a, b) => b.totalOvertimeMinutes - a.totalOvertimeMinutes);
 
   // Mesmo ranking fixo 20%/40% ja usado em /ponto/mensal, so que sobre o
-  // total do ANO em vez do total do mes.
+  // total do ANO em vez do total do mes — sempre por hora extra, independente
+  // da visao selecionada (e o motivo do relatorio existir).
   const byOvertimeDesc = [...report].sort((a, b) => b.totalOvertimeMinutes - a.totalOvertimeMinutes);
   const redCount = Math.ceil(byOvertimeDesc.length * 0.2);
   const amberCount = Math.ceil(byOvertimeDesc.length * 0.4);
@@ -57,7 +61,7 @@ export default async function PontoAnualPage({
     byOvertimeDesc.map((r, i) => [r.driverId, i < redCount ? "alto" : i < redCount + amberCount ? "medio" : "normal"])
   );
 
-  const sortLinkParams = { ano: String(year) };
+  const sortLinkParams = { ano: String(year), visao };
   const gridTemplateColumns = `1fr ${"64px ".repeat(12)}100px`;
 
   const headerCell = (label: string, field: string, align: "left" | "right" = "right") => {
@@ -81,23 +85,26 @@ export default async function PontoAnualPage({
     <div className="max-w-7xl">
       <PageHeader
         title="Relatório anual de horas extras"
-        subtitle="Hora extra por mês e total do ano, por motorista — para identificar os casos que mais se repetem."
+        subtitle="Horas extras ou horas totais por mês e total do ano, por motorista — para identificar os casos que mais se repetem."
       />
 
-      <div className="mb-6 flex items-center justify-between">
-        <Link
-          href={`/ponto/anual?ano=${year - 1}`}
-          className="flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-        >
-          <ChevronLeft className="h-4 w-4" /> Ano anterior
-        </Link>
-        <p className="text-sm font-medium text-slate-700">{year}</p>
-        <Link
-          href={`/ponto/anual?ano=${year + 1}`}
-          className="flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-        >
-          Próximo ano <ChevronRight className="h-4 w-4" />
-        </Link>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <Link
+            href={`/ponto/anual?ano=${year - 1}&visao=${visao}`}
+            className="flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            <ChevronLeft className="h-4 w-4" /> Ano anterior
+          </Link>
+          <p className="text-sm font-medium text-slate-700">{year}</p>
+          <Link
+            href={`/ponto/anual?ano=${year + 1}&visao=${visao}`}
+            className="flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Próximo ano <ChevronRight className="h-4 w-4" />
+          </Link>
+        </div>
+        <ViewToggle basePath="/ponto/anual" params={{ ano: String(year) }} current={visao} />
       </div>
 
       <div className={`${cardClass} overflow-hidden p-0`}>
@@ -112,30 +119,18 @@ export default async function PontoAnualPage({
             ))}
             <div>{headerCell("Total do ano", TOTAL_SORT_KEY)}</div>
           </div>
-          {sortedRows.length === 0 && (
-            <p className="px-4 py-8 text-center text-sm text-slate-500">Nenhum motorista com hora extra neste ano.</p>
-          )}
-          {sortedRows.map((r) => {
-            const tier = tierByDriverId.get(r.driverId) ?? "normal";
-            const tierClass = TIER_TEXT_CLASS[tier];
-            return (
-              <div
-                key={r.driverId}
-                style={{ gridTemplateColumns }}
-                className="grid items-center gap-2 border-b border-slate-100 px-4 py-3 last:border-0"
-              >
-                <span className={`text-sm font-medium ${tierClass}`}>{r.driverName}</span>
-                {r.monthlyOvertimeMinutes.map((m, i) => (
-                  <span key={i} className="text-right text-sm text-slate-600">
-                    {m > 0 ? formatHoursMinutes(m) : "—"}
-                  </span>
-                ))}
-                <span className={`text-right text-sm font-semibold ${tierClass}`}>
-                  {formatHoursMinutes(r.totalOvertimeMinutes)}
-                </span>
-              </div>
-            );
-          })}
+          <AnnualDriverTable
+            gridTemplateColumns={gridTemplateColumns}
+            rows={sortedRows.map(
+              (r): AnnualDriverRow => ({
+                driverId: r.driverId,
+                driverName: r.driverName,
+                monthlyLabels: activeMonthly(r).map((m) => (m > 0 ? formatHoursMinutes(m) : "—")),
+                totalLabel: formatHoursMinutes(activeTotal(r)),
+                tier: tierByDriverId.get(r.driverId) ?? "normal",
+              })
+            )}
+          />
         </div>
       </div>
       <p className="mt-3 text-xs text-slate-500">

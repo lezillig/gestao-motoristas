@@ -62,6 +62,10 @@ export type MonthlyWeekStrip = {
   label: string; // "01/08–07/08" ou "29/08–31/08" (semana parcial no inicio/fim do mes)
   partial: boolean; // true quando a semana tem menos de 7 dias reais do mes
   subtotalMinutes: number;
+  // Soma so da hora extra (nao do total trabalhado) da semana — alimenta a
+  // visao "Horas extras" da pagina, alternativa a "Horas totais"
+  // (subtotalMinutes) ja existente.
+  subtotalOvertimeMinutes: number;
   // Grade fixa Domingo(0)..Sabado(6) — null nas posicoes fora do mes (inicio
   // da primeira semana / fim da ultima), ver buildWeekGrid.
   days: (MonthlyDayCell | null)[];
@@ -115,6 +119,7 @@ function buildDriverReport(
 
   const weeks: MonthlyWeekStrip[] = weekGrid.map((weekSlots) => {
     let subtotal = 0;
+    let subtotalOvertime = 0;
     const realDays = weekSlots.filter((d): d is Date => d !== null);
     const partial = realDays.length < 7;
     const label =
@@ -131,6 +136,7 @@ function buildDriverReport(
       subtotal += minutes;
       const extra = overtimeMinutes(minutes, limit?.minutes);
       totalOvertimeMinutes += extra;
+      subtotalOvertime += extra;
       return {
         date,
         dayKey,
@@ -147,7 +153,7 @@ function buildDriverReport(
     });
 
     totalMinutes += subtotal;
-    return { label, partial, subtotalMinutes: subtotal, days };
+    return { label, partial, subtotalMinutes: subtotal, subtotalOvertimeMinutes: subtotalOvertime, days };
   });
 
   return {
