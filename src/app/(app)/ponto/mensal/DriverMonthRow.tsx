@@ -1,9 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, MapPin } from "lucide-react";
 
-export type DayMarcacaoView = { entrada: string; saida: string | null; duracaoLabel: string };
+export type DayMarcacaoView = {
+  entrada: string;
+  saida: string | null;
+  duracaoLabel: string;
+  entradaLocation: [number, number] | null;
+  saidaLocation: [number, number] | null;
+};
 export type DayIntervaloView = { inicio: string; fim: string; duracaoLabel: string };
 export type DayCellView = {
   dayKey: string;
@@ -137,6 +143,32 @@ export default function DriverMonthRow({
                               {m.entrada} → {m.saida ?? "em aberto"}
                             </td>
                             <td className="px-2.5 py-1.5 text-right text-slate-500">{m.duracaoLabel}</td>
+                            <td className="px-2.5 py-1.5 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                {m.entradaLocation && (
+                                  <a
+                                    href={`https://www.google.com/maps?q=${m.entradaLocation[0]},${m.entradaLocation[1]}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    title={`Ver local da entrada (${m.entrada}) no mapa`}
+                                    className="text-blue-600 hover:text-blue-800"
+                                  >
+                                    <MapPin className="h-3.5 w-3.5" />
+                                  </a>
+                                )}
+                                {m.saidaLocation && (
+                                  <a
+                                    href={`https://www.google.com/maps?q=${m.saidaLocation[0]},${m.saidaLocation[1]}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    title={`Ver local da saída (${m.saida}) no mapa`}
+                                    className="text-slate-500 hover:text-slate-700"
+                                  >
+                                    <MapPin className="h-3.5 w-3.5" />
+                                  </a>
+                                )}
+                              </div>
+                            </td>
                           </tr>
                         ))}
                       </tbody>

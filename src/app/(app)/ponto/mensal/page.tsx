@@ -56,14 +56,17 @@ export default async function PontoMensalPage({
     weeks: r.weeks.map(
       (w, i): WeekStripView => ({
         label: `${ordinalDaSemana(i)} Semana · ${w.label}`,
-        subtotal: formatHoursMinutes(w.subtotalMinutes),
+        subtotal: formatHoursMinutes(visao === "extras" ? w.subtotalOvertimeMinutes : w.subtotalMinutes),
         days: w.days.map((d) =>
           d
             ? {
                 dayKey: d.dayKey,
                 label: format(d.date, "EEE dd/MM", { locale: ptBR }),
                 dateLabel: format(d.date, "EEEE, dd/MM/yyyy", { locale: ptBR }),
-                value: d.open ? "em aberto" : d.hasEntry ? formatHoursMinutes(d.minutes) : "—",
+                // Segue a visao selecionada (totais/extras) igual o resto da
+                // pagina — turno aberto/sem registro mostra o mesmo rotulo
+                // nas duas visoes, so o numero muda.
+                value: d.open ? "em aberto" : d.hasEntry ? formatHoursMinutes(visao === "extras" ? d.overtimeMinutes : d.minutes) : "—",
                 hasEntry: d.hasEntry,
                 overtime: d.overtime,
                 interjornadaViolation: d.interjornadaViolation,
@@ -74,6 +77,8 @@ export default async function PontoMensalPage({
                   entrada: p.entrada,
                   saida: p.saida,
                   duracaoLabel: p.saida ? formatHoursMinutes(durationMinutes(p.entrada, p.saida)) : "em aberto",
+                  entradaLocation: p.entradaLocation ?? null,
+                  saidaLocation: p.saidaLocation ?? null,
                 })),
                 // Intervalo entre um par e o seguinte (ex.: almoço) — so
                 // existe quando ha 2+ marcacoes fechadas no dia. Um dia com

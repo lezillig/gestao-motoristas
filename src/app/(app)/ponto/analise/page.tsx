@@ -8,6 +8,7 @@ import {
   subMonths,
 } from "date-fns";
 import {
+  AlarmClockOff,
   Banknote,
   CalendarX,
   ChevronLeft,
@@ -32,12 +33,15 @@ import {
   REGIME_12X36_REST_MINUTES,
   REGIME_12X36_WORK_MINUTES,
   findAbsences,
+  findEarlyDepartureEvents,
   findInterjornadaViolations,
+  findLatenessEvents,
   findMissingIntervalViolations,
   findMissingWeeklyRestViolations,
   intervalDurationMinutes,
   nightMinutes,
   overtimeMinutes,
+  PONTUALIDADE_TOLERANCIA_MINUTOS,
   waitingMinutes,
   workedMinutes,
   type RiskLevel,
@@ -124,7 +128,7 @@ export default async function AnaliseDeRiscosPage({
       date: { gte: monthStart, lt: monthEnd },
       ...(driverId ? { driverId } : {}),
     },
-    select: { driverId: true, date: true },
+    select: { driverId: true, date: true, startTime: true, endTime: true },
   });
 
   const dailyLimitByDriver = new Map(drivers.map((d) => [d.id, driverDailyLimitMinutes(d)]));
@@ -337,6 +341,15 @@ export default async function AnaliseDeRiscosPage({
   const absences = findAbsences(escalasInMonth, entriesInMonth);
   const absenteeismPercent = escalasInMonth.length > 0 ? (absences.length / escalasInMonth.length) * 100 : 0;
 
+  // Atrasos e saidas antecipadas: cruza a Escala (horario programado) com o
+  // TimeClockEntry real do mesmo dia — angulo diferente dos outros checks
+  // (que sao todos violacao legal); este e um indicador de assiduidade,
+  // sem citacao de CLT/CCT, por isso nao vira linha na tabela de risco.
+  const latenessEvents = findLatenessEvents(escalasInMonth, entriesInMonth);
+  const earlyDepartureEvents = findEarlyDepartureEvents(escalasInMonth, entriesInMonth);
+  const totalLateMinutes = latenessEvents.reduce((sum, e) => sum + e.lateMinutes, 0);
+  const totalEarlyMinutes = earlyDepartureEvents.reduce((sum, e) => sum + e.earlyMinutes, 0);
+
   // Completude do controle de ponto (Sumula 338, I, TST): empresas que nao
   // mantem controle de ponto regular tem presuncao relativa de veracidade
   // da jornada alegada pelo MOTORISTA contra elas — este indicador mede,
@@ -468,7 +481,7 @@ export default async function AnaliseDeRiscosPage({
         </Link>
       </div>
 
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <div className={cardClass}>
           <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-purple-100 text-purple-700">
             <Banknote className="h-4 w-4" />
@@ -566,6 +579,25 @@ export default async function AnaliseDeRiscosPage({
             </p>
             <p className="text-xs text-slate-500">
               {hasAnyWaitingCost ? "em indenização de espera" : "configure o valor-hora dos motoristas"}
+            </p>
+          </div>
+        </div>
+
+        <div className={cardClass}>
+          <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-rose-100 text-rose-700">
+            <AlarmClockOff className="h-4 w-4" />
+          </div>
+          <p className="text-sm text-slate-500">Atrasos</p>
+          <p className="mt-1 text-2xl font-semibold text-slate-900">{latenessEvents.length}</p>
+          <p className="text-xs text-slate-500">
+            {latenessEvents.length > 0 ? `${formatHoursMinutes(totalLateMinutes)} de atraso somado` : "vs. horário da escala"}
+          </p>
+          <div className="mt-3 border-t border-slate-100 pt-3 text-sm">
+            <p className="font-semibold text-slate-900">{earlyDepartureEvents.length}</p>
+            <p className="text-xs text-slate-500">
+              saída{earlyDepartureEvents.length === 1 ? "" : "s"} antecipada
+              {earlyDepartureEvents.length === 1 ? "" : "s"}
+              {earlyDepartureEvents.length > 0 ? ` (${formatHoursMinutes(totalEarlyMinutes)})` : ""}
             </p>
           </div>
         </div>
@@ -706,7 +738,10 @@ export default async function AnaliseDeRiscosPage({
         </div>
       </div>
       <p className="mt-3 text-xs text-slate-400">
-        Os alertas de jurisprudência são informativos, baseados em padrões conhecidos — não substituem uma avaliação do setor jurídico.
+        Os alertas de jurisprudência são informativos, baseados em padrões conhecidos — não substituem uma avaliação do setor jurídico. O
+        card "Atrasos" é um indicador de assiduidade (horário real batido vs. horário programado na escala, com
+        tolerância de {PONTUALIDADE_TOLERANCIA_MINUTOS}min), não uma violação legal — por isso não aparece na tabela
+        de ocorrências abaixo.
       </p>
     </div>
   );

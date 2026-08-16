@@ -109,7 +109,9 @@ export async function fetchPaymentSources(): Promise<Map<string, string>> {
   return map;
 }
 
-type TimesResponse = { times?: { time: string; approved: boolean }[] };
+type TimesResponse = {
+  times?: { time: string; approved: boolean; location?: [number, number] | null }[];
+};
 
 export async function fetchEmployeeDays(
   employeeId: string,

@@ -343,6 +343,7 @@ export default async function PontoPage({
                                 </span>
                                 <span className="block text-[10px]">
                                   {worked !== null ? formatHoursMinutes(worked) : "em aberto"}
+                                  {worked !== null && overtime > 0 && ` / ${formatHoursMinutes(overtime)}`}
                                 </span>
                                 {overtime > 0 && limit?.source && (
                                   <span className="block text-[9px] italic text-amber-600">

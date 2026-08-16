@@ -15,7 +15,15 @@ export const INTRAJORNADA_THRESHOLD_MINUTES = 6 * 60;
 
 export type RiskLevel = "baixo" | "medio" | "alto";
 
-export type PunchPair = { entrada: string; saida: string | null };
+// entradaLocation/saidaLocation: [latitude, longitude] da batida, quando
+// veio do TiqueTaque com geolocalizacao (registro via app) — ver
+// src/lib/tiquetaque/types.ts. So lancamento manual nunca tem isso.
+export type PunchPair = {
+  entrada: string;
+  saida: string | null;
+  entradaLocation?: [number, number] | null;
+  saidaLocation?: [number, number] | null;
+};
 
 export type PontoEntryLike = {
   id: string;
@@ -257,6 +265,79 @@ export function nightMinutes(
 
 export type EscalaLike = { driverId: string; date: Date };
 export type Absence = { driverId: string; date: Date };
+
+// Tolerancia antes de considerar atraso/saida antecipada uma ocorrencia real
+// (evita marcar diferencas de 1-2min de imprecisao do relogio como
+// atraso) — nao tem base legal especifica, e uma margem operacional comum.
+export const PONTUALIDADE_TOLERANCIA_MINUTOS = 10;
+// Acima disso, a diferenca provavelmente veio de erro de fuso/virada de dia
+// entre o horario programado e o horario real (ex.: turno da escala termina
+// as 23h mas o motorista bateu 00:22 do dia seguinte — isso e ATRASO na
+// saida, nao saida antecipada) — descarta em vez de reportar um numero
+// absurdo.
+const PONTUALIDADE_MAX_PLAUSIVEL_MINUTOS = 12 * 60;
+
+export type EscalaScheduleLike = { driverId: string; date: Date; startTime: string; endTime: string };
+
+export type LatenessEvent = {
+  driverId: string;
+  date: Date;
+  scheduledStart: string;
+  actualStart: string;
+  lateMinutes: number;
+};
+
+export type EarlyDepartureEvent = {
+  driverId: string;
+  date: Date;
+  scheduledEnd: string;
+  actualEnd: string;
+  earlyMinutes: number;
+};
+
+// Atraso: horario real de entrada (TimeClockEntry.clockIn) depois do
+// horario programado na Escala do mesmo dia, alem da tolerancia.
+export function findLatenessEvents(
+  escalas: EscalaScheduleLike[],
+  entries: PontoEntryLike[]
+): LatenessEvent[] {
+  const entryByKey = new Map<string, PontoEntryLike>();
+  for (const entry of entries) entryByKey.set(localDayKey(entry.driverId, entry.date), entry);
+
+  const events: LatenessEvent[] = [];
+  for (const escala of escalas) {
+    const entry = entryByKey.get(localDayKey(escala.driverId, escala.date));
+    if (!entry) continue;
+    const lateMinutes = toMinutes(entry.clockIn) - toMinutes(escala.startTime);
+    if (lateMinutes > PONTUALIDADE_TOLERANCIA_MINUTOS && lateMinutes <= PONTUALIDADE_MAX_PLAUSIVEL_MINUTOS) {
+      events.push({ driverId: escala.driverId, date: escala.date, scheduledStart: escala.startTime, actualStart: entry.clockIn, lateMinutes });
+    }
+  }
+  return events;
+}
+
+// Saida antecipada: horario real de saida (TimeClockEntry.clockOut) antes do
+// horario programado na Escala do mesmo dia, alem da tolerancia. So conta
+// turno ja fechado (clockOut preenchido) — turno aberto nao e "saida cedo",
+// e ausencia de registro.
+export function findEarlyDepartureEvents(
+  escalas: EscalaScheduleLike[],
+  entries: PontoEntryLike[]
+): EarlyDepartureEvent[] {
+  const entryByKey = new Map<string, PontoEntryLike>();
+  for (const entry of entries) entryByKey.set(localDayKey(entry.driverId, entry.date), entry);
+
+  const events: EarlyDepartureEvent[] = [];
+  for (const escala of escalas) {
+    const entry = entryByKey.get(localDayKey(escala.driverId, escala.date));
+    if (!entry || !entry.clockOut) continue;
+    const earlyMinutes = toMinutes(escala.endTime) - toMinutes(entry.clockOut);
+    if (earlyMinutes > PONTUALIDADE_TOLERANCIA_MINUTOS && earlyMinutes <= PONTUALIDADE_MAX_PLAUSIVEL_MINUTOS) {
+      events.push({ driverId: escala.driverId, date: escala.date, scheduledEnd: escala.endTime, actualEnd: entry.clockOut, earlyMinutes });
+    }
+  }
+  return events;
+}
 
 // Chave por dia usando componentes locais do Date — nao usar toISOString
 // aqui, que converte para UTC e pode deslocar o dia (mesmo bug de fuso ja

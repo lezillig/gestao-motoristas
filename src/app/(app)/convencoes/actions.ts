@@ -97,8 +97,38 @@ export async function createConvencao(
     },
   });
 
+  // Fecha o vazio/sobreposicao de vigencia com a convencao imediatamente
+  // anterior do MESMO sindicato+tipo (nunca mistura CCT com ACT, que tem
+  // precedencia propria — ver resolveRegra em convencao.ts). Isso e uma
+  // continuidade OPERACIONAL do cadastro (evita um periodo em que nenhuma
+  // convencao vigente e encontrada e o sistema cai no padrao generico da
+  // CLT), NAO uma aplicacao de ultratividade automatica — desde 2022 (STF,
+  // ADPF 323) uma CCT/ACT vencida nao continua valendo por forca de lei so
+  // por falta de uma nova. A pagina de convencoes mostra um aviso quando
+  // isso acontece (ver ?prorrogada= no redirect abaixo).
+  const previous = await prisma.convencaoColetiva.findFirst({
+    where: {
+      sindicatoId: sindicato.id,
+      tipo: parsed.data.tipo,
+      vigenciaInicio: { lt: parsed.data.vigenciaInicio },
+    },
+    orderBy: { vigenciaInicio: "desc" },
+  });
+  let prorrogada = false;
+  if (previous) {
+    const novoFim = new Date(parsed.data.vigenciaInicio);
+    novoFim.setDate(novoFim.getDate() - 1);
+    if (!previous.vigenciaFim || previous.vigenciaFim.getTime() !== novoFim.getTime()) {
+      await prisma.convencaoColetiva.update({
+        where: { id: previous.id },
+        data: { vigenciaFim: novoFim },
+      });
+      prorrogada = true;
+    }
+  }
+
   revalidatePath("/convencoes");
-  redirect("/convencoes");
+  redirect(`/convencoes${prorrogada ? "?prorrogada=1" : ""}`);
 }
 
 export async function deleteConvencao(id: string) {

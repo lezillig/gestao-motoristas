@@ -31,7 +31,19 @@ export type TiqueTaqueLeave = {
   paidLeave: boolean;
 };
 
-export type TiqueTaquePunchPair = { entrada: string; saida: string | null };
+// Localizacao [latitude, longitude] da batida, quando registrada via app com
+// geolocalizacao (GET /times devolve isso por batida — confirmado real,
+// nao documentado nos materiais publicos do TiqueTaque). Nula quando a
+// batida nao teve GPS (ex. registro manual/web). So capturavel via
+// importacao do TiqueTaque — nao existe pra lancamento manual.
+export type TiqueTaqueLocation = [number, number];
+
+export type TiqueTaquePunchPair = {
+  entrada: string;
+  saida: string | null;
+  entradaLocation?: TiqueTaqueLocation | null;
+  saidaLocation?: TiqueTaqueLocation | null;
+};
 
 // Um dia de trabalho ja pareado a partir das batidas avulsas do TiqueTaque
 // (o endpoint /times devolve batidas soltas, nao pares entrada/saida). Um

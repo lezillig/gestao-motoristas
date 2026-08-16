@@ -1,6 +1,6 @@
-import type { TiqueTaqueDayEntry, TiqueTaquePunchPair } from "./types";
+import type { TiqueTaqueDayEntry, TiqueTaqueLocation, TiqueTaquePunchPair } from "./types";
 
-type RawPunch = { time: string; approved: boolean };
+type RawPunch = { time: string; approved: boolean; location?: TiqueTaqueLocation | null };
 
 // Nenhum turno real e mais longo que isso — usado como teto de plausibilidade
 // pra decidir se duas batidas consecutivas formam um par (ver mais abaixo).
@@ -47,31 +47,41 @@ function minutesBetween(aFull: string, bFull: string): number {
 export function pairPunchesIntoDays(punches: RawPunch[]): TiqueTaqueDayEntry[] {
   const sorted = punches
     .filter((p) => p.approved)
-    .map((p) => p.time)
-    .sort();
+    .map((p) => ({ time: p.time, location: p.location ?? null }))
+    .sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
 
-  const rawPairs: { entradaFull: string; saidaFull: string | null }[] = [];
+  const rawPairs: {
+    entradaFull: string;
+    entradaLocation: TiqueTaqueLocation | null;
+    saidaFull: string | null;
+    saidaLocation: TiqueTaqueLocation | null;
+  }[] = [];
   let i = 0;
   while (i < sorted.length) {
-    const entradaFull = sorted[i];
-    const nextFull = sorted[i + 1];
-    if (nextFull && minutesBetween(entradaFull, nextFull) <= MAX_PLAUSIBLE_SHIFT_MINUTES) {
-      rawPairs.push({ entradaFull, saidaFull: nextFull });
+    const entrada = sorted[i];
+    const next = sorted[i + 1];
+    if (next && minutesBetween(entrada.time, next.time) <= MAX_PLAUSIBLE_SHIFT_MINUTES) {
+      rawPairs.push({ entradaFull: entrada.time, entradaLocation: entrada.location, saidaFull: next.time, saidaLocation: next.location });
       i += 2;
     } else {
-      rawPairs.push({ entradaFull, saidaFull: null });
+      rawPairs.push({ entradaFull: entrada.time, entradaLocation: entrada.location, saidaFull: null, saidaLocation: null });
       i += 1;
     }
   }
 
   const byDate = new Map<string, TiqueTaquePunchPair[]>();
-  for (const { entradaFull, saidaFull } of rawPairs) {
+  for (const { entradaFull, entradaLocation, saidaFull, saidaLocation } of rawPairs) {
     const [date, entradaHhmm] = entradaFull.split("T");
     if (!date || !entradaHhmm) continue;
     const saidaHhmm = saidaFull ? saidaFull.split("T")[1] : null;
 
     const list = byDate.get(date) ?? [];
-    list.push({ entrada: entradaHhmm.slice(0, 5), saida: saidaHhmm ? saidaHhmm.slice(0, 5) : null });
+    list.push({
+      entrada: entradaHhmm.slice(0, 5),
+      saida: saidaHhmm ? saidaHhmm.slice(0, 5) : null,
+      entradaLocation,
+      saidaLocation,
+    });
     byDate.set(date, list);
   }
 

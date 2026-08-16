@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { format } from "date-fns";
-import { FileText } from "lucide-react";
+import { FileText, Info } from "lucide-react";
 import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass } from "@/lib/ui";
@@ -15,10 +15,10 @@ type SortField = (typeof SORT_FIELDS)[number];
 export default async function ConvencoesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ sort?: string; dir?: string }>;
+  searchParams: Promise<{ sort?: string; dir?: string; prorrogada?: string }>;
 }) {
   const session = await requireSession();
-  const { sort, dir } = await searchParams;
+  const { sort, dir, prorrogada } = await searchParams;
 
   const sortField: SortField = SORT_FIELDS.includes(sort as SortField) ? (sort as SortField) : "vigenciaInicio";
   // Direcao padrao (sem clique ainda) e desc, igual ao comportamento original desta pagina.
@@ -44,6 +44,18 @@ export default async function ConvencoesPage({
         actionHref="/convencoes/novo"
         actionLabel="Nova convenção"
       />
+
+      {prorrogada === "1" && (
+        <div className="mb-4 flex items-start gap-2 rounded-lg bg-blue-50 px-3 py-2.5 text-sm text-blue-800">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            A vigência-fim da convenção anterior deste sindicato foi ajustada automaticamente para o dia anterior ao
+            início da nova, evitando um período sem convenção vigente no cadastro. Isso reflete continuidade
+            operacional — não é aplicação de ultratividade legal automática (encerrada pelo STF em 2022, ADPF 323);
+            confirme se há acordo/aditivo respaldando essa continuidade.
+          </span>
+        </div>
+      )}
 
       <div className={`${cardClass} p-0 overflow-hidden`}>
         <div className="overflow-x-auto">
