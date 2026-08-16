@@ -240,7 +240,7 @@ export default async function MotoristasPage({
                 </tr>
               )}
               {drivers.map((d) => {
-                const level = cnhAlertLevel(d.cnhExpiration);
+                const level = cnhAlertLevel(d.cnhExpiration, d.funcao);
                 const days = d.cnhExpiration ? daysUntil(d.cnhExpiration) : null;
                 return (
                   <tr key={d.id} className="border-b border-slate-100 last:border-0">
@@ -250,7 +250,11 @@ export default async function MotoristasPage({
                     <td className="px-4 py-3 text-slate-600">{d.cpf}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        {level === "pendente" ? (
+                        {level === "nao_aplicavel" ? (
+                          <span className="text-slate-400" title="Cargo não exige CNH">
+                            —
+                          </span>
+                        ) : level === "pendente" ? (
                           <span className={`${badgeClass} bg-slate-100 text-slate-600`}>CNH pendente</span>
                         ) : (
                           <>

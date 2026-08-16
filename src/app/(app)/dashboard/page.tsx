@@ -4,7 +4,7 @@ import { AlertTriangle, IdCard, Landmark, ShieldCheck } from "lucide-react";
 import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass } from "@/lib/ui";
-import { cnhAlertLevel, daysUntil } from "@/lib/driverAlerts";
+import { cnhAlertLevel, daysUntil, requiresCnh } from "@/lib/driverAlerts";
 
 export default async function DashboardPage() {
   const session = await requireSession();
@@ -23,16 +23,21 @@ export default async function DashboardPage() {
   ]);
 
   const activeDrivers = drivers.filter((d) => d.active);
-  const alerts = activeDrivers
-    .map((d) => ({ driver: d, level: cnhAlertLevel(d.cnhExpiration) }))
-    .filter((a) => a.level !== "ok")
+  // "Motoristas ativos" e os cards de CNH so fazem sentido pra quem
+  // realmente dirige — desde que o import do TiqueTaque passou a trazer
+  // todos os funcionarios (nao so motoristas), precisa filtrar por cargo
+  // aqui tambem, ou a contagem passaria a incluir RH/financeiro/etc.
+  const activeMotoristas = activeDrivers.filter((d) => requiresCnh(d.funcao));
+  const alerts = activeMotoristas
+    .map((d) => ({ driver: d, level: cnhAlertLevel(d.cnhExpiration, d.funcao) }))
+    .filter((a) => a.level !== "ok" && a.level !== "nao_aplicavel")
     .sort((a, b) => (a.driver.cnhExpiration?.getTime() ?? Infinity) - (b.driver.cnhExpiration?.getTime() ?? Infinity));
 
   const expired = alerts.filter((a) => a.level === "vencida").length;
   const dueSoon = alerts.filter((a) => a.level === "vence_em_breve").length;
   const pending = alerts.filter((a) => a.level === "pendente").length;
 
-  const semSindicato = activeDrivers.filter((d) => !d.sindicatoId).length;
+  const semSindicato = activeMotoristas.filter((d) => !d.sindicatoId).length;
 
   return (
     <div className="max-w-6xl">
@@ -43,10 +48,16 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
         <StatCard
           icon={IdCard}
           label="Motoristas ativos"
+          value={activeMotoristas.length}
+          tone="neutral"
+        />
+        <StatCard
+          icon={IdCard}
+          label="Funcionários ativos (todos os cargos)"
           value={activeDrivers.length}
           tone="neutral"
         />
