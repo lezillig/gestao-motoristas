@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { addDays, addMonths, differenceInCalendarDays, format, startOfDay, startOfMonth, subMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { AlertTriangle, CalendarClock, CalendarOff, ChevronLeft, ChevronRight, ListChecks } from "lucide-react";
+import { AlertTriangle, CalendarClock, CalendarOff, CalendarX2, ChevronLeft, ChevronRight, ListChecks } from "lucide-react";
 import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass, inputClass } from "@/lib/ui";
@@ -10,7 +10,7 @@ import SortableTh from "@/components/ui/SortableTh";
 import { isTiqueTaqueAvailable } from "@/lib/tiquetaque/client";
 import LeaveImportButton from "./LeaveImportButton";
 import KpiCard, { type KpiDetailRow } from "@/components/ui/KpiCard";
-import { checkFolgaCompensada, folgaIssueLabel, parseDataReferencia } from "@/lib/afastamentoCompliance";
+import { checkFolgaCompensada, findFeriasVencidas, folgaIssueLabel, parseDataReferencia } from "@/lib/afastamentoCompliance";
 import type { Prisma } from "@prisma/client";
 
 const DRIVER_CCT_INCLUDE = {
@@ -75,6 +75,30 @@ export default async function AfastamentosPage({
   ]);
 
   const retornandoLogo = ativos.filter((a) => a.endDate <= in7Days);
+
+  // Ferias vencidas (art. 137 CLT, dobra) — independente do mes selecionado
+  // no filtro abaixo, e um status "hoje" por motorista, mesmo espirito do
+  // card "Afastados agora". So considera motoristas com admissao cadastrada
+  // (campo opcional) e ativos.
+  const [driversComAdmissao, feriasHistorico] = await Promise.all([
+    prisma.driver.findMany({
+      where: { companyId: session.companyId, active: true, admissao: { not: null } },
+      select: { id: true, name: true, admissao: true },
+    }),
+    prisma.driverLeave.findMany({
+      where: { companyId: session.companyId, leaveType: "ferias" },
+      select: { driverId: true, startDate: true },
+    }),
+  ]);
+  const feriasByDriver = new Map<string, Date[]>();
+  for (const f of feriasHistorico) {
+    const list = feriasByDriver.get(f.driverId) ?? [];
+    list.push(f.startDate);
+    feriasByDriver.set(f.driverId, list);
+  }
+  const feriasVencidas = driversComAdmissao.flatMap((d) =>
+    findFeriasVencidas(d.id, d.admissao, feriasByDriver.get(d.id) ?? [], today).map((v) => ({ ...v, driverName: d.name }))
+  );
 
   const where: Prisma.DriverLeaveWhereInput = {
     companyId: session.companyId,
@@ -199,6 +223,30 @@ export default async function AfastamentosPage({
           emptyMessage="Nenhum registro neste mês."
         />
       </div>
+
+      {feriasVencidas.length > 0 && (
+        <div className={`${cardClass} mb-6 border-red-200`}>
+          <p className="mb-1 flex items-center gap-2 text-sm font-semibold text-red-700">
+            <CalendarX2 className="h-4 w-4" /> Férias vencidas — sujeitas a dobra (art. 137 CLT)
+          </p>
+          <p className="mb-3 text-xs text-slate-500">
+            Nenhuma férias registrada dentro do período concessivo (24 meses a partir do início do período
+            aquisitivo). Quando concedidas, devem ser pagas em dobro.
+          </p>
+          <ul className="flex flex-col gap-1">
+            {feriasVencidas.map((v, i) => (
+              <li key={i} className="flex items-center justify-between rounded-lg px-2 py-1.5 text-sm">
+                <span className="font-medium text-red-600">{v.driverName}</span>
+                <span className="text-xs text-slate-500">
+                  Período aquisitivo {format(v.periodoAquisitivoInicio, "dd/MM/yyyy")} –{" "}
+                  {format(v.periodoAquisitivoFim, "dd/MM/yyyy")} · prazo venceu em{" "}
+                  {format(v.prazoConcessivo, "dd/MM/yyyy")}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {ativos.length > 0 && (
         <div className={`${cardClass} mb-6`}>
@@ -336,7 +384,8 @@ export default async function AfastamentosPage({
         ponto real do motorista aponta risco trabalhista (sem hora extra que a justifique, hora extra do dia acima
         de 2h que deveria ter sido paga em vez de compensada, ou compensação fora da mesma semana sem confirmação de
         acordo de banco de horas). Passe o mouse sobre o nome para ver o motivo. Não é aconselhamento jurídico —
-        atestado, férias e abono não têm checagem automática aqui.
+        atestado e abono não têm checagem automática aqui; férias em dobro (acima) só é calculado para motoristas com
+        data de admissão cadastrada.
       </p>
     </div>
   );

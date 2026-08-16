@@ -1,4 +1,4 @@
-import { differenceInCalendarDays, setYear } from "date-fns";
+import { addYears, differenceInCalendarDays, setYear } from "date-fns";
 import { driverDailyLimitMinutes } from "@/lib/convencao";
 import { workedMinutes, overtimeMinutes, EXCESSIVE_OVERTIME_MINUTES } from "@/lib/pontoCompliance";
 import type { Prisma, TimeClockEntry } from "@prisma/client";
@@ -10,13 +10,49 @@ type DriverWithConvencoes = Prisma.DriverGetPayload<{
 // So avalia legalidade de folgas cujo texto (`details`, vindo cru do
 // TiqueTaque) reivindica compensar hora extra de outro dia — o unico tipo
 // de afastamento com um lastro objetivo pra checar contra os dados de ponto
-// (art. 59, §§5º-6º CLT e Sumula 85, IV, TST). Atestado/ferias/abono NAO tem
-// checagem automatica aqui: atestado e dado sensivel de saude (fora de
-// escopo verificar "legalidade" so pela frequencia); ferias em dobro (art.
-// 137 CLT, perido concessivo vencido) exigiria a data de admissao do
-// motorista, que este sistema ainda nao cadastra — ver comentario no
-// schema, campo a adicionar futuramente.
+// (art. 59, §§5º-6º CLT e Sumula 85, IV, TST). Atestado NAO tem checagem
+// automatica aqui (dado sensivel de saude, fora de escopo verificar
+// "legalidade" so pela frequencia). Ferias em dobro tem checagem propria,
+// ver findFeriasVencidas abaixo — precisa de Driver.admissao preenchido.
 const COMPENSADA_RE = /(\d{2})\/(\d{2})/;
+
+export type PeriodoFeriasVencido = {
+  driverId: string;
+  periodoAquisitivoInicio: Date;
+  periodoAquisitivoFim: Date;
+  prazoConcessivo: Date;
+};
+
+// Ferias em dobro (art. 137 CLT): cada periodo aquisitivo (12 meses a partir
+// da admissao, ou do fim do periodo aquisitivo anterior) tem mais 12 meses
+// de periodo concessivo pra as ferias serem efetivamente gozadas. Se nenhuma
+// ferias foi registrada dentro dessa janela de 24 meses, o periodo venceu —
+// quando as ferias forem finalmente concedidas, devem ser pagas em dobro.
+// So roda pra motoristas com admissao cadastrada (campo opcional, ver
+// Driver.admissao) — sem isso, nao ha como calcular o periodo aquisitivo.
+export function findFeriasVencidas(
+  driverId: string,
+  admissao: Date | null,
+  feriasStartDates: Date[],
+  today = new Date()
+): PeriodoFeriasVencido[] {
+  if (!admissao) return [];
+  const vencidos: PeriodoFeriasVencido[] = [];
+  let periodoInicio = admissao;
+  // Teto de seguranca (60 anos de periodos) pra nunca rodar em loop infinito
+  // por um dado de admissao malformado/futuro.
+  for (let i = 0; i < 60; i++) {
+    const periodoFim = addYears(periodoInicio, 1);
+    const prazoConcessivo = addYears(periodoInicio, 2);
+    if (prazoConcessivo > today) break;
+    const temFerias = feriasStartDates.some((f) => f >= periodoInicio && f < prazoConcessivo);
+    if (!temFerias) {
+      vencidos.push({ driverId, periodoAquisitivoInicio: periodoInicio, periodoAquisitivoFim: periodoFim, prazoConcessivo });
+    }
+    periodoInicio = periodoFim;
+  }
+  return vencidos;
+}
 
 export type FolgaComplianceIssue =
   | { tipo: "SEM_DATA_REFERENCIA" }
