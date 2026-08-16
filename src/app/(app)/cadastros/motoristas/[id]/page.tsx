@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import PageHeader from "@/components/ui/PageHeader";
 import { cardClass } from "@/lib/ui";
-import { requireSession } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import DriverForm from "../DriverForm";
 import { updateDriver } from "../actions";
@@ -12,7 +12,7 @@ export default async function EditarMotoristaPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const session = await requireSession();
+  const session = await requireRole("ADMIN", "GESTOR");
   const [driver, sindicatos] = await Promise.all([
     prisma.driver.findUnique({ where: { id, companyId: session.companyId } }),
     prisma.sindicato.findMany({

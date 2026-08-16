@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { format } from "date-fns";
 import { Pencil, Search } from "lucide-react";
-import { requireSession } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass, inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
@@ -39,7 +39,7 @@ export default async function MotoristasPage({
     dir?: string;
   }>;
 }) {
-  const session = await requireSession();
+  const session = await requireRole("ADMIN", "GESTOR");
   const { q, sindicatoId, status, empregador, departamento, cargo, regime, escala, sort, dir } = await searchParams;
 
   const where: Prisma.DriverWhereInput = { companyId: session.companyId };

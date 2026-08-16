@@ -3,7 +3,7 @@ import { format } from "date-fns";
 import { FileText, Trash2 } from "lucide-react";
 import PageHeader from "@/components/ui/PageHeader";
 import { cardClass, badgeClass, secondaryButtonClass } from "@/lib/ui";
-import { requireSession } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { isVigente, TIPO_REGRA_LABELS, TIPO_REGRA_UNIDADE } from "@/lib/convencao";
 import { isCctExtractionAvailable } from "@/lib/cctExtraction";
@@ -17,7 +17,7 @@ export default async function ConvencaoDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const session = await requireSession();
+  const session = await requireRole("ADMIN", "GESTOR");
   const convencao = await prisma.convencaoColetiva.findUnique({
     where: { id, companyId: session.companyId },
     include: { sindicato: true, regras: { orderBy: { createdAt: "asc" } } },

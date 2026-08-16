@@ -2,7 +2,7 @@ import Link from "next/link";
 import { addDays, addMonths, differenceInCalendarDays, format, startOfDay, startOfMonth, subMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { AlertTriangle, CalendarClock, CalendarOff, CalendarX2, ChevronLeft, ChevronRight, ListChecks } from "lucide-react";
-import { requireSession } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass, inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
@@ -40,7 +40,7 @@ export default async function AfastamentosPage({
 }: {
   searchParams: Promise<{ mes?: string; tipo?: string; driverId?: string; sort?: string; dir?: string }>;
 }) {
-  const session = await requireSession();
+  const session = await requireRole("ADMIN", "GESTOR", "FOLHA");
   const { mes, tipo, driverId, sort, dir } = await searchParams;
 
   const today = startOfDay(new Date());

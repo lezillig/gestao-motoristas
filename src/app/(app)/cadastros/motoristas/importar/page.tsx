@@ -1,13 +1,13 @@
 import PageHeader from "@/components/ui/PageHeader";
 import { cardClass } from "@/lib/ui";
-import { requireSession } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import ImportSpreadsheetForm from "@/components/ImportSpreadsheetForm";
 import TiqueTaqueDriverImportButton from "../TiqueTaqueDriverImportButton";
 import { isTiqueTaqueAvailable } from "@/lib/tiquetaque/client";
 import { importDrivers } from "../actions";
 
 export default async function ImportarMotoristasPage() {
-  await requireSession();
+  await requireRole("ADMIN", "GESTOR");
 
   return (
     <div className="max-w-2xl space-y-6">

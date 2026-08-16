@@ -22,7 +22,7 @@ import {
   ShieldAlert,
   Trophy,
 } from "lucide-react";
-import { requireSession } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass, inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
@@ -60,6 +60,7 @@ type Categoria = "CLT" | "CCT/ACT" | "Jurisprudência";
 
 type ViolationRow = {
   key: string;
+  driverId: string;
   driverName: string;
   date: Date | null;
   categoria: Categoria;
@@ -94,7 +95,7 @@ export default async function AnaliseDeRiscosPage({
 }: {
   searchParams: Promise<{ mes?: string; driverId?: string; sort?: string; dir?: string }>;
 }) {
-  const session = await requireSession();
+  const session = await requireRole("ADMIN", "GESTOR");
   const { mes, driverId, sort, dir } = await searchParams;
 
   const anchor = mes ? new Date(`${mes}-01T00:00:00`) : new Date();
@@ -250,6 +251,7 @@ export default async function AnaliseDeRiscosPage({
         : "8h padrão";
     rows.push({
       key: `overtime-${entry.id}`,
+      driverId: entry.driverId,
       driverName: driverName(entry.driverId),
       date: entry.date,
       categoria,
@@ -271,6 +273,7 @@ export default async function AnaliseDeRiscosPage({
     const entry = entriesInMonth.find((e) => e.id === v.nextEntryId);
     rows.push({
       key: `interjornada-${v.nextEntryId}`,
+      driverId: v.driverId,
       driverName: driverName(v.driverId),
       date: entry?.date ?? null,
       categoria: "CLT",
@@ -287,6 +290,7 @@ export default async function AnaliseDeRiscosPage({
     const entry = entriesInMonth.find((e) => e.id === v.entryId);
     rows.push({
       key: `intervalo-${v.entryId}`,
+      driverId: v.driverId,
       driverName: driverName(v.driverId),
       date: entry?.date ?? null,
       categoria: "CLT",
@@ -312,6 +316,7 @@ export default async function AnaliseDeRiscosPage({
     const entry = entriesInMonth.find((e) => e.id === v.entryId);
     rows.push({
       key: `dsr-${v.entryId}`,
+      driverId: v.driverId,
       driverName: driverName(v.driverId),
       date: entry?.date ?? null,
       categoria: "CLT",
@@ -399,6 +404,7 @@ export default async function AnaliseDeRiscosPage({
   for (const risk of jurisprudenceRisks) {
     rows.push({
       key: `juris-${risk.driverId}-${risk.id}`,
+      driverId: risk.driverId,
       driverName: driverName(risk.driverId),
       date: null,
       categoria: "Jurisprudência",
@@ -457,6 +463,12 @@ export default async function AnaliseDeRiscosPage({
 
   const sortLinkParams = { mes: format(monthStart, "yyyy-MM"), driverId };
   const countByCategoria = (categoria: Categoria) => rows.filter((r) => r.categoria === categoria).length;
+  // Dias-motorista distintos com pelo menos 1 ocorrencia CLT/CCT (rows com
+  // `date`, ou seja, excluindo as de jurisprudencia — essas sao por
+  // motorista/mes, sem data especifica, ver push acima).
+  const diasComPendencias = new Set(
+    rows.filter((r) => r.date).map((r) => `${r.driverId}_${r.date!.toISOString().slice(0, 10)}`)
+  ).size;
 
   return (
     <div className="max-w-6xl">
@@ -603,7 +615,7 @@ export default async function AnaliseDeRiscosPage({
         </div>
       </div>
 
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {(["CLT", "CCT/ACT", "Jurisprudência"] as const).map((categoria) => {
           const Icon = CATEGORIA_ICON[categoria];
           return (
@@ -616,6 +628,13 @@ export default async function AnaliseDeRiscosPage({
             </div>
           );
         })}
+        <div className={cardClass}>
+          <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-orange-100 text-orange-700">
+            <CalendarX className="h-4 w-4" />
+          </div>
+          <p className="text-2xl font-semibold text-slate-900">{diasComPendencias}</p>
+          <p className="mt-0.5 text-xs text-slate-500">Dias com pendências</p>
+        </div>
       </div>
 
       {ranking.length > 0 && (
@@ -717,14 +736,16 @@ export default async function AnaliseDeRiscosPage({
               )}
               {rows.map((r) => (
                 <tr key={r.key} className="border-b border-slate-100 last:border-0">
-                  <td className="px-4 py-3 font-medium text-slate-800">{r.driverName}</td>
-                  <td className="px-4 py-3 text-slate-600">{r.date ? format(r.date, "dd/MM/yyyy") : "—"}</td>
-                  <td className="px-4 py-3 text-slate-600">{r.categoria}</td>
-                  <td className="px-4 py-3 text-slate-600">{r.descricao}</td>
-                  <td className="px-4 py-3">
+                  <td className="max-w-[160px] px-4 py-3 text-xs font-medium leading-tight text-slate-800 line-clamp-2" title={r.driverName}>
+                    {r.driverName}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-600">{r.date ? format(r.date, "dd/MM/yyyy") : "—"}</td>
+                  <td className="px-4 py-3 text-xs text-slate-600">{r.categoria}</td>
+                  <td className="max-w-[260px] px-4 py-3 text-xs leading-tight text-slate-600">{r.descricao}</td>
+                  <td className="whitespace-nowrap px-4 py-3">
                     <span className={`${badgeClass} ${RISCO_TONE[r.risco]}`}>{RISCO_LABEL[r.risco]}</span>
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="whitespace-nowrap px-4 py-3 text-right">
                     {r.entryId && (
                       <Link href={`/ponto/${r.entryId}`} className="text-xs font-medium text-blue-700 hover:underline">
                         Ver registro

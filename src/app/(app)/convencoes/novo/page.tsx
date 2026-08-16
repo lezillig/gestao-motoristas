@@ -1,12 +1,12 @@
 import PageHeader from "@/components/ui/PageHeader";
 import { cardClass } from "@/lib/ui";
-import { requireSession } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import ConvencaoForm from "../ConvencaoForm";
 import { createConvencao } from "../actions";
 
 export default async function NovaConvencaoPage() {
-  const session = await requireSession();
+  const session = await requireRole("ADMIN", "GESTOR");
   const sindicatos = await prisma.sindicato.findMany({
     where: { companyId: session.companyId, active: true },
     orderBy: { nome: "asc" },

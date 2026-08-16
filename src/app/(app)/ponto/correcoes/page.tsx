@@ -2,7 +2,7 @@ import Link from "next/link";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { History, DollarSign, Users, Clock } from "lucide-react";
-import { requireSession } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
@@ -35,7 +35,7 @@ export default async function PontoCorrecoesPage({
 }: {
   searchParams: Promise<{ de?: string; ate?: string }>;
 }) {
-  const session = await requireSession();
+  const session = await requireRole("ADMIN", "GESTOR", "FOLHA");
   const { de, ate } = await searchParams;
 
   const where: Prisma.TimeClockCorrectionWhereInput = { companyId: session.companyId };

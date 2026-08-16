@@ -2,6 +2,7 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import type { Role } from "@prisma/client";
+import { defaultRouteForRole } from "@/lib/permissions";
 
 export const SESSION_COOKIE = "gestao_motoristas_session";
 
@@ -61,6 +62,13 @@ export async function requireSession(): Promise<SessionPayload> {
 
 export async function requireRole(...roles: Role[]): Promise<SessionPayload> {
   const session = await requireSession();
-  if (!roles.includes(session.role)) redirect("/dashboard");
+  if (!roles.includes(session.role)) {
+    // Nao redireciona para /dashboard fixo: esse destino tambem passa por
+    // requireRole (ADMIN/GESTOR), entao um usuario FOLHA barrado aqui
+    // entraria em loop infinito de redirect. Cada role cai na sua propria
+    // rota inicial (ver defaultRouteForRole) — nunca uma que ele tambem
+    // nao tenha acesso.
+    redirect(defaultRouteForRole(session.role));
+  }
   return session;
 }

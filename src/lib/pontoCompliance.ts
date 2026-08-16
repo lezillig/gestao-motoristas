@@ -18,11 +18,14 @@ export type RiskLevel = "baixo" | "medio" | "alto";
 // entradaLocation/saidaLocation: [latitude, longitude] da batida, quando
 // veio do TiqueTaque com geolocalizacao (registro via app) — ver
 // src/lib/tiquetaque/types.ts. So lancamento manual nunca tem isso.
+// entradaType/saidaType: "type" cru da batida no TiqueTaque (ex.: "app").
 export type PunchPair = {
   entrada: string;
   saida: string | null;
   entradaLocation?: [number, number] | null;
   saidaLocation?: [number, number] | null;
+  entradaType?: string | null;
+  saidaType?: string | null;
 };
 
 export type PontoEntryLike = {

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Banknote, Fuel as FuelIcon, Gauge, Trophy } from "lucide-react";
-import { requireSession } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass, inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
@@ -24,7 +24,7 @@ export default async function ResumoConsumoPage({
 }: {
   searchParams: Promise<{ periodo?: string; sort?: string; dir?: string }>;
 }) {
-  const session = await requireSession();
+  const session = await requireRole("ADMIN", "GESTOR");
   const { periodo, sort, dir } = await searchParams;
 
   const periodosDisponiveis = await prisma.fuelConsumptionSummary.findMany({

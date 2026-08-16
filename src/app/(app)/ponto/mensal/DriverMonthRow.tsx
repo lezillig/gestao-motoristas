@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronUp, MapPin } from "lucide-react";
+import { ChevronDown, ChevronUp, MapPin, Smartphone } from "lucide-react";
 
 export type DayMarcacaoView = {
   entrada: string;
@@ -9,6 +9,8 @@ export type DayMarcacaoView = {
   duracaoLabel: string;
   entradaLocation: [number, number] | null;
   saidaLocation: [number, number] | null;
+  entradaType: string | null;
+  saidaType: string | null;
 };
 export type DayIntervaloView = { inicio: string; fim: string; duracaoLabel: string };
 export type DayCellView = {
@@ -145,6 +147,11 @@ export default function DriverMonthRow({
                             <td className="px-2.5 py-1.5 text-right text-slate-500">{m.duracaoLabel}</td>
                             <td className="px-2.5 py-1.5 text-right">
                               <div className="flex items-center justify-end gap-1.5">
+                                {m.entradaType === "app" && (
+                                  <span title={`Entrada registrada via aplicativo (${m.entrada})`}>
+                                    <Smartphone className="h-3.5 w-3.5 text-blue-600" />
+                                  </span>
+                                )}
                                 {m.entradaLocation && (
                                   <a
                                     href={`https://www.google.com/maps?q=${m.entradaLocation[0]},${m.entradaLocation[1]}`}
@@ -155,6 +162,11 @@ export default function DriverMonthRow({
                                   >
                                     <MapPin className="h-3.5 w-3.5" />
                                   </a>
+                                )}
+                                {m.saidaType === "app" && (
+                                  <span title={`Saída registrada via aplicativo (${m.saida ?? ""})`}>
+                                    <Smartphone className="h-3.5 w-3.5 text-slate-500" />
+                                  </span>
                                 )}
                                 {m.saidaLocation && (
                                   <a

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { format } from "date-fns";
 import { FileText, Info } from "lucide-react";
-import { requireSession } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
@@ -17,7 +17,7 @@ export default async function ConvencoesPage({
 }: {
   searchParams: Promise<{ sort?: string; dir?: string; prorrogada?: string }>;
 }) {
-  const session = await requireSession();
+  const session = await requireRole("ADMIN", "GESTOR");
   const { sort, dir, prorrogada } = await searchParams;
 
   const sortField: SortField = SORT_FIELDS.includes(sort as SortField) ? (sort as SortField) : "vigenciaInicio";
@@ -80,6 +80,7 @@ export default async function ConvencoesPage({
               )}
               {convencoes.map((c) => {
                 const vigente = isVigente(c);
+                const futura = !vigente && c.vigenciaInicio > new Date();
                 return (
                   <tr key={c.id} className="border-b border-slate-100 last:border-0">
                     <td className="px-4 py-3 font-medium text-slate-800">{c.sindicato.nome}</td>
@@ -100,10 +101,14 @@ export default async function ConvencoesPage({
                     <td className="px-4 py-3">
                       <span
                         className={`${badgeClass} ${
-                          vigente ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
+                          vigente
+                            ? "bg-emerald-100 text-emerald-700"
+                            : futura
+                              ? "bg-blue-100 text-blue-700"
+                              : "bg-slate-100 text-slate-500"
                         }`}
                       >
-                        {vigente ? "Vigente" : "Expirada"}
+                        {vigente ? "Vigente" : futura ? "Ainda não vigente" : "Expirada"}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">

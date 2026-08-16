@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { inputClass, labelClass, primaryButtonClass } from "@/lib/ui";
+import { defaultRouteForRole } from "@/lib/permissions";
 
 export default function LoginForm() {
   const router = useRouter();
@@ -23,7 +24,8 @@ export default function LoginForm() {
     });
 
     if (res.ok) {
-      router.push("/dashboard");
+      const data = await res.json().catch(() => ({}));
+      router.push(defaultRouteForRole(data.role ?? ""));
       router.refresh();
     } else {
       const data = await res.json().catch(() => ({}));

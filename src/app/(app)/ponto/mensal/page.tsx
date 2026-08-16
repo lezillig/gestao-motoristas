@@ -2,7 +2,7 @@ import Link from "next/link";
 import { addMonths, format, startOfMonth, subMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
-import { requireSession } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { cardClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import { buildMonthlyReport } from "@/lib/pontoMensal";
@@ -24,7 +24,7 @@ export default async function PontoMensalPage({
 }: {
   searchParams: Promise<{ mes?: string; sort?: string; dir?: string; visao?: string }>;
 }) {
-  const session = await requireSession();
+  const session = await requireRole("ADMIN", "GESTOR", "FOLHA");
   const { mes, sort, dir, visao: visaoParam } = await searchParams;
   const visao: VisaoHoras = visaoParam === "extras" ? "extras" : "totais";
 
@@ -79,6 +79,8 @@ export default async function PontoMensalPage({
                   duracaoLabel: p.saida ? formatHoursMinutes(durationMinutes(p.entrada, p.saida)) : "em aberto",
                   entradaLocation: p.entradaLocation ?? null,
                   saidaLocation: p.saidaLocation ?? null,
+                  entradaType: p.entradaType ?? null,
+                  saidaType: p.saidaType ?? null,
                 })),
                 // Intervalo entre um par e o seguinte (ex.: almoço) — so
                 // existe quando ha 2+ marcacoes fechadas no dia. Um dia com

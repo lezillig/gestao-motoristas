@@ -2,7 +2,7 @@ import Link from "next/link";
 import { addDays, addWeeks, format, startOfWeek, subWeeks } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Clock, History, Plus } from "lucide-react";
-import { requireSession } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass, inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
@@ -22,7 +22,7 @@ export default async function PontoPage({
 }: {
   searchParams: Promise<{ semana?: string; motorista?: string; sort?: string; dir?: string }>;
 }) {
-  const session = await requireSession();
+  const session = await requireRole("ADMIN", "GESTOR");
   const { semana, motorista, sort, dir } = await searchParams;
 
   const anchor = semana ? new Date(`${semana}T00:00:00`) : new Date();

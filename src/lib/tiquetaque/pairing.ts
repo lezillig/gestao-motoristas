@@ -1,6 +1,6 @@
 import type { TiqueTaqueDayEntry, TiqueTaqueLocation, TiqueTaquePunchPair } from "./types";
 
-type RawPunch = { time: string; approved: boolean; location?: TiqueTaqueLocation | null };
+type RawPunch = { time: string; approved: boolean; location?: TiqueTaqueLocation | null; type?: string | null };
 
 // Nenhum turno real e mais longo que isso — usado como teto de plausibilidade
 // pra decidir se duas batidas consecutivas formam um par (ver mais abaixo).
@@ -47,30 +47,46 @@ function minutesBetween(aFull: string, bFull: string): number {
 export function pairPunchesIntoDays(punches: RawPunch[]): TiqueTaqueDayEntry[] {
   const sorted = punches
     .filter((p) => p.approved)
-    .map((p) => ({ time: p.time, location: p.location ?? null }))
+    .map((p) => ({ time: p.time, location: p.location ?? null, type: p.type ?? null }))
     .sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
 
   const rawPairs: {
     entradaFull: string;
     entradaLocation: TiqueTaqueLocation | null;
+    entradaType: string | null;
     saidaFull: string | null;
     saidaLocation: TiqueTaqueLocation | null;
+    saidaType: string | null;
   }[] = [];
   let i = 0;
   while (i < sorted.length) {
     const entrada = sorted[i];
     const next = sorted[i + 1];
     if (next && minutesBetween(entrada.time, next.time) <= MAX_PLAUSIBLE_SHIFT_MINUTES) {
-      rawPairs.push({ entradaFull: entrada.time, entradaLocation: entrada.location, saidaFull: next.time, saidaLocation: next.location });
+      rawPairs.push({
+        entradaFull: entrada.time,
+        entradaLocation: entrada.location,
+        entradaType: entrada.type,
+        saidaFull: next.time,
+        saidaLocation: next.location,
+        saidaType: next.type,
+      });
       i += 2;
     } else {
-      rawPairs.push({ entradaFull: entrada.time, entradaLocation: entrada.location, saidaFull: null, saidaLocation: null });
+      rawPairs.push({
+        entradaFull: entrada.time,
+        entradaLocation: entrada.location,
+        entradaType: entrada.type,
+        saidaFull: null,
+        saidaLocation: null,
+        saidaType: null,
+      });
       i += 1;
     }
   }
 
   const byDate = new Map<string, TiqueTaquePunchPair[]>();
-  for (const { entradaFull, entradaLocation, saidaFull, saidaLocation } of rawPairs) {
+  for (const { entradaFull, entradaLocation, entradaType, saidaFull, saidaLocation, saidaType } of rawPairs) {
     const [date, entradaHhmm] = entradaFull.split("T");
     if (!date || !entradaHhmm) continue;
     const saidaHhmm = saidaFull ? saidaFull.split("T")[1] : null;
@@ -81,6 +97,8 @@ export function pairPunchesIntoDays(punches: RawPunch[]): TiqueTaqueDayEntry[] {
       saida: saidaHhmm ? saidaHhmm.slice(0, 5) : null,
       entradaLocation,
       saidaLocation,
+      entradaType,
+      saidaType,
     });
     byDate.set(date, list);
   }

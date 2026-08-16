@@ -22,6 +22,7 @@ import {
   CalendarOff,
   CalendarRange,
   PiggyBank,
+  Users,
 } from "lucide-react";
 
 type NavItem = {
@@ -64,23 +65,23 @@ const NAV: NavItem[] = [
     roles: ["ADMIN", "GESTOR"],
   },
   {
-    href: "/ponto",
-    label: "Ponto",
-    icon: Clock,
+    href: "/ponto/analise",
+    label: "Análise de riscos",
+    icon: ShieldAlert,
     roles: ["ADMIN", "GESTOR"],
-    children: [
-      { href: "/ponto/analise", label: "Análise de riscos", icon: ShieldAlert },
-      { href: "/ponto/correcoes", label: "Histórico de correções", icon: History },
-      { href: "/ponto/mensal", label: "Relatório mensal", icon: FileSpreadsheet },
-      { href: "/ponto/anual", label: "Relatório anual", icon: CalendarRange },
-      { href: "/ponto/banco-horas", label: "Banco de horas", icon: PiggyBank },
-    ],
   },
   {
-    href: "/afastamentos",
-    label: "Afastamentos",
-    icon: CalendarOff,
-    roles: ["ADMIN", "GESTOR"],
+    href: "/ponto",
+    label: "Folha",
+    icon: Clock,
+    roles: ["ADMIN", "GESTOR", "FOLHA"],
+    children: [
+      { href: "/afastamentos", label: "Afastamentos", icon: CalendarOff },
+      { href: "/ponto/banco-horas", label: "Banco de horas", icon: PiggyBank },
+      { href: "/ponto/anual", label: "Relatório anual", icon: CalendarRange },
+      { href: "/ponto/mensal", label: "Relatório mensal", icon: FileSpreadsheet },
+      { href: "/ponto/correcoes", label: "Histórico de correções", icon: History },
+    ],
   },
   {
     href: "/convencoes",
@@ -105,6 +106,12 @@ const NAV: NavItem[] = [
     label: "Combustível",
     icon: Fuel,
     roles: ["ADMIN", "GESTOR"],
+  },
+  {
+    href: "/usuarios",
+    label: "Usuários",
+    icon: Users,
+    roles: ["ADMIN"],
   },
 ];
 

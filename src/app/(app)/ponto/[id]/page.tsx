@@ -3,7 +3,7 @@ import { format } from "date-fns";
 import { Trash2 } from "lucide-react";
 import PageHeader from "@/components/ui/PageHeader";
 import { cardClass, secondaryButtonClass } from "@/lib/ui";
-import { requireSession } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import PontoForm from "../PontoForm";
 import { updateEntry, deleteEntry } from "../actions";
@@ -14,7 +14,7 @@ export default async function EditarPontoPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const session = await requireSession();
+  const session = await requireRole("ADMIN", "GESTOR");
   const [entry, drivers] = await Promise.all([
     prisma.timeClockEntry.findUnique({ where: { id, companyId: session.companyId } }),
     prisma.driver.findMany({

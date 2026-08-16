@@ -2,7 +2,7 @@ import Link from "next/link";
 import { addDays, addWeeks, format, startOfWeek, subWeeks } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
-import { requireSession } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
@@ -12,7 +12,7 @@ export default async function EscalasPage({
 }: {
   searchParams: Promise<{ semana?: string }>;
 }) {
-  const session = await requireSession();
+  const session = await requireRole("ADMIN", "GESTOR");
   const { semana } = await searchParams;
 
   const anchor = semana ? new Date(`${semana}T00:00:00`) : new Date();

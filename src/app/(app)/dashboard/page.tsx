@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { format } from "date-fns";
 import { AlertTriangle, IdCard, Landmark, ShieldCheck } from "lucide-react";
-import { requireSession } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass } from "@/lib/ui";
 import { cnhAlertLevel, daysUntil, requiresCnh } from "@/lib/driverAlerts";
 
 export default async function DashboardPage() {
-  const session = await requireSession();
+  const session = await requireRole("ADMIN", "GESTOR");
 
   const [drivers, sindicatos] = await Promise.all([
     prisma.driver.findMany({

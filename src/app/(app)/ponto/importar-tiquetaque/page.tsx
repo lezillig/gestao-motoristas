@@ -1,12 +1,12 @@
 import { redirect } from "next/navigation";
 import PageHeader from "@/components/ui/PageHeader";
 import { cardClass } from "@/lib/ui";
-import { requireSession } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { isTiqueTaqueAvailable } from "@/lib/tiquetaque/client";
 import TiqueTaqueImportForm from "../TiqueTaqueImportForm";
 
 export default async function ImportarTiqueTaquePage() {
-  await requireSession();
+  await requireRole("ADMIN", "GESTOR");
   if (!isTiqueTaqueAvailable()) redirect("/ponto");
 
   return (

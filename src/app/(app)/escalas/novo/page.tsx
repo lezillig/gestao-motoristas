@@ -1,6 +1,6 @@
 import PageHeader from "@/components/ui/PageHeader";
 import { cardClass } from "@/lib/ui";
-import { requireSession } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import EscalaForm from "../EscalaForm";
 import { createEscala } from "../actions";
@@ -10,7 +10,7 @@ export default async function NovaEscalaPage({
 }: {
   searchParams: Promise<{ date?: string; driverId?: string }>;
 }) {
-  const session = await requireSession();
+  const session = await requireRole("ADMIN", "GESTOR");
   const { date, driverId } = await searchParams;
 
   const [drivers, vehicles] = await Promise.all([

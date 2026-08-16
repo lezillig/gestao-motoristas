@@ -38,11 +38,17 @@ export type TiqueTaqueLeave = {
 // importacao do TiqueTaque — nao existe pra lancamento manual.
 export type TiqueTaqueLocation = [number, number];
 
+// "type" da batida no TiqueTaque (ex.: "app" — registro pelo aplicativo de
+// celular, com geolocalizacao; outros valores possiveis nao confirmados,
+// exibido cru como veio da API) — confirmado real na mesma chamada que
+// confirmou `location`.
 export type TiqueTaquePunchPair = {
   entrada: string;
   saida: string | null;
   entradaLocation?: TiqueTaqueLocation | null;
   saidaLocation?: TiqueTaqueLocation | null;
+  entradaType?: string | null;
+  saidaType?: string | null;
 };
 
 // Um dia de trabalho ja pareado a partir das batidas avulsas do TiqueTaque

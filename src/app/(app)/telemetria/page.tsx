@@ -1,6 +1,6 @@
 import { format } from "date-fns";
 import { AlertTriangle, Gauge, Satellite, Trophy } from "lucide-react";
-import { requireSession } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass, primaryButtonClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
@@ -18,7 +18,7 @@ export default async function TelemetriaPage({
 }: {
   searchParams: Promise<{ sort?: string; dir?: string }>;
 }) {
-  const session = await requireSession();
+  const session = await requireRole("ADMIN", "GESTOR");
   const { sort, dir } = await searchParams;
   const provider = getActiveTelemetryProvider();
 

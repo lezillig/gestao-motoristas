@@ -12,6 +12,10 @@ datasource db {
 enum Role {
   ADMIN
   GESTOR
+  // Acesso restrito ao menu Folha (Afastamentos, Banco de horas, Relatorio
+  // anual/mensal, Historico de correcoes) — nao ve cadastros, escalas,
+  // convencao, utilizacao/telemetria/combustivel nem analise de riscos.
+  FOLHA
   MOTORISTA
 }
 

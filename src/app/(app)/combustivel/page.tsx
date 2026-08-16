@@ -8,7 +8,7 @@ import {
   subMonths,
 } from "date-fns";
 import { ChevronLeft, ChevronRight, Fuel, Gauge, Link2Off, TriangleAlert, Trophy } from "lucide-react";
-import { requireSession } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass, primaryButtonClass, inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
@@ -70,7 +70,7 @@ export default async function CombustivelPage({
     situacao?: string;
   }>;
 }) {
-  const session = await requireSession();
+  const session = await requireRole("ADMIN", "GESTOR");
   const { mes, sort, dir, placa, motorista, modelo, combustivel, posto, situacao } = await searchParams;
 
   const anchor = mes ? new Date(`${mes}-01T00:00:00`) : new Date();

@@ -1,9 +1,9 @@
 import PageHeader from "@/components/ui/PageHeader";
-import { requireSession } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import ImportResumoForm from "./ImportResumoForm";
 
 export default async function ImportarResumoConsumoPage() {
-  await requireSession();
+  await requireRole("ADMIN", "GESTOR");
 
   return (
     <div className="max-w-2xl">

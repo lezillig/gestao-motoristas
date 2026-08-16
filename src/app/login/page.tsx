@@ -1,11 +1,12 @@
 import { redirect } from "next/navigation";
 import { Bus } from "lucide-react";
 import { getSession } from "@/lib/auth";
+import { defaultRouteForRole } from "@/lib/permissions";
 import LoginForm from "./LoginForm";
 
 export default async function LoginPage() {
   const session = await getSession();
-  if (session) redirect("/dashboard");
+  if (session) redirect(defaultRouteForRole(session.role));
 
   return (
     <div className="flex flex-1 items-center justify-center px-4 py-12">

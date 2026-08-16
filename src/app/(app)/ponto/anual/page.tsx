@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
-import { requireSession } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { cardClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import { buildAnnualReport } from "@/lib/pontoAnual";
@@ -19,7 +19,7 @@ export default async function PontoAnualPage({
 }: {
   searchParams: Promise<{ ano?: string; sort?: string; dir?: string; visao?: string }>;
 }) {
-  const session = await requireSession();
+  const session = await requireRole("ADMIN", "GESTOR", "FOLHA");
   const { ano, sort, dir, visao: visaoParam } = await searchParams;
   const year = ano ? parseInt(ano, 10) : new Date().getFullYear();
   const visao: VisaoHoras = visaoParam === "extras" ? "extras" : "totais";

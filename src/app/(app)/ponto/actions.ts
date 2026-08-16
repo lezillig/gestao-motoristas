@@ -317,14 +317,33 @@ export async function importDriverFromTiqueTaque(
     // TimeClockCorrection (nunca sobrescreve sem deixar rastro), em vez de
     // reportar como conflito. Compara `punches` tambem (nao so os 4 campos
     // planos) porque uma correcao dentro de uma pausa do meio do dia pode
-    // nao mudar o primeiro horario nem o ultimo.
+    // nao mudar o primeiro horario nem o ultimo. `punchesKey` so olha
+    // entrada/saida (nao geolocalizacao/tipo de registro) de proposito —
+    // ver backfill de metadado logo abaixo.
     const changed =
       existing.clockIn !== day.clockIn ||
       existing.clockOut !== day.clockOut ||
       existing.intervaloInicio !== day.intervaloInicio ||
       existing.intervaloFim !== day.intervaloFim ||
       punchesKey(existing.punches) !== punchesKey(day.pairs);
-    if (!changed) continue;
+    if (!changed) {
+      // Horario bate, mas o par pode trazer metadado que a importacao
+      // original nao capturava ainda (geolocalizacao/tipo de registro,
+      // adicionados depois — reimportar um periodo ja importado antes e
+      // como isso e retroativamente preenchido). Atualiza so `punches`,
+      // SEM criar TimeClockCorrection: nao e uma correcao de jornada (a
+      // jornada continua identica), so enriquecimento de um dado que ja
+      // estava certo — registrar isso como "correcao" poluiria o
+      // historico de /ponto/correcoes com entradas que nao mudam nenhum
+      // horario, so a presenca de metadado.
+      if (JSON.stringify(existing.punches) !== JSON.stringify(day.pairs)) {
+        await prisma.timeClockEntry.update({
+          where: { id: existing.id },
+          data: { punches: day.pairs },
+        });
+      }
+      continue;
+    }
 
     await prisma.$transaction([
       prisma.timeClockEntry.update({

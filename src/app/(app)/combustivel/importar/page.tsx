@@ -1,11 +1,11 @@
 import PageHeader from "@/components/ui/PageHeader";
 import { cardClass } from "@/lib/ui";
-import { requireSession } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import ImportSpreadsheetForm from "@/components/ImportSpreadsheetForm";
 import { importFuelTransactions } from "../actions";
 
 export default async function ImportarCombustivelPage() {
-  await requireSession();
+  await requireRole("ADMIN", "GESTOR");
 
   return (
     <div className="max-w-2xl">
