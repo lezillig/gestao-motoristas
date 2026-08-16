@@ -8,6 +8,7 @@ import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { parseLocalDate } from "@/lib/date";
 import { fetchAllEmployees, fetchEmployeeDays } from "@/lib/tiquetaque/client";
+import { signTiqueTaquePlanItem, verifyTiqueTaquePlanItem } from "@/lib/tiquetaque/planToken";
 
 export type PontoFormState = { error?: string };
 
@@ -47,7 +48,7 @@ const schema = z.object({
     .string()
     .regex(/^\d{2}:\d{2}$/, "Horário de fim do intervalo inválido")
     .optional(),
-  notes: z.string().optional(),
+  notes: z.string().max(2000, "Observação muito longa (máx. 2000 caracteres)").optional(),
 });
 
 function parseForm(formData: FormData) {
@@ -164,7 +165,10 @@ export type TiqueTaqueDriverImportResult = {
   corrected: number;
   errors: TiqueTaqueImportRowError[];
 };
-export type TiqueTaquePlanItem = { driverId: string; driverName: string; employeeId: string | null };
+// `token` amarra o employeeId ao driverId+empresa (ver planToken.ts) — a
+// fase 2 recebe o employeeId de volta do cliente e PRECISA revalidar esse
+// vinculo antes de usá-lo, não pode confiar nele cegamente.
+export type TiqueTaquePlanItem = { driverId: string; driverName: string; employeeId: string | null; token: string | null };
 export type TiqueTaquePlanResult = { error?: string; plan?: TiqueTaquePlanItem[] };
 
 const tiqueTaqueRangeSchema = z.object({
@@ -205,11 +209,15 @@ export async function prepareTiqueTaqueImport(
     select: { id: true, name: true, cpf: true },
   });
 
-  const plan: TiqueTaquePlanItem[] = drivers.map((driver) => ({
-    driverId: driver.id,
-    driverName: driver.name,
-    employeeId: employeeByCpf.get(driver.cpf.replace(/\D/g, ""))?.id ?? null,
-  }));
+  const plan: TiqueTaquePlanItem[] = drivers.map((driver) => {
+    const employeeId = employeeByCpf.get(driver.cpf.replace(/\D/g, ""))?.id ?? null;
+    return {
+      driverId: driver.id,
+      driverName: driver.name,
+      employeeId,
+      token: employeeId ? signTiqueTaquePlanItem(session.companyId, driver.id, employeeId) : null,
+    };
+  });
 
   return { plan };
 }
@@ -220,6 +228,7 @@ export async function prepareTiqueTaqueImport(
 export async function importDriverFromTiqueTaque(
   driverId: string,
   employeeId: string,
+  token: string,
   startDate: string,
   endDate: string
 ): Promise<TiqueTaqueDriverImportResult> {
@@ -228,6 +237,14 @@ export async function importDriverFromTiqueTaque(
   const driver = await prisma.driver.findUnique({ where: { id: driverId, companyId: session.companyId } });
   if (!driver) {
     return { created: 0, corrected: 0, errors: [{ driverName: "—", message: "Motorista não encontrado." }] };
+  }
+
+  if (!verifyTiqueTaquePlanItem(session.companyId, driverId, employeeId, token)) {
+    return {
+      created: 0,
+      corrected: 0,
+      errors: [{ driverName: driver.name, message: "Vínculo com o TiqueTaque inválido — refaça a importação." }],
+    };
   }
 
   let days;

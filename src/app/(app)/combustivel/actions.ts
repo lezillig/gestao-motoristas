@@ -148,7 +148,7 @@ export async function importFuelTransactions(
       select: { vehicleId: true, dataHora: true, valorCents: true },
     }),
     prisma.fuelTransaction.findMany({
-      where: { codigoTransacao: { not: null } },
+      where: { companyId: session.companyId, codigoTransacao: { not: null } },
       select: { codigoTransacao: true },
     }),
   ]);

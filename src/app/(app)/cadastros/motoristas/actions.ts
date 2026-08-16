@@ -255,7 +255,9 @@ export async function importDriversFromTiqueTaque(): Promise<TiqueTaqueDriverImp
   const activeEmployees = employees.filter((e) => !e.dismissed);
 
   const existingCpfs = new Set(
-    (await prisma.driver.findMany({ select: { cpf: true } })).map((d) => d.cpf)
+    (await prisma.driver.findMany({ where: { companyId: session.companyId }, select: { cpf: true } })).map(
+      (d) => d.cpf
+    )
   );
 
   const errors: TiqueTaqueDriverImportRowError[] = [];

@@ -91,8 +91,20 @@ export async function buildExportXlsx(headers: string[], rows: ExportRow[], shee
   return Buffer.from(buffer);
 }
 
+// Proteção contra injeção de fórmula em CSV: nomes de motorista podem vir de
+// fontes externas não controladas (planilha importada, cadastro do
+// TiqueTaque) — se um valor começar com =, +, -, @, tab ou CR, Excel/Sheets
+// pode interpretar como fórmula ao abrir o CSV. Prefixa com aspas simples
+// pra forçar interpretação como texto (não afeta a leitura normal do dado).
+function sanitizeCsvValue(v: string): string {
+  return /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
+}
+
 export function buildExportCsv(headers: string[], rows: ExportRow[]): string {
-  const escape = (v: string) => (/[",;\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  const escape = (v: string) => {
+    const safe = sanitizeCsvValue(v);
+    return /[",;\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+  };
   return [headers, ...rows].map((r) => r.map(escape).join(";")).join("\n");
 }
 

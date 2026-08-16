@@ -8,6 +8,7 @@ import {
   importDriverFromTiqueTaque,
   type TiqueTaqueImportRowError,
 } from "./actions";
+import { sleep, TIQUETAQUE_IMPORT_PACE_MS } from "@/lib/tiquetaque/pace";
 
 type Progress = { done: number; total: number; currentDriverName?: string };
 
@@ -46,16 +47,24 @@ export default function TiqueTaqueImportForm() {
     let corrected = 0;
     const errors: TiqueTaqueImportRowError[] = [];
 
+    // Pausa entre chamadas pra respeitar o limite de 60 req/min da API do
+    // TiqueTaque (ver src/lib/tiquetaque/pace.ts) — sem isso, uma leva de
+    // 300+ motoristas dispara mais chamadas que o limite permite em menos
+    // de um minuto e a maioria volta com erro 429.
+    let calledOnce = false;
     for (let i = 0; i < plan.length; i++) {
       const item = plan[i];
       setProgress({ done: i, total: plan.length, currentDriverName: item.driverName });
 
-      if (!item.employeeId) {
+      if (!item.employeeId || !item.token) {
         errors.push({ driverName: item.driverName, message: "Nenhum funcionário com este CPF encontrado no TiqueTaque." });
         continue;
       }
 
-      const driverResult = await importDriverFromTiqueTaque(item.driverId, item.employeeId, startDate, endDate);
+      if (calledOnce) await sleep(TIQUETAQUE_IMPORT_PACE_MS);
+      calledOnce = true;
+
+      const driverResult = await importDriverFromTiqueTaque(item.driverId, item.employeeId, item.token, startDate, endDate);
       created += driverResult.created;
       corrected += driverResult.corrected;
       errors.push(...driverResult.errors);

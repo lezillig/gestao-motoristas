@@ -15,16 +15,19 @@ function authHeader(): string {
   return "Basic " + Buffer.from(`public:${token}`).toString("base64");
 }
 
-async function tiqueTaqueFetch(path: string, retried = false): Promise<unknown> {
+const MAX_RATE_LIMIT_RETRIES = 3;
+
+async function tiqueTaqueFetch(path: string, attempt = 0): Promise<unknown> {
   const res = await fetch(`${BASE_URL}${path}`, {
     headers: { Authorization: authHeader() },
   });
-  if (res.status === 429 && !retried) {
-    // Limite de 60 req/min da API — uma unica retentativa curta e suficiente
-    // para o volume de chamadas deste importador (paginas de funcionarios +
-    // uma consulta por motorista).
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    return tiqueTaqueFetch(path, true);
+  if (res.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {
+    // Limite real da API: 60 req/min ("60 per 1 minute"). Backoff crescente
+    // (2s, 4s, 8s) como rede de segurança contra rajadas isoladas — a
+    // defesa principal contra o limite é o cliente pacear as chamadas por
+    // motorista (ver src/lib/tiquetaque/pace.ts), não esta retentativa.
+    await new Promise((resolve) => setTimeout(resolve, 2000 * 2 ** attempt));
+    return tiqueTaqueFetch(path, attempt + 1);
   }
   if (!res.ok) {
     const body = await res.text().catch(() => "");

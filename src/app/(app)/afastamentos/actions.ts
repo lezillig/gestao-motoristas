@@ -5,8 +5,12 @@ import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { parseLocalDate } from "@/lib/date";
 import { fetchAllEmployees, fetchEmployeeLeaves } from "@/lib/tiquetaque/client";
+import { signTiqueTaquePlanItem, verifyTiqueTaquePlanItem } from "@/lib/tiquetaque/planToken";
 
-export type LeaveImportPlanItem = { driverId: string; driverName: string; employeeId: string | null };
+// `token` amarra o employeeId ao driverId+empresa (ver planToken.ts) — a
+// fase 2 recebe o employeeId de volta do cliente e PRECISA revalidar esse
+// vinculo antes de usá-lo (mesmo padrão do import de ponto).
+export type LeaveImportPlanItem = { driverId: string; driverName: string; employeeId: string | null; token: string | null };
 export type LeaveImportPlanResult = { error?: string; plan?: LeaveImportPlanItem[] };
 
 // Mesmo padrao de duas fases ja usado pro import de ponto do TiqueTaque
@@ -30,11 +34,15 @@ export async function prepareLeaveImport(): Promise<LeaveImportPlanResult> {
     select: { id: true, name: true, cpf: true },
   });
 
-  const plan: LeaveImportPlanItem[] = drivers.map((driver) => ({
-    driverId: driver.id,
-    driverName: driver.name,
-    employeeId: employeeByCpf.get(driver.cpf.replace(/\D/g, ""))?.id ?? null,
-  }));
+  const plan: LeaveImportPlanItem[] = drivers.map((driver) => {
+    const employeeId = employeeByCpf.get(driver.cpf.replace(/\D/g, ""))?.id ?? null;
+    return {
+      driverId: driver.id,
+      driverName: driver.name,
+      employeeId,
+      token: employeeId ? signTiqueTaquePlanItem(session.companyId, driver.id, employeeId) : null,
+    };
+  });
 
   return { plan };
 }
@@ -47,12 +55,20 @@ export type LeaveImportDriverResult = { imported: number; errors: LeaveImportRow
 // detalhado depois de criado no TiqueTaque, e continua sendo o MESMO
 // registro (mesmo _id), nao um novo. Nao ha caminho de edicao manual pra
 // esse modelo ainda, entao nao existe "dado do usuario" pra proteger aqui.
-export async function importLeavesForDriver(driverId: string, employeeId: string): Promise<LeaveImportDriverResult> {
+export async function importLeavesForDriver(
+  driverId: string,
+  employeeId: string,
+  token: string
+): Promise<LeaveImportDriverResult> {
   const session = await requireRole("ADMIN", "GESTOR");
 
   const driver = await prisma.driver.findUnique({ where: { id: driverId, companyId: session.companyId } });
   if (!driver) {
     return { imported: 0, errors: [{ driverName: "—", message: "Motorista não encontrado." }] };
+  }
+
+  if (!verifyTiqueTaquePlanItem(session.companyId, driverId, employeeId, token)) {
+    return { imported: 0, errors: [{ driverName: driver.name, message: "Vínculo com o TiqueTaque inválido — refaça a importação." }] };
   }
 
   let leaves;

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { primaryButtonClass } from "@/lib/ui";
 import { prepareLeaveImport, importLeavesForDriver, type LeaveImportRowError } from "./actions";
+import { sleep, TIQUETAQUE_IMPORT_PACE_MS } from "@/lib/tiquetaque/pace";
 
 type Progress = { done: number; total: number; currentDriverName?: string };
 
@@ -33,16 +34,23 @@ export default function LeaveImportButton() {
     let imported = 0;
     const errors: LeaveImportRowError[] = [];
 
+    // Pausa entre chamadas pra respeitar o limite de 60 req/min da API do
+    // TiqueTaque (ver src/lib/tiquetaque/pace.ts) — mesmo motivo do import
+    // de ponto.
+    let calledOnce = false;
     for (let i = 0; i < plan.length; i++) {
       const item = plan[i];
       setProgress({ done: i, total: plan.length, currentDriverName: item.driverName });
 
-      if (!item.employeeId) {
+      if (!item.employeeId || !item.token) {
         errors.push({ driverName: item.driverName, message: "Nenhum funcionário com este CPF encontrado no TiqueTaque." });
         continue;
       }
 
-      const driverResult = await importLeavesForDriver(item.driverId, item.employeeId);
+      if (calledOnce) await sleep(TIQUETAQUE_IMPORT_PACE_MS);
+      calledOnce = true;
+
+      const driverResult = await importLeavesForDriver(item.driverId, item.employeeId, item.token);
       imported += driverResult.imported;
       errors.push(...driverResult.errors);
     }
