@@ -20,6 +20,7 @@ import {
   FileSpreadsheet,
   ChevronDown,
   CalendarOff,
+  CalendarRange,
   PiggyBank,
 } from "lucide-react";
 
@@ -71,6 +72,7 @@ const NAV: NavItem[] = [
       { href: "/ponto/analise", label: "Análise de riscos", icon: ShieldAlert },
       { href: "/ponto/correcoes", label: "Histórico de correções", icon: History },
       { href: "/ponto/mensal", label: "Relatório mensal", icon: FileSpreadsheet },
+      { href: "/ponto/anual", label: "Relatório anual", icon: CalendarRange },
       { href: "/ponto/banco-horas", label: "Banco de horas", icon: PiggyBank },
     ],
   },
