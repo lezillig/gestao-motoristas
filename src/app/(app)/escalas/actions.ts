@@ -5,10 +5,33 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { findEscalaConflicts } from "@/lib/escalaConflicts";
+import { findEscalaConflicts, findInterjornadaWarnings, type InterjornadaWarning } from "@/lib/escalaConflicts";
 import { parseLocalDate } from "@/lib/date";
 
-export type EscalaFormState = { error?: string };
+export type EscalaFormValues = {
+  driverId: string;
+  vehicleId: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  notes: string;
+};
+export type EscalaFormState = { error?: string; warning?: string; values?: EscalaFormValues };
+
+// React reseta campos nao controlados do formulario assim que a Server
+// Action retorna — sem devolver os valores enviados, o fluxo "salvar mesmo
+// assim" do aviso de interjornada reenviaria o formulario vazio no segundo
+// clique. Ver EscalaForm.tsx (usa isso pra re-popular via `key`).
+function rawValues(formData: FormData): EscalaFormValues {
+  return {
+    driverId: String(formData.get("driverId") ?? ""),
+    vehicleId: String(formData.get("vehicleId") ?? ""),
+    date: String(formData.get("date") ?? ""),
+    startTime: String(formData.get("startTime") ?? ""),
+    endTime: String(formData.get("endTime") ?? ""),
+    notes: String(formData.get("notes") ?? ""),
+  };
+}
 
 const schema = z
   .object({
@@ -36,6 +59,17 @@ function parseForm(formData: FormData) {
     endTime: formData.get("endTime"),
     notes: formData.get("notes") || undefined,
   });
+}
+
+function interjornadaWarningMessage(warnings: InterjornadaWarning[]): string {
+  const parts = warnings.map((w) => {
+    const h = Math.floor(w.gapMinutes / 60);
+    const m = w.gapMinutes % 60;
+    const minH = Math.floor(w.minRequiredMinutes / 60);
+    const label = w.direction === "anterior" ? "turno anterior" : "próximo turno";
+    return `${h}h${m > 0 ? `${m}min` : ""} de descanso até o ${label} (${w.adjacentDate.toLocaleDateString("pt-BR")}, ${w.adjacentStartTime}–${w.adjacentEndTime}) — abaixo do mínimo de ${minH}h`;
+  });
+  return `Atenção: descanso insuficiente (art. 235-C, §4º CLT). ${parts.join("; ")}.`;
 }
 
 function conflictMessage(
@@ -68,9 +102,10 @@ export async function createEscala(
   formData: FormData
 ): Promise<EscalaFormState> {
   const session = await requireRole("ADMIN", "GESTOR");
+  const values = rawValues(formData);
   const parsed = parseForm(formData);
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Dados inválidos" };
+    return { error: parsed.error.issues[0]?.message ?? "Dados inválidos", values };
   }
 
   const ownershipError = await assertDriverAndVehicleOwnership(
@@ -78,14 +113,21 @@ export async function createEscala(
     parsed.data.driverId,
     parsed.data.vehicleId
   );
-  if (ownershipError) return { error: ownershipError };
+  if (ownershipError) return { error: ownershipError, values };
 
   const conflicts = await findEscalaConflicts({
     companyId: session.companyId,
     ...parsed.data,
   });
   if (conflicts.length > 0) {
-    return { error: conflictMessage(conflicts) };
+    return { error: conflictMessage(conflicts), values };
+  }
+
+  if (formData.get("confirmInterjornada") !== "true") {
+    const warnings = await findInterjornadaWarnings({ companyId: session.companyId, ...parsed.data });
+    if (warnings.length > 0) {
+      return { warning: interjornadaWarningMessage(warnings), values };
+    }
   }
 
   await prisma.escala.create({
@@ -102,9 +144,10 @@ export async function updateEscala(
   formData: FormData
 ): Promise<EscalaFormState> {
   const session = await requireRole("ADMIN", "GESTOR");
+  const values = rawValues(formData);
   const parsed = parseForm(formData);
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Dados inválidos" };
+    return { error: parsed.error.issues[0]?.message ?? "Dados inválidos", values };
   }
 
   const ownershipError = await assertDriverAndVehicleOwnership(
@@ -112,7 +155,7 @@ export async function updateEscala(
     parsed.data.driverId,
     parsed.data.vehicleId
   );
-  if (ownershipError) return { error: ownershipError };
+  if (ownershipError) return { error: ownershipError, values };
 
   const conflicts = await findEscalaConflicts({
     companyId: session.companyId,
@@ -120,7 +163,14 @@ export async function updateEscala(
     excludeId: id,
   });
   if (conflicts.length > 0) {
-    return { error: conflictMessage(conflicts) };
+    return { error: conflictMessage(conflicts), values };
+  }
+
+  if (formData.get("confirmInterjornada") !== "true") {
+    const warnings = await findInterjornadaWarnings({ companyId: session.companyId, ...parsed.data, excludeId: id });
+    if (warnings.length > 0) {
+      return { warning: interjornadaWarningMessage(warnings), values };
+    }
   }
 
   await prisma.escala.update({

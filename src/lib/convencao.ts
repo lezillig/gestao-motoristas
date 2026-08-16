@@ -93,6 +93,26 @@ export function overtimeCostCents(
   return Math.round((overtimeMinutes / 60) * driver.valorHoraCents * (1 + percentual / 100));
 }
 
+// Percentual minimo de adicional noturno quando nao ha regra
+// ADICIONAL_NOTURNO vigente no ACT/CCT do motorista (art. 73 CLT).
+export const ADICIONAL_NOTURNO_PERCENTUAL_MINIMO = 20;
+
+// Custo (em centavos) do adicional noturno de um turno: valor-hora do
+// motorista multiplicado pelo percentual vigente (ACT/CCT, resolveRegra ja
+// aplica a precedencia ACT>CCT) ou o minimo legal de 20% quando nao ha
+// regra negociada. Mesma convencao de overtimeCostCents: retorna null se o
+// motorista nao tem valor-hora cadastrado.
+export function nightPremiumCents(
+  driver: DriverWithConvencoes,
+  nightMinutes: number,
+  today = new Date()
+): number | null {
+  if (!driver.valorHoraCents || nightMinutes <= 0) return driver.valorHoraCents ? 0 : null;
+  const regra = resolveRegra(driver, "ADICIONAL_NOTURNO", today);
+  const percentual = regra.valorNumerico ?? ADICIONAL_NOTURNO_PERCENTUAL_MINIMO;
+  return Math.round((nightMinutes / 60) * driver.valorHoraCents * (percentual / 100));
+}
+
 // Indica se o motorista esta em regime 12x36 vigente. Precedencia: override
 // individual do motorista (regimeHoras, art. 59-A CLT permite 12x36 por
 // acordo individual) > ACT vigente > CCT vigente. Quando ativo, os checks de

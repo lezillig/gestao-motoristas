@@ -7,7 +7,7 @@ import {
   startOfMonth,
   subMonths,
 } from "date-fns";
-import { Banknote, CalendarX, ChevronLeft, ChevronRight, Coffee, Gavel, ScrollText, ShieldAlert, Trophy } from "lucide-react";
+import { Banknote, CalendarX, ChevronLeft, ChevronRight, Coffee, Gavel, Moon, ScrollText, ShieldAlert, Trophy } from "lucide-react";
 import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass, inputClass } from "@/lib/ui";
@@ -23,11 +23,12 @@ import {
   findMissingIntervalViolations,
   findMissingWeeklyRestViolations,
   intervalDurationMinutes,
+  nightMinutes,
   overtimeMinutes,
   workedMinutes,
   type RiskLevel,
 } from "@/lib/pontoCompliance";
-import { driverDailyLimitMinutes, driverRegime12x36, overtimeCostCents } from "@/lib/convencao";
+import { driverDailyLimitMinutes, driverRegime12x36, nightPremiumCents, overtimeCostCents } from "@/lib/convencao";
 import { annotateJurisprudenceRisks, type DriverViolationSummary } from "@/lib/jurisprudencia";
 import { formatHoursMinutes } from "@/lib/time";
 
@@ -127,6 +128,25 @@ export default async function AnaliseDeRiscosPage({
   let totalCostCents = 0;
   let hasAnyCost = false;
   const over10hCount = entriesInMonth.filter((e) => (workedMinutes(e) ?? 0) > 600).length;
+
+  // Adicional noturno (art. 73 CLT) — minutos trabalhados entre 22h e 5h,
+  // independente de haver ou nao hora extra no turno.
+  let totalNightMinutes = 0;
+  let totalNightCostCents = 0;
+  let hasAnyNightCost = false;
+  for (const entry of entriesInMonth) {
+    const night = nightMinutes(entry);
+    if (night <= 0) continue;
+    totalNightMinutes += night;
+    const driverForNight = driverById.get(entry.driverId);
+    if (driverForNight) {
+      const cost = nightPremiumCents(driverForNight, night);
+      if (cost !== null) {
+        totalNightCostCents += cost;
+        hasAnyNightCost = true;
+      }
+    }
+  }
 
   // Hora extra: usa o limite negociado (ACT/CCT) ou o regime 12x36 quando
   // vigente; a categoria muda conforme a fonte do limite aplicado.
@@ -339,7 +359,7 @@ export default async function AnaliseDeRiscosPage({
         </Link>
       </div>
 
-      <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className={cardClass}>
           <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-purple-100 text-purple-700">
             <Banknote className="h-4 w-4" />
@@ -400,6 +420,25 @@ export default async function AnaliseDeRiscosPage({
               <p className="font-semibold text-slate-900">{absences.length}</p>
               <p className="text-xs text-slate-500">dias sem registros</p>
             </div>
+          </div>
+        </div>
+
+        <div className={cardClass}>
+          <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-slate-800 text-slate-100">
+            <Moon className="h-4 w-4" />
+          </div>
+          <p className="text-sm text-slate-500">Adicional noturno</p>
+          <p className="mt-1 text-2xl font-semibold text-slate-900">{formatHoursMinutes(totalNightMinutes)}</p>
+          <p className="text-xs text-slate-500">trabalhados entre 22h e 5h (art. 73 CLT)</p>
+          <div className="mt-3 border-t border-slate-100 pt-3 text-sm">
+            <p className="font-semibold text-slate-900">
+              {hasAnyNightCost
+                ? (totalNightCostCents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+                : "—"}
+            </p>
+            <p className="text-xs text-slate-500">
+              {hasAnyNightCost ? "em adicional noturno" : "configure o valor-hora dos motoristas"}
+            </p>
           </div>
         </div>
       </div>

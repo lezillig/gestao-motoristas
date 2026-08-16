@@ -190,6 +190,50 @@ export function findMissingWeeklyRestViolations(
   return violations;
 }
 
+// Art. 73 CLT: periodo noturno vai das 22h de um dia as 5h do dia seguinte.
+export const NIGHT_START_MINUTES = 22 * 60;
+export const NIGHT_END_MINUTES = 5 * 60;
+
+function nightOverlapMinutes(entradaAbs: number, saidaAbs: number, windowStart: number, windowEnd: number): number {
+  return Math.max(0, Math.min(saidaAbs, windowEnd) - Math.max(entradaAbs, windowStart));
+}
+
+// Minutos de um segmento (entrada->saida, ja convertidos pra minutos desde
+// 00h do dia da entrada) que caem dentro do periodo noturno — soma a
+// sobreposicao com a janela desta noite (22h do dia do turno ate 5h do dia
+// seguinte) e com a cauda da noite anterior (ate 5h do proprio dia do
+// turno), pra cobrir tanto turno que comeca de noite quanto turno que
+// comeca de madrugada ainda dentro do periodo noturno.
+function segmentNightMinutes(entrada: string, saida: string): number {
+  const entradaAbs = toMinutes(entrada);
+  const saidaMin = toMinutes(saida);
+  const saidaAbs = saidaMin + (saidaMin < entradaAbs ? 24 * 60 : 0);
+  return (
+    nightOverlapMinutes(entradaAbs, saidaAbs, NIGHT_START_MINUTES, 24 * 60 + NIGHT_END_MINUTES) +
+    nightOverlapMinutes(entradaAbs, saidaAbs, NIGHT_START_MINUTES - 24 * 60, NIGHT_END_MINUTES)
+  );
+}
+
+// Adicional noturno (art. 73 CLT): minutos efetivamente trabalhados entre
+// 22h e 5h, descontando o(s) intervalo(s) do mesmo jeito que workedMinutes.
+// Nao aplica a reducao ficta da "hora noturna" (52min30s = 1h) — o
+// percentual de adicional e calculado sobre os minutos reais, abordagem
+// mais simples e conservadora quando o CCT nao detalha a reducao em
+// separado (ver src/lib/convencao.ts:nightPremiumCents).
+export function nightMinutes(
+  entry: Pick<PontoEntryLike, "clockIn" | "clockOut" | "intervaloInicio" | "intervaloFim" | "punches">
+): number {
+  const punches = parsePunches(entry.punches);
+  if (punches.length > 0) {
+    return punches.reduce((sum, p) => sum + (p.saida ? segmentNightMinutes(p.entrada, p.saida) : 0), 0);
+  }
+  if (!entry.clockOut) return 0;
+  if (entry.intervaloInicio && entry.intervaloFim) {
+    return segmentNightMinutes(entry.clockIn, entry.intervaloInicio) + segmentNightMinutes(entry.intervaloFim, entry.clockOut);
+  }
+  return segmentNightMinutes(entry.clockIn, entry.clockOut);
+}
+
 export type EscalaLike = { driverId: string; date: Date };
 export type Absence = { driverId: string; date: Date };
 
