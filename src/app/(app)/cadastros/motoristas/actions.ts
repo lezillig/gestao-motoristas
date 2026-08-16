@@ -23,6 +23,14 @@ const schema = z.object({
     .optional(),
   phone: z.string().optional(),
   sindicatoId: z.string().optional(),
+  // Data de admissao — opcional, nao vem do TiqueTaque. Sem ela o sistema
+  // nao calcula ferias em dobro (art. 137 CLT) nem periodo aquisitivo de
+  // ferias em geral, ver checkFolgaCompensada em afastamentoCompliance.ts.
+  admissao: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida")
+    .transform(parseLocalDate)
+    .optional(),
   regimeHoras: z.enum(["PADRAO", "DOZE_X_TRINTA_SEIS"]).optional(),
   escalaSemanal: z.enum(["SEIS_UM", "CINCO_DOIS"]).optional(),
   // Le do input "valorHora" (reais, ex.: "12,50") e converte pra centavos —
@@ -46,6 +54,7 @@ function parseForm(formData: FormData) {
     cnhExpiration: formData.get("cnhExpiration") || undefined,
     phone: formData.get("phone") || undefined,
     sindicatoId: formData.get("sindicatoId") || undefined,
+    admissao: formData.get("admissao") || undefined,
     regimeHoras: formData.get("regimeHoras") || undefined,
     escalaSemanal: formData.get("escalaSemanal") || undefined,
     valorHoraCents: formData.get("valorHora") || undefined,
@@ -160,6 +169,7 @@ export async function importDrivers(
 
     const cnhCategory = normalizeText(row["Categoria CNH"]);
     const cnhExpiration = cellToLocalDateString(row["Validade CNH (AAAA-MM-DD)"]);
+    const admissao = cellToLocalDateString(row["Data de Admissão (AAAA-MM-DD)"]);
     const phone = normalizeText(row["Telefone"]) || undefined;
     const sindicatoNome = normalizeText(row["Sindicato"]);
     const ativoRaw = normalizeText(row["Ativo (SIM/NAO)"]).toLowerCase();
@@ -194,6 +204,7 @@ export async function importDrivers(
       cnh: cnh || undefined,
       cnhCategory: cnhCategory || undefined,
       cnhExpiration: cnhExpiration ?? undefined,
+      admissao: admissao ?? undefined,
       phone,
       sindicatoId,
       regimeHoras: regimeHoras ?? undefined,

@@ -113,6 +113,27 @@ export function nightPremiumCents(
   return Math.round((nightMinutes / 60) * driver.valorHoraCents * (percentual / 100));
 }
 
+// Percentual minimo de indenizacao do tempo de espera quando nao ha regra
+// TEMPO_ESPERA vigente no ACT/CCT do motorista (art. 235-C, §9º, Lei
+// 13.103/2015).
+export const TEMPO_ESPERA_PERCENTUAL_MINIMO = 30;
+
+// Indenizacao (em centavos) do tempo de espera de um turno: valor-hora do
+// motorista multiplicado pelo percentual vigente (ACT/CCT) ou o minimo
+// legal de 30% quando nao ha regra negociada. Mesma convencao de
+// overtimeCostCents/nightPremiumCents: retorna null se o motorista nao tem
+// valor-hora cadastrado.
+export function waitingTimeIndemnityCents(
+  driver: DriverWithConvencoes,
+  waitingMinutes: number,
+  today = new Date()
+): number | null {
+  if (!driver.valorHoraCents || waitingMinutes <= 0) return driver.valorHoraCents ? 0 : null;
+  const regra = resolveRegra(driver, "TEMPO_ESPERA", today);
+  const percentual = regra.valorNumerico ?? TEMPO_ESPERA_PERCENTUAL_MINIMO;
+  return Math.round((waitingMinutes / 60) * driver.valorHoraCents * (percentual / 100));
+}
+
 // Indica se o motorista esta em regime 12x36 vigente. Precedencia: override
 // individual do motorista (regimeHoras, art. 59-A CLT permite 12x36 por
 // acordo individual) > ACT vigente > CCT vigente. Quando ativo, os checks de
@@ -140,6 +161,7 @@ export const TIPO_REGRA_LABELS: Record<string, string> = {
   ADICIONAL_NOTURNO: "Adicional noturno",
   INTERVALO: "Intervalo mínimo",
   JORNADA_12X36: "Regime 12x36",
+  TEMPO_ESPERA: "Indenização de tempo de espera",
   OUTRO: "Outra regra",
 };
 
@@ -150,5 +172,6 @@ export const TIPO_REGRA_UNIDADE: Record<string, string> = {
   ADICIONAL_NOTURNO: "% adicional",
   INTERVALO: "minutos",
   JORNADA_12X36: "—",
+  TEMPO_ESPERA: "% adicional",
   OUTRO: "—",
 };

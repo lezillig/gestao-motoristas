@@ -7,7 +7,20 @@ import {
   startOfMonth,
   subMonths,
 } from "date-fns";
-import { Banknote, CalendarX, ChevronLeft, ChevronRight, Coffee, Gavel, Moon, ScrollText, ShieldAlert, Trophy } from "lucide-react";
+import {
+  Banknote,
+  CalendarX,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardCheck,
+  Coffee,
+  Gavel,
+  Hourglass,
+  Moon,
+  ScrollText,
+  ShieldAlert,
+  Trophy,
+} from "lucide-react";
 import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass, inputClass } from "@/lib/ui";
@@ -25,10 +38,17 @@ import {
   intervalDurationMinutes,
   nightMinutes,
   overtimeMinutes,
+  waitingMinutes,
   workedMinutes,
   type RiskLevel,
 } from "@/lib/pontoCompliance";
-import { driverDailyLimitMinutes, driverRegime12x36, nightPremiumCents, overtimeCostCents } from "@/lib/convencao";
+import {
+  driverDailyLimitMinutes,
+  driverRegime12x36,
+  nightPremiumCents,
+  overtimeCostCents,
+  waitingTimeIndemnityCents,
+} from "@/lib/convencao";
 import { annotateJurisprudenceRisks, type DriverViolationSummary } from "@/lib/jurisprudencia";
 import { formatHoursMinutes } from "@/lib/time";
 
@@ -110,6 +130,30 @@ export default async function AnaliseDeRiscosPage({
   const dailyLimitByDriver = new Map(drivers.map((d) => [d.id, driverDailyLimitMinutes(d)]));
   const regime12x36ByDriver = new Map(drivers.map((d) => [d.id, driverRegime12x36(d)]));
 
+  // 3 meses anteriores ao selecionado, so pra alimentar o check de
+  // supressao de hora extra habitual (Sumula 291, ver jurisprudencia.ts) —
+  // consulta separada porque e uma janela bem maior que o lookback de 1 dia
+  // ja usado pra interjornada.
+  const priorMonthsStart = startOfMonth(subMonths(monthStart, 3));
+  const priorMonthsEntries = await prisma.timeClockEntry.findMany({
+    where: {
+      companyId: session.companyId,
+      date: { gte: priorMonthsStart, lt: monthStart },
+      ...(driverId ? { driverId } : {}),
+    },
+  });
+  const priorOvertimeByDriverMonth = new Map<string, number>();
+  for (const entry of priorMonthsEntries) {
+    const regime = regime12x36ByDriver.get(entry.driverId);
+    const limit = dailyLimitByDriver.get(entry.driverId);
+    const effectiveLimit = regime?.ativo ? REGIME_12X36_WORK_MINUTES : limit?.minutes;
+    const overtime = overtimeMinutes(workedMinutes(entry), effectiveLimit);
+    const key = `${entry.driverId}_${format(entry.date, "yyyy-MM")}`;
+    priorOvertimeByDriverMonth.set(key, (priorOvertimeByDriverMonth.get(key) ?? 0) + overtime);
+  }
+  const priorMonthKeys = [3, 2, 1].map((n) => format(subMonths(monthStart, n), "yyyy-MM"));
+  const currentOvertimeByDriver = new Map<string, number>();
+
   const rows: ViolationRow[] = [];
   const summaryByDriver = new Map<string, DriverViolationSummary>();
   const getSummary = (id: string): DriverViolationSummary => {
@@ -148,6 +192,25 @@ export default async function AnaliseDeRiscosPage({
     }
   }
 
+  // Tempo de espera (art. 235-C, §§8-9, Lei 13.103/2015) — nao e jornada
+  // nem hora extra, so lancamento manual (ver waitingMinutes/PontoForm).
+  let totalWaitingMinutes = 0;
+  let totalWaitingCostCents = 0;
+  let hasAnyWaitingCost = false;
+  for (const entry of entriesInMonth) {
+    const waiting = waitingMinutes(entry);
+    if (waiting <= 0) continue;
+    totalWaitingMinutes += waiting;
+    const driverForWaiting = driverById.get(entry.driverId);
+    if (driverForWaiting) {
+      const cost = waitingTimeIndemnityCents(driverForWaiting, waiting);
+      if (cost !== null) {
+        totalWaitingCostCents += cost;
+        hasAnyWaitingCost = true;
+      }
+    }
+  }
+
   // Hora extra: usa o limite negociado (ACT/CCT) ou o regime 12x36 quando
   // vigente; a categoria muda conforme a fonte do limite aplicado.
   for (const entry of entriesInMonth) {
@@ -159,6 +222,7 @@ export default async function AnaliseDeRiscosPage({
     if (overtime <= 0) continue;
 
     totalOvertimeMinutes += overtime;
+    currentOvertimeByDriver.set(entry.driverId, (currentOvertimeByDriver.get(entry.driverId) ?? 0) + overtime);
     const driverForCost = driverById.get(entry.driverId);
     if (driverForCost) {
       const cost = overtimeCostCents(driverForCost, overtime);
@@ -273,6 +337,51 @@ export default async function AnaliseDeRiscosPage({
   const absences = findAbsences(escalasInMonth, entriesInMonth);
   const absenteeismPercent = escalasInMonth.length > 0 ? (absences.length / escalasInMonth.length) * 100 : 0;
 
+  // Completude do controle de ponto (Sumula 338, I, TST): empresas que nao
+  // mantem controle de ponto regular tem presuncao relativa de veracidade
+  // da jornada alegada pelo MOTORISTA contra elas — este indicador mede,
+  // por motorista, quantos dos dias efetivamente escalados no mes tem um
+  // registro completo (turno fechado + intervalo registrado quando exigido)
+  // — util pra avaliar exposicao de risco antes de uma reclamacao, nao so
+  // listar ocorrencias pontuais como o resto da tabela ja faz.
+  const missingIntervalEntryIds = new Set(missingIntervalViolations.map((v) => v.entryId));
+  const escalaDaysByDriver = new Map<string, Set<string>>();
+  for (const escala of escalasInMonth) {
+    const key = `${escala.date.getFullYear()}-${escala.date.getMonth()}-${escala.date.getDate()}`;
+    const set = escalaDaysByDriver.get(escala.driverId) ?? new Set<string>();
+    set.add(key);
+    escalaDaysByDriver.set(escala.driverId, set);
+  }
+  const completeDaysByDriver = new Map<string, number>();
+  for (const entry of entriesInMonth) {
+    const complete = workedMinutes(entry) !== null && !missingIntervalEntryIds.has(entry.id);
+    if (complete) {
+      completeDaysByDriver.set(entry.driverId, (completeDaysByDriver.get(entry.driverId) ?? 0) + 1);
+    }
+  }
+  const completude = drivers
+    .map((driver) => {
+      const expected = escalaDaysByDriver.get(driver.id)?.size ?? 0;
+      if (expected === 0) return null;
+      const complete = completeDaysByDriver.get(driver.id) ?? 0;
+      return { driverId: driver.id, name: driver.name, expected, complete, percent: (complete / expected) * 100 };
+    })
+    .filter((c): c is { driverId: string; name: string; expected: number; complete: number; percent: number } => c !== null && c.percent < 100)
+    .sort((a, b) => a.percent - b.percent)
+    .slice(0, 8);
+
+  // Anexa o historico de 3 meses (Sumula 291) pra todo motorista, mesmo os
+  // sem nenhuma outra violacao no mes — a supressao habitual e detectada
+  // justamente pela QUEDA pra hora extra baixa/zero, entao o motorista
+  // costuma nao ter nenhuma outra ocorrencia no mes selecionado.
+  for (const driver of drivers) {
+    const summary = getSummary(driver.id);
+    summary.priorMonthsOvertimeMinutes = priorMonthKeys.map(
+      (k) => priorOvertimeByDriverMonth.get(`${driver.id}_${k}`) ?? 0
+    );
+    summary.currentMonthOvertimeMinutes = currentOvertimeByDriver.get(driver.id) ?? 0;
+  }
+
   const jurisprudenceRisks = annotateJurisprudenceRisks([...summaryByDriver.values()]);
   for (const risk of jurisprudenceRisks) {
     rows.push({
@@ -359,7 +468,7 @@ export default async function AnaliseDeRiscosPage({
         </Link>
       </div>
 
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <div className={cardClass}>
           <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-purple-100 text-purple-700">
             <Banknote className="h-4 w-4" />
@@ -441,6 +550,25 @@ export default async function AnaliseDeRiscosPage({
             </p>
           </div>
         </div>
+
+        <div className={cardClass}>
+          <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
+            <Hourglass className="h-4 w-4" />
+          </div>
+          <p className="text-sm text-slate-500">Tempo de espera</p>
+          <p className="mt-1 text-2xl font-semibold text-slate-900">{formatHoursMinutes(totalWaitingMinutes)}</p>
+          <p className="text-xs text-slate-500">aguardando carga/embarque (art. 235-C, §§8-9 Lei 13.103/2015)</p>
+          <div className="mt-3 border-t border-slate-100 pt-3 text-sm">
+            <p className="font-semibold text-slate-900">
+              {hasAnyWaitingCost
+                ? (totalWaitingCostCents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+                : "—"}
+            </p>
+            <p className="text-xs text-slate-500">
+              {hasAnyWaitingCost ? "em indenização de espera" : "configure o valor-hora dos motoristas"}
+            </p>
+          </div>
+        </div>
       </div>
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -480,6 +608,38 @@ export default async function AnaliseDeRiscosPage({
                 </li>
               );
             })}
+          </ul>
+        </div>
+      )}
+
+      {completude.length > 0 && (
+        <div className={`${cardClass} mb-6`}>
+          <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold text-slate-900">
+            <ClipboardCheck className="h-4 w-4 text-slate-500" /> Completude do controle de ponto
+          </h2>
+          <p className="mb-3 text-xs text-slate-500">
+            % dos dias escalados no mês com registro de ponto completo (turno fechado + intervalo registrado quando
+            exigido) — abaixo de 100% aumenta o risco de inversão do ônus da prova a favor do motorista em eventual
+            reclamação (Súmula 338, I, TST).
+          </p>
+          <ul className="flex flex-col gap-1">
+            {completude.map((c) => (
+              <li key={c.driverId} className="flex items-center justify-between rounded-lg px-2 py-1.5 text-sm">
+                <span className="text-slate-700">{c.name}</span>
+                <span className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500">
+                    {c.complete}/{c.expected} dias
+                  </span>
+                  <span
+                    className={`${badgeClass} ${
+                      c.percent < 70 ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"
+                    }`}
+                  >
+                    {c.percent.toFixed(0)}%
+                  </span>
+                </span>
+              </li>
+            ))}
           </ul>
         </div>
       )}

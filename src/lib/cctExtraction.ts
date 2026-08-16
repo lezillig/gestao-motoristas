@@ -19,6 +19,7 @@ const TIPOS = [
   "ADICIONAL_NOTURNO",
   "INTERVALO",
   "JORNADA_12X36",
+  "TEMPO_ESPERA",
   "OUTRO",
 ] as const;
 
@@ -43,6 +44,7 @@ Extraia cláusulas que definem regras quantificáveis de jornada e remuneração
 - ADICIONAL_NOTURNO: percentual de adicional noturno. Numérico obrigatório.
 - INTERVALO: minutos mínimos de intervalo/descanso. Numérico obrigatório.
 - JORNADA_12X36: valorNumerico nulo; descreva as condições de elegibilidade em descricao.
+- TEMPO_ESPERA: percentual de indenização do tempo de espera (carga/descarga, embarque/desembarque — art. 235-C, §§8-9, Lei 13.103/2015). Numérico obrigatório.
 - OUTRO: qualquer outra regra quantificável relevante que não se encaixe acima; valorNumerico nulo se não houver um número único aplicável.
 
 Extraia apenas regras explícitas no texto, citando o número da cláusula/artigo na descrição quando possível. Não invente valores. Se uma cláusula for ambígua, inclua-a com a leitura mais literal e mencione a ambiguidade na descrição. Se nenhuma regra quantificável for encontrada, devolva uma lista vazia.`;

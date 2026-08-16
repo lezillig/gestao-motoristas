@@ -20,6 +20,8 @@ export default function PontoForm({
     clockOut: string | null;
     intervaloInicio?: string | null;
     intervaloFim?: string | null;
+    esperaInicio?: string | null;
+    esperaFim?: string | null;
     notes: string | null;
   };
 }) {
@@ -91,6 +93,30 @@ export default function PontoForm({
             className={inputClass}
           />
           <p className="mt-1 text-xs text-slate-400">Preencha se o motorista teve pausa registrada durante o turno.</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className={labelClass}>Início do tempo de espera</label>
+          <input
+            type="time"
+            name="esperaInicio"
+            defaultValue={defaultValues?.esperaInicio ?? ""}
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label className={labelClass}>Fim do tempo de espera</label>
+          <input
+            type="time"
+            name="esperaFim"
+            defaultValue={defaultValues?.esperaFim ?? ""}
+            className={inputClass}
+          />
+          <p className="mt-1 text-xs text-slate-400">
+            Motorista parado aguardando carga/descarga ou embarque/desembarque (art. 235-C, §§8º-9º, Lei do
+            Motorista) — não é jornada normal nem hora extra, indenizado à parte.
+          </p>
         </div>
       </div>
       <div>

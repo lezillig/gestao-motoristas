@@ -25,6 +25,10 @@ export type PontoEntryLike = {
   clockOut: string | null;
   intervaloInicio?: string | null;
   intervaloFim?: string | null;
+  // Tempo de espera (art. 235-C, §§8-9, Lei 13.103/2015) — nao e jornada
+  // normal nem hora extra, ver waitingMinutes() abaixo.
+  esperaInicio?: string | null;
+  esperaFim?: string | null;
   // Pares completos entrada/saida do dia (importacao TiqueTaque, quando ha
   // mais de 1 pausa) — ver comentario no schema, model TimeClockEntry.
   punches?: unknown;
@@ -48,7 +52,10 @@ export function parsePunches(value: unknown): PunchPair[] {
 // verdade; senao usa clockIn/clockOut menos o unico intervalo registrado
 // (intervaloInicio/Fim), cobrindo lancamento manual e o caso de 1 pausa.
 export function workedMinutes(
-  entry: Pick<PontoEntryLike, "clockIn" | "clockOut" | "intervaloInicio" | "intervaloFim" | "punches">
+  entry: Pick<
+    PontoEntryLike,
+    "clockIn" | "clockOut" | "intervaloInicio" | "intervaloFim" | "esperaInicio" | "esperaFim" | "punches"
+  >
 ) {
   const punches = parsePunches(entry.punches);
   if (punches.length > 0) {
@@ -59,8 +66,11 @@ export function workedMinutes(
 
   if (!entry.clockOut) return null;
   const total = durationMinutes(entry.clockIn, entry.clockOut);
-  const intervalo = intervalDurationMinutes(entry);
-  return intervalo !== null ? total - intervalo : total;
+  const intervalo = intervalDurationMinutes(entry) ?? 0;
+  // Tempo de espera nao conta como jornada trabalhada (art. 235-C, §8º, Lei
+  // 13.103/2015) — descontado do mesmo jeito que o intervalo intrajornada.
+  const espera = waitingMinutes(entry);
+  return total - intervalo - espera;
 }
 
 export function intervalDurationMinutes(
@@ -68,6 +78,17 @@ export function intervalDurationMinutes(
 ): number | null {
   if (!entry.intervaloInicio || !entry.intervaloFim) return null;
   return durationMinutes(entry.intervaloInicio, entry.intervaloFim);
+}
+
+// Tempo de espera (art. 235-C, §§8-9, Lei 13.103/2015): motorista parado
+// aguardando carga/descarga ou embarque/desembarque de passageiros — nao e
+// jornada normal nem gera hora extra, mas e indenizado a parte (percentual
+// sobre a hora normal, ver src/lib/convencao.ts:waitingTimeIndemnityCents).
+// So capturavel via lancamento manual (a API do TiqueTaque nao distingue
+// esse tipo de pausa de um intervalo comum).
+export function waitingMinutes(entry: Pick<PontoEntryLike, "esperaInicio" | "esperaFim">): number {
+  if (!entry.esperaInicio || !entry.esperaFim) return 0;
+  return durationMinutes(entry.esperaInicio, entry.esperaFim);
 }
 
 // dailyLimitMinutes permite que a jornada normal de um motorista seja

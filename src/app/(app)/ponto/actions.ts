@@ -48,6 +48,14 @@ const schema = z.object({
     .string()
     .regex(/^\d{2}:\d{2}$/, "Horário de fim do intervalo inválido")
     .optional(),
+  esperaInicio: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/, "Horário de início do tempo de espera inválido")
+    .optional(),
+  esperaFim: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/, "Horário de fim do tempo de espera inválido")
+    .optional(),
   notes: z.string().max(2000, "Observação muito longa (máx. 2000 caracteres)").optional(),
 });
 
@@ -59,6 +67,8 @@ function parseForm(formData: FormData) {
     clockOut: formData.get("clockOut") || undefined,
     intervaloInicio: formData.get("intervaloInicio") || undefined,
     intervaloFim: formData.get("intervaloFim") || undefined,
+    esperaInicio: formData.get("esperaInicio") || undefined,
+    esperaFim: formData.get("esperaFim") || undefined,
     notes: formData.get("notes") || undefined,
   });
 }
@@ -110,6 +120,8 @@ export async function createEntry(
       clockOut: parsed.data.clockOut || null,
       intervaloInicio: parsed.data.intervaloInicio || null,
       intervaloFim: parsed.data.intervaloFim || null,
+      esperaInicio: parsed.data.esperaInicio || null,
+      esperaFim: parsed.data.esperaFim || null,
       companyId: session.companyId,
     },
   });
@@ -145,6 +157,8 @@ export async function updateEntry(
       clockOut: parsed.data.clockOut || null,
       intervaloInicio: parsed.data.intervaloInicio || null,
       intervaloFim: parsed.data.intervaloFim || null,
+      esperaInicio: parsed.data.esperaInicio || null,
+      esperaFim: parsed.data.esperaFim || null,
     },
   });
 

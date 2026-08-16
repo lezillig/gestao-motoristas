@@ -17,6 +17,7 @@ export default function DriverForm({
     cnh: string | null;
     cnhCategory: string | null;
     cnhExpiration: Date | null;
+    admissao?: Date | null;
     phone: string | null;
     sindicatoId: string | null;
     regimeHoras?: string | null;
@@ -77,6 +78,18 @@ export default function DriverForm({
       <p className="-mt-2 text-xs text-slate-400">
         Deixe em branco se ainda não tiver os dados da CNH — o motorista aparece como "CNH pendente" até ser completado.
       </p>
+      <div>
+        <label className={labelClass}>Data de admissão</label>
+        <input
+          type="date"
+          name="admissao"
+          defaultValue={defaultValues?.admissao ? format(defaultValues.admissao, "yyyy-MM-dd") : undefined}
+          className={`${inputClass} max-w-[200px]`}
+        />
+        <p className="mt-1 text-xs text-slate-400">
+          Opcional — usado pra calcular período aquisitivo de férias e identificar férias em dobro (art. 137 CLT).
+        </p>
+      </div>
       <div>
         <label className={labelClass}>Sindicato</label>
         <select

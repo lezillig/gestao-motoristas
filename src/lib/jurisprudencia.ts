@@ -12,7 +12,22 @@ export type DriverViolationSummary = {
   interjornadaCount: number;
   excessiveOvertimeCount: number;
   missingRestStreaks: number;
+  // Opcional: hora extra total dos 3 meses imediatamente anteriores ao mes
+  // selecionado (mais antigo primeiro) e do proprio mes selecionado — usado
+  // so pelo check de supressao habitual (Sumula 291) abaixo. Quando ausente
+  // (chamador nao forneceu), esse check simplesmente nao roda pro
+  // motorista.
+  priorMonthsOvertimeMinutes?: number[];
+  currentMonthOvertimeMinutes?: number;
 };
+
+// Limiar pra considerar "hora extra habitual" num mes, pro fim do check de
+// supressao (Sumula 291) — mesma ideia de habitualidade do check diario
+// existente, aplicada mes a mes em vez de dia a dia.
+const HABITUAL_MONTHLY_OVERTIME_MINUTES = 10 * 60;
+// Abaixo disso no mes selecionado, apos 3 meses seguidos de habitualidade,
+// e tratado como corte abrupto pro fim deste alerta.
+const SUPPRESSED_MONTHLY_OVERTIME_MINUTES = 2 * 60;
 
 export type JurisprudenceRisk = {
   driverId: string;
@@ -59,6 +74,22 @@ export function annotateJurisprudenceRisks(
         citation: "Art. 59 CLT — jornada extraordinária deve ser exceção, não rotina",
         level: "medio",
         description: `${s.excessiveOvertimeCount} dia(s) no período com mais de 2h de hora extra. Habitualidade dificulta a defesa de que a extra era eventual e pode gerar reflexos em DSR, 13º e férias.`,
+      });
+    }
+
+    if (
+      s.priorMonthsOvertimeMinutes &&
+      s.priorMonthsOvertimeMinutes.length >= 3 &&
+      s.priorMonthsOvertimeMinutes.every((m) => m >= HABITUAL_MONTHLY_OVERTIME_MINUTES) &&
+      (s.currentMonthOvertimeMinutes ?? 0) < SUPPRESSED_MONTHLY_OVERTIME_MINUTES
+    ) {
+      risks.push({
+        driverId: s.driverId,
+        id: "supressao-hora-extra-habitual",
+        title: "Possível supressão de hora extra habitual",
+        citation: "Súmula 291, TST",
+        level: "medio",
+        description: `Hora extra consistente (10h+/mês) nos 3 meses anteriores caiu para quase zero neste mês. Se a redução partiu do empregador (não do motorista), pode gerar indenização correspondente ao período suprimido.`,
       });
     }
 

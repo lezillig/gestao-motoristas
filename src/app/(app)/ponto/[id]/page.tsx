@@ -41,6 +41,8 @@ export default async function EditarPontoPage({
             clockOut: entry.clockOut,
             intervaloInicio: entry.intervaloInicio,
             intervaloFim: entry.intervaloFim,
+            esperaInicio: entry.esperaInicio,
+            esperaFim: entry.esperaFim,
             notes: entry.notes,
           }}
         />

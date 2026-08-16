@@ -22,8 +22,8 @@ enum VehicleStatus {
 }
 
 // Unidade de valorNumerico por tipo: JORNADA_DIARIA e BANCO_HORAS em horas;
-// HORA_EXTRA e ADICIONAL_NOTURNO em percentual; INTERVALO em minutos;
-// JORNADA_12X36 e OUTRO usam apenas descricao.
+// HORA_EXTRA, ADICIONAL_NOTURNO e TEMPO_ESPERA em percentual; INTERVALO em
+// minutos; JORNADA_12X36 e OUTRO usam apenas descricao.
 enum TipoRegraConvencao {
   JORNADA_DIARIA
   HORA_EXTRA
@@ -31,6 +31,11 @@ enum TipoRegraConvencao {
   ADICIONAL_NOTURNO
   INTERVALO
   JORNADA_12X36
+  // Percentual de indenizacao do tempo de espera (art. 235-C, §§8-9, Lei
+  // 13.103/2015) — nao e hora extra nem jornada normal, e um adicional a
+  // parte sobre a hora normal (minimo legal de 30% quando nao ha regra
+  // negociada, ver src/lib/convencao.ts:waitingTimeIndemnityCents).
+  TEMPO_ESPERA
   OUTRO
 }
 
@@ -138,6 +143,12 @@ model Driver {
   cnh           String?
   cnhCategory   String?
   cnhExpiration DateTime?
+  // Data de admissao — opcional (nao vem do TiqueTaque, so cadastro manual).
+  // Sem isso o sistema nao consegue calcular periodo aquisitivo/concessivo
+  // de ferias, ferias em dobro (art. 137 CLT) nem aviso previo proporcional
+  // (Lei 12.506/2011) — motoristas sem esse campo ficam de fora desses
+  // calculos especificos, sem travar o resto do cadastro.
+  admissao      DateTime?
   phone         String?
   photoUrl      String?
   // Empregador (razao social, resolvida de contract_data.payment_source via
@@ -275,6 +286,14 @@ model TimeClockEntry {
   // longos e o que alimenta o alerta de "intervalo nao registrado".
   intervaloInicio String? // HH:mm
   intervaloFim    String? // HH:mm
+  // Tempo de espera (art. 235-C, §§8-9, Lei 13.103/2015): motorista parado
+  // aguardando carga/descarga ou embarque/desembarque — NAO e jornada normal
+  // nem hora extra, e indenizado a parte (percentual sobre a hora normal,
+  // minimo legal 30%). Opcionais, so lancamento manual (a API do TiqueTaque
+  // nao distingue esse tipo de pausa das demais) — ver
+  // src/lib/pontoCompliance.ts:waitingMinutes.
+  esperaInicio String? // HH:mm
+  esperaFim    String? // HH:mm
   // Lista ordenada de pares {entrada, saida} do dia — so populado pra
   // importacao TiqueTaque (a API devolve batidas avulsas, sem rotulo de
   // entrada/saida, so pareaveis por ordem cronologica; um dia pode ter mais
