@@ -212,6 +212,11 @@ export default async function MotoristasPage({
         </button>
       </form>
 
+      <p className="mb-3 text-sm text-slate-500">
+        {drivers.length} motorista{drivers.length === 1 ? "" : "s"} encontrado{drivers.length === 1 ? "" : "s"}
+        {q || sindicatoId || status || empregador || departamento || cargo || regime || escala ? " com os filtros aplicados" : ""}.
+      </p>
+
       <div className={`${cardClass} p-0 overflow-hidden`}>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
