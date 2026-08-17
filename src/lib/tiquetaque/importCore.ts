@@ -40,11 +40,12 @@ export async function importDriverDaysCore(
   driverName: string,
   employeeId: string,
   startDate: string,
-  endDate: string
+  endDate: string,
+  deadline?: number
 ): Promise<TiqueTaqueDriverImportResult> {
   let days;
   try {
-    days = await fetchEmployeeDays(employeeId, startDate, endDate);
+    days = await fetchEmployeeDays(employeeId, startDate, endDate, deadline);
   } catch (e) {
     return {
       created: 0,

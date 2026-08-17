@@ -26,6 +26,10 @@ import { importDriverDaysCore } from "@/lib/tiquetaque/importCore";
 export const maxDuration = 60;
 
 const BATCH_TIME_BUDGET_MS = 45_000;
+// Teto duro pra qualquer retentativa de 429 dentro desta invocação — mais
+// apertado que o teto real de 60s da Vercel (ver client.ts) pra garantir
+// que uma retentativa nunca seja a causa de "Task timed out" isolado.
+const HARD_DEADLINE_MS = 50_000;
 
 function verifyCronAuth(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
@@ -42,6 +46,7 @@ export async function GET(req: NextRequest) {
   }
 
   const started = Date.now();
+  const deadline = started + HARD_DEADLINE_MS;
   const cursor = parseInt(req.nextUrl.searchParams.get("cursor") ?? "0", 10);
   const date = req.nextUrl.searchParams.get("date") ?? format(subDays(new Date(), 1), "yyyy-MM-dd");
 
@@ -63,7 +68,7 @@ export async function GET(req: NextRequest) {
 
   let employees;
   try {
-    employees = await fetchAllEmployees();
+    employees = await fetchAllEmployees(deadline);
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Falha ao buscar funcionários do TiqueTaque." },
@@ -91,7 +96,7 @@ export async function GET(req: NextRequest) {
 
     if (i > cursor) await sleep(TIQUETAQUE_IMPORT_PACE_MS);
 
-    const result = await importDriverDaysCore(driver.companyId, driver.id, driver.name, employeeId, date, date);
+    const result = await importDriverDaysCore(driver.companyId, driver.id, driver.name, employeeId, date, date, deadline);
     created += result.created;
     corrected += result.corrected;
     processed++;

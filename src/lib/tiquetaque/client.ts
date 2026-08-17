@@ -17,7 +17,18 @@ function authHeader(): string {
 
 const MAX_RATE_LIMIT_RETRIES = 3;
 
-async function tiqueTaqueFetch(path: string, attempt = 0): Promise<unknown> {
+// `deadline` (timestamp absoluto, Date.now()-comparavel) e opcional e so
+// interessa a chamadores com um teto de execucao rigido (a rota de cron,
+// que roda no plano Hobby da Vercel — 60s de teto duro por invocacao, sem
+// excecao). Sem ele, o comportamento e o de sempre (ate 3 retentativas com
+// backoff 2s/4s/8s). Bug real visto em producao: um 429 no meio de um lote
+// de motoristas fazia essa retentativa (ate 14s so de espera, por chamada)
+// estourar o teto de 60s da funcao inteira, matando a invocacao ANTES do
+// checkpoint de orcamento entre motoristas (que so roda entre iteracoes,
+// nao durante uma chamada em andamento) — a invocacao inteira falhava com
+// "Task timed out" em vez de simplesmente parar a tempo e deixar a proxima
+// invocacao encadeada (waitUntil) continuar de onde parou.
+async function tiqueTaqueFetch(path: string, deadline?: number, attempt = 0): Promise<unknown> {
   const res = await fetch(`${BASE_URL}${path}`, {
     headers: { Authorization: authHeader() },
   });
@@ -26,8 +37,12 @@ async function tiqueTaqueFetch(path: string, attempt = 0): Promise<unknown> {
     // (2s, 4s, 8s) como rede de segurança contra rajadas isoladas — a
     // defesa principal contra o limite é o cliente pacear as chamadas por
     // motorista (ver src/lib/tiquetaque/pace.ts), não esta retentativa.
-    await new Promise((resolve) => setTimeout(resolve, 2000 * 2 ** attempt));
-    return tiqueTaqueFetch(path, attempt + 1);
+    const backoffMs = 2000 * 2 ** attempt;
+    if (deadline !== undefined && Date.now() + backoffMs >= deadline) {
+      throw new Error(`TiqueTaque respondeu 429 em ${path} e não há orçamento de tempo restante para retentativa.`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, backoffMs));
+    return tiqueTaqueFetch(path, deadline, attempt + 1);
   }
   if (!res.ok) {
     const body = await res.text().catch(() => "");
@@ -54,12 +69,12 @@ type EmployeesPage = {
   }[];
 };
 
-export async function fetchAllEmployees(): Promise<TiqueTaqueEmployee[]> {
+export async function fetchAllEmployees(deadline?: number): Promise<TiqueTaqueEmployee[]> {
   const employees: TiqueTaqueEmployee[] = [];
   const maxResults = 200;
   let page = 1;
   for (;;) {
-    const data = (await tiqueTaqueFetch(`/employees?max_results=${maxResults}&page=${page}`)) as EmployeesPage;
+    const data = (await tiqueTaqueFetch(`/employees?max_results=${maxResults}&page=${page}`, deadline)) as EmployeesPage;
     const items = data._items ?? [];
     for (const item of items) {
       if (!item.cpf) continue; // alguns cadastros no TiqueTaque nao tem CPF preenchido (so NIS)
@@ -116,10 +131,12 @@ type TimesResponse = {
 export async function fetchEmployeeDays(
   employeeId: string,
   startDate: string,
-  endDate: string
+  endDate: string,
+  deadline?: number
 ): Promise<TiqueTaqueDayEntry[]> {
   const data = (await tiqueTaqueFetch(
-    `/times?start_date=${startDate}&end_date=${endDate}&employee_id=${employeeId}`
+    `/times?start_date=${startDate}&end_date=${endDate}&employee_id=${employeeId}`,
+    deadline
   )) as TimesResponse;
   return pairPunchesIntoDays(data.times ?? []);
 }
