@@ -17,3 +17,21 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
+
+/* Paginas que precisam de impressao "limpa" (ex.: dossie de auditoria em
+   /ponto/correcoes/dossie) marcam o conteudo com data-print-area — esconde
+   a sidebar/topbar do AppShell e deixa a area imprimivel ocupar a pagina
+   inteira, sem afetar a tela normal. */
+@media print {
+  header,
+  aside {
+    display: none !important;
+  }
+  main {
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+  [data-print-hide] {
+    display: none !important;
+  }
+}

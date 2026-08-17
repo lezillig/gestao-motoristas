@@ -10,6 +10,7 @@ import { fetchAllEmployees } from "@/lib/tiquetaque/client";
 import { signTiqueTaquePlanItem, verifyTiqueTaquePlanItem } from "@/lib/tiquetaque/planToken";
 import { importDriverDaysCore } from "@/lib/tiquetaque/importCore";
 import type { TiqueTaqueDriverImportResult } from "@/lib/tiquetaque/importCore";
+import { hashPontoState } from "@/lib/integrity";
 
 export type { TiqueTaqueImportRowError, TiqueTaqueDriverImportResult } from "@/lib/tiquetaque/importCore";
 
@@ -100,15 +101,31 @@ export async function createEntry(
     return { error: "Já existe um registro de ponto para este motorista nesta data. Edite o registro existente." };
   }
 
+  const clockOut = parsed.data.clockOut || null;
+  const intervaloInicio = parsed.data.intervaloInicio || null;
+  const intervaloFim = parsed.data.intervaloFim || null;
+  const esperaInicio = parsed.data.esperaInicio || null;
+  const esperaFim = parsed.data.esperaFim || null;
+  const hashAtual = hashPontoState({
+    clockIn: parsed.data.clockIn,
+    clockOut,
+    intervaloInicio,
+    intervaloFim,
+    esperaInicio,
+    esperaFim,
+    punches: null,
+  });
+
   await prisma.timeClockEntry.create({
     data: {
       ...parsed.data,
-      clockOut: parsed.data.clockOut || null,
-      intervaloInicio: parsed.data.intervaloInicio || null,
-      intervaloFim: parsed.data.intervaloFim || null,
-      esperaInicio: parsed.data.esperaInicio || null,
-      esperaFim: parsed.data.esperaFim || null,
+      clockOut,
+      intervaloInicio,
+      intervaloFim,
+      esperaInicio,
+      esperaFim,
       companyId: session.companyId,
+      hashAtual,
     },
   });
 
@@ -136,17 +153,91 @@ export async function updateEntry(
     return { error: "Já existe um registro de ponto para este motorista nesta data. Edite o registro existente." };
   }
 
-  await prisma.timeClockEntry.update({
-    where: { id, companyId: session.companyId },
-    data: {
-      ...parsed.data,
-      clockOut: parsed.data.clockOut || null,
-      intervaloInicio: parsed.data.intervaloInicio || null,
-      intervaloFim: parsed.data.intervaloFim || null,
-      esperaInicio: parsed.data.esperaInicio || null,
-      esperaFim: parsed.data.esperaFim || null,
-    },
-  });
+  const existing = await prisma.timeClockEntry.findUnique({ where: { id, companyId: session.companyId } });
+  if (!existing) {
+    return { error: "Registro não encontrado." };
+  }
+
+  const clockOut = parsed.data.clockOut || null;
+  const intervaloInicio = parsed.data.intervaloInicio || null;
+  const intervaloFim = parsed.data.intervaloFim || null;
+  const esperaInicio = parsed.data.esperaInicio || null;
+  const esperaFim = parsed.data.esperaFim || null;
+
+  // Edicao manual: se o conteudo realmente mudou, registra a alteracao em
+  // TimeClockCorrection (origem EDICAO_MANUAL, com o usuario que fez e o
+  // hash antes/depois) — mesma trilha de auditoria ja usada pra correcoes
+  // vindas do TiqueTaque, agora tambem cobrindo edicao feita direto aqui no
+  // app (antes desta mudanca, uma edicao manual nao deixava rastro nenhum).
+  const stateAntes = {
+    clockIn: existing.clockIn,
+    clockOut: existing.clockOut,
+    intervaloInicio: existing.intervaloInicio,
+    intervaloFim: existing.intervaloFim,
+    esperaInicio: existing.esperaInicio,
+    esperaFim: existing.esperaFim,
+    punches: existing.punches,
+  };
+  const stateDepois = {
+    clockIn: parsed.data.clockIn,
+    clockOut,
+    intervaloInicio,
+    intervaloFim,
+    esperaInicio,
+    esperaFim,
+    punches: existing.punches,
+  };
+  const changed =
+    stateAntes.clockIn !== stateDepois.clockIn ||
+    stateAntes.clockOut !== stateDepois.clockOut ||
+    stateAntes.intervaloInicio !== stateDepois.intervaloInicio ||
+    stateAntes.intervaloFim !== stateDepois.intervaloFim ||
+    stateAntes.esperaInicio !== stateDepois.esperaInicio ||
+    stateAntes.esperaFim !== stateDepois.esperaFim;
+
+  const hashAntes = existing.hashAtual ?? hashPontoState(stateAntes);
+  const hashDepois = hashPontoState(stateDepois);
+
+  await prisma.$transaction([
+    prisma.timeClockEntry.update({
+      where: { id, companyId: session.companyId },
+      data: {
+        ...parsed.data,
+        clockOut,
+        intervaloInicio,
+        intervaloFim,
+        esperaInicio,
+        esperaFim,
+        hashAtual: hashDepois,
+      },
+    }),
+    ...(changed
+      ? [
+          prisma.timeClockCorrection.create({
+            data: {
+              companyId: session.companyId,
+              driverId: existing.driverId,
+              entryId: existing.id,
+              date: existing.date,
+              origem: "EDICAO_MANUAL",
+              editadoPorUserId: session.userId,
+              clockInAntes: stateAntes.clockIn,
+              clockOutAntes: stateAntes.clockOut,
+              intervaloInicioAntes: stateAntes.intervaloInicio,
+              intervaloFimAntes: stateAntes.intervaloFim,
+              punchesAntes: existing.punches ?? undefined,
+              clockInDepois: stateDepois.clockIn,
+              clockOutDepois: stateDepois.clockOut,
+              intervaloInicioDepois: stateDepois.intervaloInicio,
+              intervaloFimDepois: stateDepois.intervaloFim,
+              punchesDepois: existing.punches ?? undefined,
+              hashAntes,
+              hashDepois,
+            },
+          }),
+        ]
+      : []),
+  ]);
 
   revalidatePath("/ponto");
   redirect("/ponto");
@@ -154,7 +245,49 @@ export async function updateEntry(
 
 export async function deleteEntry(id: string) {
   const session = await requireRole("ADMIN", "GESTOR");
-  await prisma.timeClockEntry.delete({ where: { id, companyId: session.companyId } });
+
+  const existing = await prisma.timeClockEntry.findUnique({ where: { id, companyId: session.companyId } });
+  if (!existing) {
+    redirect("/ponto");
+  }
+
+  const stateAntes = {
+    clockIn: existing.clockIn,
+    clockOut: existing.clockOut,
+    intervaloInicio: existing.intervaloInicio,
+    intervaloFim: existing.intervaloFim,
+    esperaInicio: existing.esperaInicio,
+    esperaFim: existing.esperaFim,
+    punches: existing.punches,
+  };
+  const hashAntes = existing.hashAtual ?? hashPontoState(stateAntes);
+
+  // Registra a exclusao ANTES de apagar (origem EXCLUSAO_MANUAL, so "antes"
+  // preenchido, "depois" vazio) — a linha de auditoria sobrevive ao
+  // registro apagado porque `entryId` em TimeClockCorrection e
+  // `onDelete: SetNull`, nao Cascade: apagar o turno nao pode apagar o
+  // proprio historico de ter sido apagado.
+  await prisma.$transaction([
+    prisma.timeClockCorrection.create({
+      data: {
+        companyId: session.companyId,
+        driverId: existing.driverId,
+        entryId: existing.id,
+        date: existing.date,
+        origem: "EXCLUSAO_MANUAL",
+        editadoPorUserId: session.userId,
+        clockInAntes: stateAntes.clockIn,
+        clockOutAntes: stateAntes.clockOut,
+        intervaloInicioAntes: stateAntes.intervaloInicio,
+        intervaloFimAntes: stateAntes.intervaloFim,
+        punchesAntes: existing.punches ?? undefined,
+        hashAntes,
+        hashDepois: null,
+      },
+    }),
+    prisma.timeClockEntry.delete({ where: { id, companyId: session.companyId } }),
+  ]);
+
   revalidatePath("/ponto");
   redirect("/ponto");
 }

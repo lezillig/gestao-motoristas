@@ -2,6 +2,7 @@ import { format } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import { parseLocalDate } from "@/lib/date";
 import { fetchEmployeeDays } from "@/lib/tiquetaque/client";
+import { hashPontoState } from "@/lib/integrity";
 
 export type TiqueTaqueImportRowError = { driverName: string; date?: string; message: string };
 export type TiqueTaqueDriverImportResult = {
@@ -80,6 +81,15 @@ export async function importDriverDaysCore(
           intervaloFim: day.intervaloFim,
           punches: day.pairs,
           fonte: "TIQUETAQUE",
+          hashAtual: hashPontoState({
+            clockIn: day.clockIn,
+            clockOut: day.clockOut,
+            intervaloInicio: day.intervaloInicio,
+            intervaloFim: day.intervaloFim,
+            esperaInicio: null,
+            esperaFim: null,
+            punches: day.pairs,
+          }),
         },
       });
       created++;
@@ -125,6 +135,27 @@ export async function importDriverDaysCore(
       continue;
     }
 
+    const stateAntes = {
+      clockIn: existing.clockIn,
+      clockOut: existing.clockOut,
+      intervaloInicio: existing.intervaloInicio,
+      intervaloFim: existing.intervaloFim,
+      esperaInicio: existing.esperaInicio,
+      esperaFim: existing.esperaFim,
+      punches: existing.punches,
+    };
+    const stateDepois = {
+      clockIn: day.clockIn,
+      clockOut: day.clockOut,
+      intervaloInicio: day.intervaloInicio,
+      intervaloFim: day.intervaloFim,
+      esperaInicio: existing.esperaInicio,
+      esperaFim: existing.esperaFim,
+      punches: day.pairs,
+    };
+    const hashAntes = existing.hashAtual ?? hashPontoState(stateAntes);
+    const hashDepois = hashPontoState(stateDepois);
+
     await prisma.$transaction([
       prisma.timeClockEntry.update({
         where: { id: existing.id },
@@ -134,6 +165,7 @@ export async function importDriverDaysCore(
           intervaloInicio: day.intervaloInicio,
           intervaloFim: day.intervaloFim,
           punches: day.pairs,
+          hashAtual: hashDepois,
         },
       }),
       prisma.timeClockCorrection.create({
@@ -142,6 +174,7 @@ export async function importDriverDaysCore(
           driverId,
           entryId: existing.id,
           date: existing.date,
+          origem: "TIQUETAQUE_REIMPORT",
           clockInAntes: existing.clockIn,
           clockOutAntes: existing.clockOut,
           intervaloInicioAntes: existing.intervaloInicio,
@@ -152,6 +185,8 @@ export async function importDriverDaysCore(
           intervaloInicioDepois: day.intervaloInicio,
           intervaloFimDepois: day.intervaloFim,
           punchesDepois: day.pairs,
+          hashAntes,
+          hashDepois,
         },
       }),
     ]);

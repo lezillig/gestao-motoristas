@@ -313,6 +313,14 @@ model TimeClockEntry {
   // origem, ver src/app/(app)/ponto/actions.ts:importFromTiqueTaque.
   fonte     String?
   notes     String?
+  // Hash SHA-256 (hex) do conteudo atual do registro (horarios, intervalo,
+  // espera, punches) — ver src/lib/integrity.ts:hashPontoState. Atualizado
+  // a cada escrita feita pelo app (criacao/edicao). Permite ao "dossie"
+  // (relatorio de auditoria, /ponto/correcoes) recomputar o hash a partir
+  // dos campos atuais e comparar com este valor: uma divergencia indica que
+  // o registro foi alterado por fora do fluxo normal do app (ex.: script
+  // direto no banco), sem passar pelo log de TimeClockCorrection abaixo.
+  hashAtual String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -322,24 +330,39 @@ model TimeClockEntry {
   @@index([driverId, date])
 }
 
-// Historico append-only de correcoes aplicadas por reimportacao do
-// TiqueTaque: quando uma nova importacao encontra um TimeClockEntry ja
-// existente com fonte "TIQUETAQUE" e os horarios vieram diferentes (a
-// correcao foi feita direto no TiqueTaque, nao neste sistema), o registro e
-// atualizado e uma linha e criada aqui com o valor antes/depois — nunca
-// atualizada/apagada depois, e a base do relatorio /ponto/correcoes. Um
-// TimeClockEntry de origem manual ou sem fonte nunca gera correcao (a
-// importacao continua reportando esses casos como conflito, sem tocar no
-// registro) — ver src/app/(app)/ponto/actions.ts:importDriverFromTiqueTaque.
+// Historico append-only de alteracoes em TimeClockEntry — trilha de
+// auditoria com valor probatorio (o que decide valor probatorio em juizo
+// nao e so o calculo estar certo, e a integridade VERIFICAVEL do registro:
+// quem alterou, quando, o que mudou, por que). Cobre 3 origens: (1)
+// reimportacao do TiqueTaque encontrando um TimeClockEntry ja existente com
+// horarios diferentes (a correcao foi feita direto no TiqueTaque, nao aqui
+// — ver importCore.ts); (2) edicao manual via updateEntry, quando o
+// conteudo realmente muda; (3) exclusao manual via deleteEntry — preserva o
+// estado "antes" completo mesmo depois do TimeClockEntry ser removido
+// (`entryId` fica null nesse caso, `onDelete: SetNull` em vez de Cascade,
+// de proposito: apagar o registro NAO PODE apagar seu proprio historico de
+// auditoria, senao a trilha perde sentido). Nunca atualizada/apagada
+// depois de criada — e a base do relatorio /ponto/correcoes e do "dossie"
+// de defesa por motorista.
 model TimeClockCorrection {
   id        String   @id @default(cuid())
   companyId String
   company   Company  @relation(fields: [companyId], references: [id])
   driverId  String
   driver    Driver   @relation(fields: [driverId], references: [id])
-  entryId   String
-  entry     TimeClockEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  entryId   String?
+  entry     TimeClockEntry? @relation(fields: [entryId], references: [id], onDelete: SetNull)
   date      DateTime // data do turno corrigido, para listar/filtrar sem join
+
+  // "TIQUETAQUE_REIMPORT" | "EDICAO_MANUAL" | "EXCLUSAO_MANUAL" — texto
+  // livre (nao enum) pra nao precisar de migration toda vez que uma nova
+  // origem for adicionada, mesmo padrao ja usado em TimeClockEntry.fonte.
+  origem           String @default("TIQUETAQUE_REIMPORT")
+  // Quem fez a alteracao — so preenchido pra edicao/exclusao manual (a
+  // reimportacao do TiqueTaque reflete uma mudanca feita por outra pessoa,
+  // fora deste sistema; nao ha um usuario "daqui" pra atribuir).
+  editadoPorUserId String?
+  motivo           String?
 
   clockInAntes         String
   clockOutAntes         String?
@@ -347,11 +370,22 @@ model TimeClockCorrection {
   intervaloFimAntes    String?
   punchesAntes         Json?
 
-  clockInDepois         String
+  // Nulos na linha de EXCLUSAO_MANUAL — nao ha um "depois", o registro foi
+  // removido.
+  clockInDepois         String?
   clockOutDepois         String?
   intervaloInicioDepois String?
   intervaloFimDepois    String?
   punchesDepois         Json?
+
+  // Hash (ver TimeClockEntry.hashAtual) do estado antes/depois desta
+  // alteracao — permite verificar a cadeia: hashDepois desta linha deve
+  // bater com o hashAntes da proxima correcao do mesmo registro, ou com o
+  // hashAtual do TimeClockEntry se for a mais recente. Nulo em linhas
+  // antigas, criadas antes deste campo existir — tratado como "nao
+  // verificavel", nunca como "violado".
+  hashAntes String?
+  hashDepois String?
 
   corrigidoEm DateTime @default(now())
 

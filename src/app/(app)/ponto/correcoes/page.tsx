@@ -4,7 +4,7 @@ import { ptBR } from "date-fns/locale";
 import { History, DollarSign, Users, Clock } from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { cardClass, inputClass } from "@/lib/ui";
+import { cardClass, inputClass, badgeClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import { formatHoursMinutes } from "@/lib/time";
 import { workedMinutes, overtimeMinutes } from "@/lib/pontoCompliance";
@@ -17,16 +17,28 @@ type DriverWithConvencoes = Prisma.DriverGetPayload<{
 }>;
 
 function turno(
-  clockIn: string,
+  clockIn: string | null,
   clockOut: string | null,
   intervaloInicio: string | null,
   intervaloFim: string | null,
   punches: unknown
 ) {
+  if (!clockIn) return { range: "excluído", worked: "—", minutes: null as number | null };
   if (!clockOut) return { range: `${clockIn}–?`, worked: "em aberto", minutes: null as number | null };
   const minutes = workedMinutes({ clockIn, clockOut, intervaloInicio, intervaloFim, punches });
   return { range: `${clockIn}–${clockOut}`, worked: minutes !== null ? formatHoursMinutes(minutes) : "em aberto", minutes };
 }
+
+const ORIGEM_LABELS: Record<string, string> = {
+  TIQUETAQUE_REIMPORT: "TiqueTaque",
+  EDICAO_MANUAL: "Edição manual",
+  EXCLUSAO_MANUAL: "Exclusão manual",
+};
+const ORIGEM_TONE: Record<string, string> = {
+  TIQUETAQUE_REIMPORT: "bg-blue-100 text-blue-700",
+  EDICAO_MANUAL: "bg-amber-100 text-amber-700",
+  EXCLUSAO_MANUAL: "bg-red-100 text-red-700",
+};
 
 const currency = (cents: number) => (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -45,13 +57,18 @@ export default async function PontoCorrecoesPage({
     if (ate) where.date.lte = parseLocalDate(ate);
   }
 
-  const corrections = await prisma.timeClockCorrection.findMany({
-    where,
-    include: {
-      driver: { include: { sindicato: { include: { convencoes: { include: { regras: true } } } } } },
-    },
-    orderBy: { date: "desc" },
-  });
+  const [corrections, drivers, users] = await Promise.all([
+    prisma.timeClockCorrection.findMany({
+      where,
+      include: {
+        driver: { include: { sindicato: { include: { convencoes: { include: { regras: true } } } } } },
+      },
+      orderBy: { date: "desc" },
+    }),
+    prisma.driver.findMany({ where: { companyId: session.companyId, active: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.user.findMany({ where: { companyId: session.companyId }, select: { id: true, name: true } }),
+  ]);
+  const userNameById = new Map(users.map((u) => [u.id, u.name]));
 
   const affectedDrivers = new Set(corrections.map((c) => c.driverId)).size;
 
@@ -119,7 +136,7 @@ export default async function PontoCorrecoesPage({
     <div className="max-w-6xl">
       <PageHeader
         title="Histórico de correções"
-        subtitle="Turnos importados do TiqueTaque que foram atualizados numa reimportação porque a correção foi feita direto no TiqueTaque."
+        subtitle="Trilha de auditoria de toda alteração em registros de ponto — reimportação do TiqueTaque, edição manual e exclusão manual, todas com quem/quando/o que mudou."
       />
 
       <form className="mb-6 flex flex-wrap items-end gap-3" method="get">
@@ -139,6 +156,34 @@ export default async function PontoCorrecoesPage({
             Ver tudo
           </Link>
         )}
+      </form>
+
+      <form className={`${cardClass} mb-6 flex flex-wrap items-end gap-3`} method="get" action="/ponto/correcoes/dossie">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">Gerar dossiê de defesa — motorista</label>
+          <select name="driverId" required className={inputClass}>
+            <option value="">Selecione</option>
+            {drivers.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">De</label>
+          <input type="date" name="de" className={inputClass} />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">Até</label>
+          <input type="date" name="ate" className={inputClass} />
+        </div>
+        <button type="submit" className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-900">
+          Gerar dossiê
+        </button>
+        <p className="w-full text-xs text-slate-400">
+          Documento com jornada completa do período + cadeia de correções + verificação de integridade por hash, pronto para impressão/PDF.
+        </p>
       </form>
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-4">
@@ -218,17 +263,18 @@ export default async function PontoCorrecoesPage({
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
                 <th className="px-4 py-3">Motorista</th>
                 <th className="px-3 py-3">Data</th>
+                <th className="px-3 py-3">Origem</th>
                 <th className="px-3 py-3">Turno anterior</th>
                 <th className="px-3 py-3">Turno corrigido</th>
                 <th className="px-3 py-3">Impacto</th>
-                <th className="px-3 py-3">Corrigido em</th>
+                <th className="px-3 py-3">Por quem / quando</th>
                 <th className="px-3 py-3" />
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
                     Nenhuma correção registrada em {periodLabel}.
                   </td>
                 </tr>
@@ -237,21 +283,33 @@ export default async function PontoCorrecoesPage({
                 <tr key={c.id} className="border-b border-slate-100 last:border-0">
                   <td className="px-4 py-2.5 font-medium text-slate-800">{c.driver.name}</td>
                   <td className="px-3 py-2.5 text-slate-600">{format(c.date, "dd/MM/yyyy")}</td>
+                  <td className="px-3 py-2.5">
+                    <span className={`${badgeClass} ${ORIGEM_TONE[c.origem] ?? "bg-slate-100 text-slate-600"}`}>
+                      {ORIGEM_LABELS[c.origem] ?? c.origem}
+                    </span>
+                  </td>
                   <td className="px-3 py-2.5 text-slate-400 line-through decoration-slate-300">
                     {antes.range}
                     <span className="ml-1 no-underline">({antes.worked})</span>
                   </td>
-                  <td className="px-3 py-2.5 font-medium text-amber-700">
-                    {depois.range} <span className="text-amber-600">({depois.worked})</span>
+                  <td className={`px-3 py-2.5 font-medium ${c.origem === "EXCLUSAO_MANUAL" ? "text-red-600" : "text-amber-700"}`}>
+                    {depois.range}
+                    {depois.worked !== "—" && <span className="text-amber-600"> ({depois.worked})</span>}
                   </td>
                   <td className="px-3 py-2.5 font-medium text-slate-700">
                     {impactoCents === null ? "—" : currency(impactoCents)}
                   </td>
-                  <td className="px-3 py-2.5 text-slate-600">{format(c.corrigidoEm, "dd/MM/yyyy HH:mm")}</td>
+                  <td className="px-3 py-2.5 text-slate-600">
+                    {c.editadoPorUserId ? (userNameById.get(c.editadoPorUserId) ?? "—") : "—"}
+                    <br />
+                    <span className="text-xs text-slate-400">{format(c.corrigidoEm, "dd/MM/yyyy HH:mm")}</span>
+                  </td>
                   <td className="px-3 py-2.5">
-                    <Link href={`/ponto/${c.entryId}`} className="text-blue-600 hover:underline">
-                      Ver registro
-                    </Link>
+                    {c.entryId && (
+                      <Link href={`/ponto/${c.entryId}`} prefetch={false} className="text-blue-600 hover:underline">
+                        Ver registro
+                      </Link>
+                    )}
                   </td>
                 </tr>
               ))}
