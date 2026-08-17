@@ -10,6 +10,8 @@ export default function ClienteForm({
   action: (formData: FormData) => void;
   defaultValues?: {
     nome: string;
+    horarioInicioContratado?: string | null;
+    horarioFimContratado?: string | null;
   };
 }) {
   return (
@@ -24,6 +26,30 @@ export default function ClienteForm({
           placeholder="Ex: FEMSA Jundiaí"
         />
       </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className={labelClass}>Início da janela contratada</label>
+          <input
+            type="time"
+            name="horarioInicioContratado"
+            defaultValue={defaultValues?.horarioInicioContratado ?? ""}
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label className={labelClass}>Fim da janela contratada</label>
+          <input
+            type="time"
+            name="horarioFimContratado"
+            defaultValue={defaultValues?.horarioFimContratado ?? ""}
+            className={inputClass}
+          />
+        </div>
+      </div>
+      <p className="-mt-2 text-xs text-slate-400">
+        Horário estimado de início/fim de operação exigido pelo contrato — usado para calcular a demanda de
+        motoristas do cliente.
+      </p>
       <div className="mt-2 flex gap-3">
         <button type="submit" className={primaryButtonClass}>
           Salvar

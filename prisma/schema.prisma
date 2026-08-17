@@ -143,6 +143,14 @@ model Cliente {
   companyId String
   company   Company  @relation(fields: [companyId], references: [id])
   nome      String
+  // Janela de horario contratada (HH:mm, texto igual TimeClockEntry.clockIn)
+  // — a maioria dos contratos define inicio/fim estimados de operacao, nao
+  // um total de horas/mes nem numero de motoristas fixos (confirmado com o
+  // usuario). Base para a futura sugestao de headcount: compara a janela
+  // exigida pelo contrato contra a hora extra estrutural que os motoristas
+  // vinculados a este cliente já estao pagando pra cobri-la.
+  horarioInicioContratado String?
+  horarioFimContratado    String?
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
 

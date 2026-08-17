@@ -47,6 +47,7 @@ export default async function ClientesPage({
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
                 <SortableTh label="Nome" field="nome" basePath="/cadastros/clientes" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <th className="px-4 py-3">Janela contratada</th>
                 <SortableTh label="Motoristas/funcionários" field="motoristas" basePath="/cadastros/clientes" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3" />
@@ -55,7 +56,7 @@ export default async function ClientesPage({
             <tbody>
               {clientes.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
                     Nenhum cliente cadastrado ainda.
                   </td>
                 </tr>
@@ -63,6 +64,11 @@ export default async function ClientesPage({
               {clientes.map((c) => (
                 <tr key={c.id} className="border-b border-slate-100 last:border-0">
                   <td className="px-4 py-3 font-medium text-slate-800">{c.nome}</td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {c.horarioInicioContratado && c.horarioFimContratado
+                      ? `${c.horarioInicioContratado}–${c.horarioFimContratado}`
+                      : "—"}
+                  </td>
                   <td className="px-4 py-3 text-slate-600">{c._count.drivers}</td>
                   <td className="px-4 py-3">
                     <form action={toggleClienteActive.bind(null, c.id, !c.active)}>

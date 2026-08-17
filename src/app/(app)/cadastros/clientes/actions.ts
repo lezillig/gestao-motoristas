@@ -9,11 +9,27 @@ import { readWorkbookRows, normalizeText } from "@/lib/spreadsheet";
 
 const schema = z.object({
   nome: z.string().min(2, "Informe o nome do cliente"),
+  horarioInicioContratado: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/)
+    .optional(),
+  horarioFimContratado: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/)
+    .optional(),
 });
+
+function parseClienteForm(formData: FormData) {
+  return schema.parse({
+    nome: formData.get("nome"),
+    horarioInicioContratado: formData.get("horarioInicioContratado") || undefined,
+    horarioFimContratado: formData.get("horarioFimContratado") || undefined,
+  });
+}
 
 export async function createCliente(formData: FormData) {
   const session = await requireRole("ADMIN", "GESTOR");
-  const parsed = schema.parse({ nome: formData.get("nome") });
+  const parsed = parseClienteForm(formData);
 
   await prisma.cliente.create({
     data: { ...parsed, companyId: session.companyId },
@@ -25,7 +41,7 @@ export async function createCliente(formData: FormData) {
 
 export async function updateCliente(id: string, formData: FormData) {
   const session = await requireRole("ADMIN", "GESTOR");
-  const parsed = schema.parse({ nome: formData.get("nome") });
+  const parsed = parseClienteForm(formData);
 
   await prisma.cliente.update({
     where: { id, companyId: session.companyId },
