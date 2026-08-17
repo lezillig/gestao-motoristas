@@ -49,12 +49,6 @@ const NAV: NavItem[] = [
     roles: ["ADMIN", "GESTOR"],
   },
   {
-    href: "/cadastros/sindicatos",
-    label: "Sindicatos",
-    icon: Landmark,
-    roles: ["ADMIN", "GESTOR"],
-  },
-  {
     href: "/cadastros/veiculos",
     label: "Veículos",
     icon: Car,
@@ -67,31 +61,24 @@ const NAV: NavItem[] = [
     roles: ["ADMIN", "GESTOR"],
   },
   {
-    href: "/ponto/analise",
-    label: "Análise de riscos",
-    icon: ShieldAlert,
-    roles: ["ADMIN", "GESTOR"],
-  },
-  {
     href: "/ponto",
     label: "Folha",
     icon: Clock,
     roles: ["ADMIN", "GESTOR", "FOLHA"],
+    // Ordem alfabética por label — mais fácil de achar um item específico
+    // num submenu com 10 entradas do que agrupar por "tipo" de funcionalidade.
     children: [
       { href: "/afastamentos", label: "Afastamentos", icon: CalendarOff },
+      { href: "/ponto/analise", label: "Análise de riscos", icon: ShieldAlert, roles: ["ADMIN", "GESTOR"] },
       { href: "/ponto/banco-horas", label: "Banco de horas", icon: PiggyBank },
+      { href: "/convencoes", label: "Convenção coletiva", icon: FileText, roles: ["ADMIN", "GESTOR"] },
+      { href: "/ponto/correcoes", label: "Histórico de correções", icon: History },
+      { href: "/ponto/passivo", label: "Passivo trabalhista", icon: Scale },
       { href: "/ponto/anual", label: "Relatório anual", icon: CalendarRange },
       { href: "/ponto/mensal", label: "Relatório mensal", icon: FileSpreadsheet },
-      { href: "/ponto/passivo", label: "Passivo trabalhista", icon: Scale },
       { href: "/ponto/simulador", label: "Simulador de cenário", icon: FlaskConical },
-      { href: "/ponto/correcoes", label: "Histórico de correções", icon: History },
+      { href: "/cadastros/sindicatos", label: "Sindicatos", icon: Landmark, roles: ["ADMIN", "GESTOR"] },
     ],
-  },
-  {
-    href: "/convencoes",
-    label: "Convenção coletiva",
-    icon: FileText,
-    roles: ["ADMIN", "GESTOR"],
   },
   {
     href: "/utilizacao",
@@ -184,7 +171,7 @@ export default function Sidebar({ role }: { role: Role }) {
             </div>
             {hasChildren && open && (
               <div className="ml-4 mt-1 flex flex-col gap-1 border-l border-slate-200 pl-3">
-                {item.children!.map((child) => {
+                {item.children!.filter((child) => !child.roles || child.roles.includes(role)).map((child) => {
                   const ChildIcon = child.icon;
                   const active = isActive(pathname, child.href);
                   return (
