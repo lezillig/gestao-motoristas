@@ -92,6 +92,7 @@ model Company {
   consumptionSummaries FuelConsumptionSummary[]
   timeClockCorrections TimeClockCorrection[]
   driverLeaves      DriverLeave[]
+  clientes          Cliente[]
 }
 
 model User {
@@ -130,6 +131,26 @@ model Sindicato {
   convencoes ConvencaoColetiva[]
 }
 
+// Cliente/centro de custo — de onde vem a demanda de horas de um contrato
+// (ex. "FEMSA Jundiaí", "Mercado Livre", "Fretamento Eventual"). Deliberadamente
+// SEPARADO de Driver.departamento (que é texto livre sincronizado
+// automaticamente do TiqueTaque, granularidade de rota, sobrescrito a cada
+// reimportação) — este cadastro só é mantido pela importação manual da
+// planilha financeira de centro de custo, nunca tocado pelo sync do
+// TiqueTaque, para não arriscar perder o vínculo silenciosamente.
+model Cliente {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+  nome      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  drivers Driver[]
+
+  @@unique([companyId, nome])
+}
+
 // ---------- Motorista ----------
 model Driver {
   id            String    @id @default(cuid())
@@ -139,6 +160,10 @@ model Driver {
   user          User?     @relation(fields: [userId], references: [id])
   sindicatoId   String?
   sindicato     Sindicato? @relation(fields: [sindicatoId], references: [id])
+  // Cliente/centro de custo — ver comentário no model Cliente sobre por que
+  // isto é separado de `departamento`.
+  clienteId     String?
+  cliente       Cliente?  @relation(fields: [clienteId], references: [id])
   name          String
   cpf           String    @unique
   // Opcionais: motoristas importados do TiqueTaque (sem dado de CNH) ficam

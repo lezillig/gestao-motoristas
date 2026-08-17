@@ -13,9 +13,13 @@ export default async function EditarMotoristaPage({
 }) {
   const { id } = await params;
   const session = await requireRole("ADMIN", "GESTOR");
-  const [driver, sindicatos] = await Promise.all([
+  const [driver, sindicatos, clientes] = await Promise.all([
     prisma.driver.findUnique({ where: { id, companyId: session.companyId } }),
     prisma.sindicato.findMany({
+      where: { companyId: session.companyId, active: true },
+      orderBy: { nome: "asc" },
+    }),
+    prisma.cliente.findMany({
       where: { companyId: session.companyId, active: true },
       orderBy: { nome: "asc" },
     }),
@@ -28,7 +32,7 @@ export default async function EditarMotoristaPage({
     <div className="max-w-lg">
       <PageHeader title={`Editar ${driver.name}`} />
       <div className={cardClass}>
-        <DriverForm action={action} sindicatos={sindicatos} defaultValues={driver} />
+        <DriverForm action={action} sindicatos={sindicatos} clientes={clientes} defaultValues={driver} />
       </div>
     </div>
   );

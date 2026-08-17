@@ -7,16 +7,22 @@ import { createDriver } from "../actions";
 
 export default async function NovoMotoristaPage() {
   const session = await requireRole("ADMIN", "GESTOR");
-  const sindicatos = await prisma.sindicato.findMany({
-    where: { companyId: session.companyId, active: true },
-    orderBy: { nome: "asc" },
-  });
+  const [sindicatos, clientes] = await Promise.all([
+    prisma.sindicato.findMany({
+      where: { companyId: session.companyId, active: true },
+      orderBy: { nome: "asc" },
+    }),
+    prisma.cliente.findMany({
+      where: { companyId: session.companyId, active: true },
+      orderBy: { nome: "asc" },
+    }),
+  ]);
 
   return (
     <div className="max-w-lg">
       <PageHeader title="Novo motorista" />
       <div className={cardClass}>
-        <DriverForm action={createDriver} sindicatos={sindicatos} />
+        <DriverForm action={createDriver} sindicatos={sindicatos} clientes={clientes} />
       </div>
     </div>
   );

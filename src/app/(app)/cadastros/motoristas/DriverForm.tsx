@@ -7,10 +7,12 @@ import { inputClass, labelClass, primaryButtonClass, secondaryButtonClass } from
 export default function DriverForm({
   action,
   sindicatos,
+  clientes,
   defaultValues,
 }: {
   action: (formData: FormData) => void;
   sindicatos: { id: string; nome: string }[];
+  clientes: { id: string; nome: string }[];
   defaultValues?: {
     name: string;
     cpf: string;
@@ -20,6 +22,7 @@ export default function DriverForm({
     admissao?: Date | null;
     phone: string | null;
     sindicatoId: string | null;
+    clienteId?: string | null;
     regimeHoras?: string | null;
     escalaSemanal?: string | null;
     valorHoraCents?: number | null;
@@ -101,6 +104,21 @@ export default function DriverForm({
           {sindicatos.map((s) => (
             <option key={s.id} value={s.id}>
               {s.nome}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className={labelClass}>Cliente</label>
+        <select
+          name="clienteId"
+          defaultValue={defaultValues?.clienteId ?? ""}
+          className={inputClass}
+        >
+          <option value="">— Sem cliente —</option>
+          {clientes.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.nome}
             </option>
           ))}
         </select>

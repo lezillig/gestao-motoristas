@@ -23,6 +23,7 @@ const schema = z.object({
     .optional(),
   phone: z.string().optional(),
   sindicatoId: z.string().optional(),
+  clienteId: z.string().optional(),
   // Data de admissao — opcional, nao vem do TiqueTaque. Sem ela o sistema
   // nao calcula ferias em dobro (art. 137 CLT) nem periodo aquisitivo de
   // ferias em geral, ver checkFolgaCompensada em afastamentoCompliance.ts.
@@ -54,6 +55,7 @@ function parseForm(formData: FormData) {
     cnhExpiration: formData.get("cnhExpiration") || undefined,
     phone: formData.get("phone") || undefined,
     sindicatoId: formData.get("sindicatoId") || undefined,
+    clienteId: formData.get("clienteId") || undefined,
     admissao: formData.get("admissao") || undefined,
     regimeHoras: formData.get("regimeHoras") || undefined,
     escalaSemanal: formData.get("escalaSemanal") || undefined,
