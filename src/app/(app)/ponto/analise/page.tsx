@@ -58,12 +58,26 @@ import { formatHoursMinutes } from "@/lib/time";
 
 type Categoria = "CLT" | "CCT/ACT" | "Jurisprudência";
 
+// Tipo fino de ocorrencia — usado pro drill-down dos cards (cada card do
+// topo representa um tipo especifico, diferente de `categoria` que agrupa
+// so em 3 baldes largos pro eixo CLT/CCT-ACT/Jurisprudencia).
+type TipoOcorrencia = "hora-extra" | "intervalo" | "interjornada" | "dsr" | "jurisprudencia";
+
+const TIPO_LABELS: Record<TipoOcorrencia, string> = {
+  "hora-extra": "Horas extras",
+  intervalo: "Intervalo intrajornada",
+  interjornada: "Interjornada",
+  dsr: "Descanso semanal (DSR)",
+  jurisprudencia: "Jurisprudência",
+};
+
 type ViolationRow = {
   key: string;
   driverId: string;
   driverName: string;
   date: Date | null;
   categoria: Categoria;
+  tipo: TipoOcorrencia;
   descricao: string;
   risco: RiskLevel;
   entryId: string | null;
@@ -93,10 +107,10 @@ type AnaliseSortField = (typeof ANALISE_SORT_FIELDS)[number];
 export default async function AnaliseDeRiscosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string; driverId?: string; sort?: string; dir?: string }>;
+  searchParams: Promise<{ mes?: string; driverId?: string; sort?: string; dir?: string; tipo?: string; categoria?: string }>;
 }) {
   const session = await requireRole("ADMIN", "GESTOR");
-  const { mes, driverId, sort, dir } = await searchParams;
+  const { mes, driverId, sort, dir, tipo, categoria: categoriaFiltro } = await searchParams;
 
   const anchor = mes ? new Date(`${mes}-01T00:00:00`) : new Date();
   const monthStart = startOfMonth(anchor);
@@ -183,18 +197,23 @@ export default async function AnaliseDeRiscosPage({
   let totalNightMinutes = 0;
   let totalNightCostCents = 0;
   let hasAnyNightCost = false;
+  const nightByDriver = new Map<string, { minutes: number; costCents: number }>();
   for (const entry of entriesInMonth) {
     const night = nightMinutes(entry);
     if (night <= 0) continue;
     totalNightMinutes += night;
+    const acc = nightByDriver.get(entry.driverId) ?? { minutes: 0, costCents: 0 };
+    acc.minutes += night;
     const driverForNight = driverById.get(entry.driverId);
     if (driverForNight) {
       const cost = nightPremiumCents(driverForNight, night);
       if (cost !== null) {
         totalNightCostCents += cost;
         hasAnyNightCost = true;
+        acc.costCents += cost;
       }
     }
+    nightByDriver.set(entry.driverId, acc);
   }
 
   // Tempo de espera (art. 235-C, §§8-9, Lei 13.103/2015) — nao e jornada
@@ -202,18 +221,23 @@ export default async function AnaliseDeRiscosPage({
   let totalWaitingMinutes = 0;
   let totalWaitingCostCents = 0;
   let hasAnyWaitingCost = false;
+  const waitingByDriver = new Map<string, { minutes: number; costCents: number }>();
   for (const entry of entriesInMonth) {
     const waiting = waitingMinutes(entry);
     if (waiting <= 0) continue;
     totalWaitingMinutes += waiting;
+    const acc = waitingByDriver.get(entry.driverId) ?? { minutes: 0, costCents: 0 };
+    acc.minutes += waiting;
     const driverForWaiting = driverById.get(entry.driverId);
     if (driverForWaiting) {
       const cost = waitingTimeIndemnityCents(driverForWaiting, waiting);
       if (cost !== null) {
         totalWaitingCostCents += cost;
         hasAnyWaitingCost = true;
+        acc.costCents += cost;
       }
     }
+    waitingByDriver.set(entry.driverId, acc);
   }
 
   // Hora extra: usa o limite negociado (ACT/CCT) ou o regime 12x36 quando
@@ -255,6 +279,7 @@ export default async function AnaliseDeRiscosPage({
       driverName: driverName(entry.driverId),
       date: entry.date,
       categoria,
+      tipo: "hora-extra",
       descricao: excessive
         ? `Hora extra excessiva: ${Math.round(overtime)} min além do limite (${fonteLimite}).`
         : `Hora extra: ${Math.round(overtime)} min além do limite (${fonteLimite}).`,
@@ -277,6 +302,7 @@ export default async function AnaliseDeRiscosPage({
       driverName: driverName(v.driverId),
       date: entry?.date ?? null,
       categoria: "CLT",
+      tipo: "interjornada",
       descricao: `Interjornada de apenas ${Math.round(v.gapMinutes / 60)}h${Math.round(v.gapMinutes % 60)}min entre turnos (mínimo exigido: ${regime12x36ByDriver.get(v.driverId)?.ativo ? "36h" : "11h"}).`,
       risco: "alto",
       entryId: v.nextEntryId,
@@ -294,6 +320,7 @@ export default async function AnaliseDeRiscosPage({
       driverName: driverName(v.driverId),
       date: entry?.date ?? null,
       categoria: "CLT",
+      tipo: "intervalo",
       descricao: `Turno de ${Math.round(v.workedMinutes / 60)}h sem intervalo intrajornada registrado.`,
       risco: "medio",
       entryId: v.entryId,
@@ -320,6 +347,7 @@ export default async function AnaliseDeRiscosPage({
       driverName: driverName(v.driverId),
       date: entry?.date ?? null,
       categoria: "CLT",
+      tipo: "dsr",
       descricao: `${v.consecutiveDays}º dia seguido trabalhado sem folga.`,
       risco: "alto",
       entryId: v.entryId,
@@ -408,6 +436,7 @@ export default async function AnaliseDeRiscosPage({
       driverName: driverName(risk.driverId),
       date: null,
       categoria: "Jurisprudência",
+      tipo: "jurisprudencia",
       descricao: `${risk.title} — ${risk.description} (${risk.citation})`,
       risco: risk.level,
       entryId: null,
@@ -465,10 +494,90 @@ export default async function AnaliseDeRiscosPage({
   const countByCategoria = (categoria: Categoria) => rows.filter((r) => r.categoria === categoria).length;
   // Dias-motorista distintos com pelo menos 1 ocorrencia CLT/CCT (rows com
   // `date`, ou seja, excluindo as de jurisprudencia — essas sao por
-  // motorista/mes, sem data especifica, ver push acima).
+  // motorista/mes, sem data especifica, ver push acima). Um dia com 2
+  // ocorrencias diferentes (ex.: hora extra E intervalo ausente no mesmo
+  // turno) conta uma unica vez aqui, por isso costuma ser menor que a soma
+  // "CLT + CCT/ACT".
   const diasComPendencias = new Set(
     rows.filter((r) => r.date).map((r) => `${r.driverId}_${r.date!.toISOString().slice(0, 10)}`)
   ).size;
+
+  // Drill-down dos cards do topo: cada card do resumo agregado (Horas
+  // extras, Intervalo, Escala, Adicional noturno, Tempo de espera, Atrasos)
+  // e das 3 categorias (CLT/CCT-ACT/Jurisprudencia) fica clicavel e filtra
+  // a tabela de ocorrencias por `tipo` (fino) ou `categoria` (largo).
+  // Adicional noturno/Tempo de espera/Atrasos nao geram linha na tabela
+  // (sao indicadores, nao violacao pontual — ver nota no rodape), entao o
+  // clique nesses 3 mostra uma lista por motorista dedicada em vez de
+  // filtrar a tabela.
+  const ROW_BACKED_TIPOS = new Set<TipoOcorrencia>(["hora-extra", "intervalo", "interjornada", "dsr", "jurisprudencia"]);
+  const tipoAtivo = tipo && ROW_BACKED_TIPOS.has(tipo as TipoOcorrencia) ? (tipo as TipoOcorrencia) : null;
+  const drillAtivo = tipo === "noturno" || tipo === "espera" || tipo === "atrasos" ? tipo : null;
+  const categoriaAtiva = categoriaFiltro === "CLT" || categoriaFiltro === "CCT/ACT" || categoriaFiltro === "Jurisprudência" ? categoriaFiltro : null;
+
+  const filteredRows = rows.filter((r) => {
+    if (tipoAtivo && r.tipo !== tipoAtivo) return false;
+    if (categoriaAtiva && r.categoria !== categoriaAtiva) return false;
+    return true;
+  });
+
+  const baseFilterParams = () => {
+    const p = new URLSearchParams();
+    p.set("mes", format(monthStart, "yyyy-MM"));
+    if (driverId) p.set("driverId", driverId);
+    return p;
+  };
+  const tipoHref = (value: string) => {
+    const p = baseFilterParams();
+    if (tipo !== value) p.set("tipo", value);
+    return `/ponto/analise?${p.toString()}`;
+  };
+  const categoriaHref = (value: Categoria) => {
+    const p = baseFilterParams();
+    if (categoriaFiltro !== value) p.set("categoria", value);
+    return `/ponto/analise?${p.toString()}`;
+  };
+  const clearFiltersHref = `/ponto/analise?${baseFilterParams().toString()}`;
+  const hasActiveFilter = Boolean(tipoAtivo || drillAtivo || categoriaAtiva);
+  const activeFilterLabel = tipoAtivo
+    ? TIPO_LABELS[tipoAtivo]
+    : drillAtivo === "noturno"
+      ? "Adicional noturno"
+      : drillAtivo === "espera"
+        ? "Tempo de espera"
+        : drillAtivo === "atrasos"
+          ? "Atrasos"
+          : categoriaAtiva ?? "";
+
+  const nightRanking = [...nightByDriver.entries()]
+    .map(([id, v]) => ({ id, name: driverName(id), ...v }))
+    .sort((a, b) => b.minutes - a.minutes);
+  const waitingRanking = [...waitingByDriver.entries()]
+    .map(([id, v]) => ({ id, name: driverName(id), ...v }))
+    .sort((a, b) => b.minutes - a.minutes);
+
+  const atrasosByDriver = new Map<string, { lateCount: number; lateMinutes: number; earlyCount: number; earlyMinutes: number }>();
+  const getAtrasos = (id: string) => {
+    let a = atrasosByDriver.get(id);
+    if (!a) {
+      a = { lateCount: 0, lateMinutes: 0, earlyCount: 0, earlyMinutes: 0 };
+      atrasosByDriver.set(id, a);
+    }
+    return a;
+  };
+  for (const e of latenessEvents) {
+    const a = getAtrasos(e.driverId);
+    a.lateCount++;
+    a.lateMinutes += e.lateMinutes;
+  }
+  for (const e of earlyDepartureEvents) {
+    const a = getAtrasos(e.driverId);
+    a.earlyCount++;
+    a.earlyMinutes += e.earlyMinutes;
+  }
+  const atrasosRanking = [...atrasosByDriver.entries()]
+    .map(([id, v]) => ({ id, name: driverName(id), ...v }))
+    .sort((a, b) => b.lateMinutes + b.earlyMinutes - (a.lateMinutes + a.earlyMinutes));
 
   return (
     <div className="max-w-6xl">
@@ -494,7 +603,7 @@ export default async function AnaliseDeRiscosPage({
       </div>
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <div className={cardClass}>
+        <Link href={tipoHref("hora-extra")} className={`${cardClass} block transition-shadow hover:shadow-md ${tipoAtivo === "hora-extra" ? "ring-2 ring-blue-400" : ""}`}>
           <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-purple-100 text-purple-700">
             <Banknote className="h-4 w-4" />
           </div>
@@ -517,9 +626,9 @@ export default async function AnaliseDeRiscosPage({
               <p className="text-xs text-slate-500">excederam 10h por dia</p>
             </div>
           </div>
-        </div>
+        </Link>
 
-        <div className={cardClass}>
+        <Link href={tipoHref("intervalo")} className={`${cardClass} block transition-shadow hover:shadow-md ${tipoAtivo === "intervalo" ? "ring-2 ring-blue-400" : ""}`}>
           <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-teal-100 text-teal-700">
             <Coffee className="h-4 w-4" />
           </div>
@@ -536,9 +645,9 @@ export default async function AnaliseDeRiscosPage({
               <p className="text-xs text-slate-500">excederam 6h sem intervalo</p>
             </div>
           </div>
-        </div>
+        </Link>
 
-        <div className={cardClass}>
+        <Link href={tipoHref("interjornada")} className={`${cardClass} block transition-shadow hover:shadow-md ${tipoAtivo === "interjornada" ? "ring-2 ring-blue-400" : ""}`}>
           <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-100 text-indigo-700">
             <CalendarX className="h-4 w-4" />
           </div>
@@ -555,9 +664,9 @@ export default async function AnaliseDeRiscosPage({
               <p className="text-xs text-slate-500">dias sem registros</p>
             </div>
           </div>
-        </div>
+        </Link>
 
-        <div className={cardClass}>
+        <Link href={tipoHref("noturno")} className={`${cardClass} block transition-shadow hover:shadow-md ${drillAtivo === "noturno" ? "ring-2 ring-blue-400" : ""}`}>
           <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-slate-800 text-slate-100">
             <Moon className="h-4 w-4" />
           </div>
@@ -574,9 +683,9 @@ export default async function AnaliseDeRiscosPage({
               {hasAnyNightCost ? "em adicional noturno" : "configure o valor-hora dos motoristas"}
             </p>
           </div>
-        </div>
+        </Link>
 
-        <div className={cardClass}>
+        <Link href={tipoHref("espera")} className={`${cardClass} block transition-shadow hover:shadow-md ${drillAtivo === "espera" ? "ring-2 ring-blue-400" : ""}`}>
           <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
             <Hourglass className="h-4 w-4" />
           </div>
@@ -593,9 +702,9 @@ export default async function AnaliseDeRiscosPage({
               {hasAnyWaitingCost ? "em indenização de espera" : "configure o valor-hora dos motoristas"}
             </p>
           </div>
-        </div>
+        </Link>
 
-        <div className={cardClass}>
+        <Link href={tipoHref("atrasos")} className={`${cardClass} block transition-shadow hover:shadow-md ${drillAtivo === "atrasos" ? "ring-2 ring-blue-400" : ""}`}>
           <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-rose-100 text-rose-700">
             <AlarmClockOff className="h-4 w-4" />
           </div>
@@ -612,29 +721,34 @@ export default async function AnaliseDeRiscosPage({
               {earlyDepartureEvents.length > 0 ? ` (${formatHoursMinutes(totalEarlyMinutes)})` : ""}
             </p>
           </div>
-        </div>
+        </Link>
       </div>
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {(["CLT", "CCT/ACT", "Jurisprudência"] as const).map((categoria) => {
           const Icon = CATEGORIA_ICON[categoria];
           return (
-            <div key={categoria} className={cardClass}>
+            <Link
+              key={categoria}
+              href={categoriaHref(categoria)}
+              className={`${cardClass} block transition-shadow hover:shadow-md ${categoriaAtiva === categoria ? "ring-2 ring-blue-400" : ""}`}
+            >
               <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
                 <Icon className="h-4 w-4" />
               </div>
               <p className="text-2xl font-semibold text-slate-900">{countByCategoria(categoria)}</p>
               <p className="mt-0.5 text-xs text-slate-500">Ocorrências — {categoria}</p>
-            </div>
+            </Link>
           );
         })}
-        <div className={cardClass}>
+        <Link href={clearFiltersHref} className={`${cardClass} block transition-shadow hover:shadow-md ${!hasActiveFilter ? "" : ""}`} title="Dias distintos (motorista + data) com pelo menos 1 ocorrência CLT/CCT — um dia com mais de 1 ocorrência conta só uma vez, por isso costuma ser menor que a soma CLT + CCT/ACT. Clique para limpar os filtros.">
           <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-orange-100 text-orange-700">
             <CalendarX className="h-4 w-4" />
           </div>
           <p className="text-2xl font-semibold text-slate-900">{diasComPendencias}</p>
           <p className="mt-0.5 text-xs text-slate-500">Dias com pendências</p>
-        </div>
+          <p className="mt-1 text-[11px] leading-tight text-slate-400">dias distintos c/ ≥1 ocorrência — cada dia conta 1x mesmo com várias</p>
+        </Link>
       </div>
 
       {ranking.length > 0 && (
@@ -695,25 +809,104 @@ export default async function AnaliseDeRiscosPage({
         </div>
       )}
 
-      <form className="mb-4 flex flex-wrap items-end gap-3" method="get">
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600">Motorista</label>
-          <select name="driverId" defaultValue={driverId ?? ""} className={inputClass}>
-            <option value="">Todos</option>
-            {drivers.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
+      {drillAtivo && (
+        <div className={`${cardClass} mb-6`}>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-900">Detalhe por motorista — {activeFilterLabel}</h2>
+            <Link href={clearFiltersHref} className="text-xs font-medium text-blue-700 hover:underline">
+              Limpar filtro
+            </Link>
+          </div>
+          {drillAtivo === "noturno" && (
+            <ul className="flex flex-col gap-1">
+              {nightRanking.length === 0 && <li className="px-2 py-6 text-center text-sm text-slate-500">Sem adicional noturno neste período.</li>}
+              {nightRanking.map((d) => (
+                <li key={d.id} className="flex items-center justify-between rounded-lg px-2 py-1.5 text-sm">
+                  <span className="text-slate-700">{d.name}</span>
+                  <span className="flex items-center gap-3">
+                    <span className="text-slate-600">{formatHoursMinutes(d.minutes)}</span>
+                    <span className={`${badgeClass} bg-slate-100 text-slate-700`}>
+                      {d.costCents > 0 ? (d.costCents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—"}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {drillAtivo === "espera" && (
+            <ul className="flex flex-col gap-1">
+              {waitingRanking.length === 0 && <li className="px-2 py-6 text-center text-sm text-slate-500">Sem tempo de espera registrado neste período.</li>}
+              {waitingRanking.map((d) => (
+                <li key={d.id} className="flex items-center justify-between rounded-lg px-2 py-1.5 text-sm">
+                  <span className="text-slate-700">{d.name}</span>
+                  <span className="flex items-center gap-3">
+                    <span className="text-slate-600">{formatHoursMinutes(d.minutes)}</span>
+                    <span className={`${badgeClass} bg-slate-100 text-slate-700`}>
+                      {d.costCents > 0 ? (d.costCents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—"}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {drillAtivo === "atrasos" && (
+            <ul className="flex flex-col gap-1">
+              {atrasosRanking.length === 0 && <li className="px-2 py-6 text-center text-sm text-slate-500">Sem atrasos ou saídas antecipadas neste período.</li>}
+              {atrasosRanking.map((d) => (
+                <li key={d.id} className="flex items-center justify-between rounded-lg px-2 py-1.5 text-sm">
+                  <span className="text-slate-700">{d.name}</span>
+                  <span className="flex items-center gap-3 text-xs">
+                    {d.lateCount > 0 && (
+                      <span className={`${badgeClass} bg-rose-100 text-rose-700`}>
+                        {d.lateCount} atraso{d.lateCount === 1 ? "" : "s"} ({formatHoursMinutes(d.lateMinutes)})
+                      </span>
+                    )}
+                    {d.earlyCount > 0 && (
+                      <span className={`${badgeClass} bg-amber-100 text-amber-700`}>
+                        {d.earlyCount} saída{d.earlyCount === 1 ? "" : "s"} cedo ({formatHoursMinutes(d.earlyMinutes)})
+                      </span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-        <input type="hidden" name="mes" value={format(monthStart, "yyyy-MM")} />
-        <button type="submit" className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-          Filtrar
-        </button>
-      </form>
+      )}
 
-      <div className={`${cardClass} p-0 overflow-hidden`}>
+      {!drillAtivo && (
+        <>
+          {hasActiveFilter && (
+            <div className="mb-3 flex items-center gap-2 text-sm">
+              <span className="text-slate-500">Filtrando por:</span>
+              <span className={`${badgeClass} bg-blue-100 text-blue-700`}>{activeFilterLabel}</span>
+              <Link href={clearFiltersHref} className="text-xs font-medium text-blue-700 hover:underline">
+                Limpar filtro
+              </Link>
+            </div>
+          )}
+
+          <form className="mb-4 flex flex-wrap items-end gap-3" method="get">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">Motorista</label>
+              <select name="driverId" defaultValue={driverId ?? ""} className={inputClass}>
+                <option value="">Todos</option>
+                {drivers.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <input type="hidden" name="mes" value={format(monthStart, "yyyy-MM")} />
+            {tipoAtivo && <input type="hidden" name="tipo" value={tipoAtivo} />}
+            {categoriaAtiva && <input type="hidden" name="categoria" value={categoriaAtiva} />}
+            <button type="submit" className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+              Filtrar
+            </button>
+          </form>
+
+          <div className={`${cardClass} p-0 overflow-hidden`}>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -727,14 +920,14 @@ export default async function AnaliseDeRiscosPage({
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 && (
+              {filteredRows.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
                     Nenhuma marcação de risco encontrada neste período.
                   </td>
                 </tr>
               )}
-              {rows.map((r) => (
+              {filteredRows.map((r) => (
                 <tr key={r.key} className="border-b border-slate-100 last:border-0">
                   <td className="max-w-[160px] px-4 py-3 text-xs font-medium leading-tight text-slate-800 line-clamp-2" title={r.driverName}>
                     {r.driverName}
@@ -757,7 +950,9 @@ export default async function AnaliseDeRiscosPage({
             </tbody>
           </table>
         </div>
-      </div>
+          </div>
+        </>
+      )}
       <p className="mt-3 text-xs text-slate-400">
         Os alertas de jurisprudência são informativos, baseados em padrões conhecidos — não substituem uma avaliação do setor jurídico. O
         card "Atrasos" é um indicador de assiduidade (horário real batido vs. horário programado na escala, com

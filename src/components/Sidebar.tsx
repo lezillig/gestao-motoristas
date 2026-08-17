@@ -147,10 +147,17 @@ export default function Sidebar({ role }: { role: Role }) {
       {items.map((item) => {
         const Icon = item.icon;
         const hasChildren = !!item.children?.length;
-        // Filho ativo tem precedencia: "/ponto" nao fica marcado quando a
-        // rota atual e "/ponto/analise", por exemplo.
+        // Filho ativo tem precedencia sobre o item pai. Pra um item COM
+        // filhos, o proprio href so conta como ativo em match EXATO — nao
+        // prefixo — senao um item pai com href "/ponto" ficaria marcado
+        // (via isActive's startsWith) em qualquer rota "/ponto/*", inclusive
+        // uma que e outro item TOP-LEVEL irmao (ex.: "/ponto/analise", que
+        // depois de promovido a item proprio nao e mais filho de "Folha",
+        // mas ainda comeca com "/ponto/" — bug real visto em producao: os
+        // dois itens ficavam destacados ao mesmo tempo).
         const childActive = item.children?.some((c) => isActive(pathname, c.href)) ?? false;
-        const selfActive = isActive(pathname, item.href) && !childActive;
+        const selfMatches = hasChildren ? pathname === item.href : isActive(pathname, item.href);
+        const selfActive = selfMatches && !childActive;
         const open = childActive || expanded.has(item.href);
 
         return (
