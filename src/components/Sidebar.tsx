@@ -167,7 +167,7 @@ export default function Sidebar({ role }: { role: Role }) {
                 selfActive ? "bg-blue-700 text-white" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
-              <Link href={item.href} className="flex flex-1 items-center gap-3 px-3 py-2">
+              <Link href={item.href} prefetch={false} className="flex flex-1 items-center gap-3 px-3 py-2">
                 <Icon className="h-4 w-4 shrink-0" />
                 {item.label}
               </Link>
@@ -191,6 +191,7 @@ export default function Sidebar({ role }: { role: Role }) {
                     <Link
                       key={child.href}
                       href={child.href}
+                      prefetch={false}
                       className={`flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
                         active ? "bg-blue-700 text-white" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                       }`}

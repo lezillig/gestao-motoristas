@@ -89,6 +89,7 @@ export default async function VeiculosPage({
                   <td className="px-4 py-3 text-right">
                     <Link
                       href={`/cadastros/veiculos/${v.id}`}
+                      prefetch={false}
                       className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:underline"
                     >
                       <Pencil className="h-3.5 w-3.5" /> Editar

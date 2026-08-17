@@ -108,6 +108,7 @@ export default async function EscalasPage({
                             <Link
                               key={e.id}
                               href={`/escalas/${e.id}`}
+                              prefetch={false}
                               className="block rounded-md bg-blue-50 px-2 py-1 text-center text-xs font-medium text-blue-800 hover:bg-blue-100"
                             >
                               {e.startTime}–{e.endTime}
@@ -119,6 +120,7 @@ export default async function EscalasPage({
                           {items.length === 0 && (
                             <Link
                               href={`/escalas/novo?date=${format(d, "yyyy-MM-dd")}&driverId=${driver.id}`}
+                              prefetch={false}
                               className="flex h-8 items-center justify-center rounded-md text-slate-300 hover:bg-slate-50 hover:text-blue-600"
                               aria-label="Adicionar escala"
                             >

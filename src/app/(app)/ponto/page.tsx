@@ -334,6 +334,7 @@ export default async function PontoPage({
                               <Link
                                 key={e.id}
                                 href={`/ponto/${e.id}`}
+                                prefetch={false}
                                 className={`block rounded-md px-1.5 py-1 text-center text-xs font-medium hover:opacity-80 ${tone} ${
                                   violated ? "ring-2 ring-red-400" : ""
                                 }`}
@@ -367,6 +368,7 @@ export default async function PontoPage({
                           {items.length === 0 && (
                             <Link
                               href={`/ponto/novo?date=${format(d, "yyyy-MM-dd")}&driverId=${driver.id}`}
+                              prefetch={false}
                               className="flex h-8 items-center justify-center rounded-md text-slate-300 hover:bg-slate-50 hover:text-blue-600"
                               aria-label="Adicionar registro de ponto"
                             >
