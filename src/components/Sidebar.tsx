@@ -24,6 +24,7 @@ import {
   PiggyBank,
   Users,
   Scale,
+  FlaskConical,
 } from "lucide-react";
 
 type NavItem = {
@@ -82,6 +83,7 @@ const NAV: NavItem[] = [
       { href: "/ponto/anual", label: "Relatório anual", icon: CalendarRange },
       { href: "/ponto/mensal", label: "Relatório mensal", icon: FileSpreadsheet },
       { href: "/ponto/passivo", label: "Passivo trabalhista", icon: Scale },
+      { href: "/ponto/simulador", label: "Simulador de cenário", icon: FlaskConical },
       { href: "/ponto/correcoes", label: "Histórico de correções", icon: History },
     ],
   },
