@@ -44,9 +44,27 @@ function minutesBetween(aFull: string, bFull: string): number {
 // arrastar erro pros dias seguintes. Verificado com o extrato real de um
 // motorista com uma marcacao duplicada no meio do mes: o pareamento erra so
 // aquele dia e volta a bater com a producao no dia seguinte.
+//
+// Bug #3 corrigido aqui (2026-08-18, achado pelo usuario comparando com o
+// extrato oficial de 2 motoristas cujo total no nosso sistema passava de
+// 24h/dia — impossivel). Causa real, confirmada chamando a API ao vivo:
+// o TiqueTaque marca uma batida como invalida com `type: "desconsiderado"`
+// (ex.: `justification: "Duplicidade de registro"`, "DUPLICADO") quando
+// alguem bate o ponto duas vezes ou um admin invalida a marcacao — mas essa
+// batida continua vindo com `approved: true`. O filtro antigo so olhava
+// `approved`, entao a batida desconsiderada entrava na sequencia igual a
+// uma batida valida e virava uma "entrada" fantasma, desalinhando a
+// paridade entrada/saida do dia (mesma classe do Bug #2, mas o gatilho e
+// diferente: uma batida marcada como invalida pelo proprio TiqueTaque, nao
+// uma marcacao dupla comum). MAX_PLAUSIBLE_SHIFT_MINUTES nao pega esse caso
+// porque o par errado formado ainda cai dentro de 16h (plausivel na
+// aparencia). Verificado ao vivo pra 2 motoristas reais (AURELIO TAVARES DE
+// MELO 21/01/2026, JOSE ANTONIO DA SILVA 05/08/2026): excluir as batidas
+// "desconsiderado" faz o pareamento bater exatamente com o extrato oficial
+// do TiqueTaque nos dois casos.
 export function pairPunchesIntoDays(punches: RawPunch[]): TiqueTaqueDayEntry[] {
   const sorted = punches
-    .filter((p) => p.approved)
+    .filter((p) => p.approved && p.type?.trim().toLowerCase() !== "desconsiderado")
     .map((p) => ({ time: p.time, location: p.location ?? null, type: p.type ?? null }))
     .sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
 
