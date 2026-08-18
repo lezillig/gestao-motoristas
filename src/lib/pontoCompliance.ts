@@ -102,6 +102,51 @@ export function waitingMinutes(entry: Pick<PontoEntryLike, "esperaInicio" | "esp
   return durationMinutes(entry.esperaInicio, entry.esperaFim);
 }
 
+// Duracao abaixo da qual um par entrada/saida que cruza a virada do dia
+// (saida menor que entrada, ex. 23:12->01:12) e sinalizado como possivel
+// pareamento errado, pra revisao manual — nao muda nenhum calculo, so
+// avisa. Contexto (2026-08-18): a importacao do TiqueTaque pareia batidas
+// avulsas por posicao/plausibilidade de duracao (src/lib/tiquetaque/
+// pairing.ts), sem nenhum sinal real de "isso e entrada" vs "isso e saida"
+// — confirmado que a API publica no expoe essa direcao. Um caso real
+// encontrado comparando com o extrato oficial (motorista com jornada em 3
+// pares no dia): a ENTRADA real do dia seguinte foi consumida como SAIDA de
+// um par curto (2h) que na verdade nao existia. Turnos noturnos genuinos
+// (ex. regime 12x36 "18:00 as 06:00") duram bem mais que isso — o limite
+// aqui e deliberadamente curto pra nao marcar turno noturno real como
+// suspeito, so o padrao curto que indicou o bug real.
+export const SUSPICIOUS_CROSS_DAY_PAIR_MINUTES = 4 * 60;
+
+export type SuspiciousCrossDayPair = {
+  entryId: string;
+  driverId: string;
+  date: Date;
+  entrada: string;
+  saida: string;
+  minutes: number;
+};
+
+// So sinaliza, nunca corrige sozinho — ver comentario acima. Cobre tanto
+// dias com `punches` (varios pares, importacao TiqueTaque) quanto o par
+// unico clockIn/clockOut (lancamento manual ou dia com 1 turno so).
+export function findSuspiciousCrossDayPairs(
+  entries: (PontoEntryLike & { id: string; driverId: string })[]
+): SuspiciousCrossDayPair[] {
+  const results: SuspiciousCrossDayPair[] = [];
+  for (const entry of entries) {
+    const punches = parsePunches(entry.punches);
+    const pairs = punches.length > 0 ? punches : [{ entrada: entry.clockIn, saida: entry.clockOut }];
+    for (const p of pairs) {
+      if (!p.saida || p.saida >= p.entrada) continue; // nao cruza a virada
+      const minutes = durationMinutes(p.entrada, p.saida);
+      if (minutes < SUSPICIOUS_CROSS_DAY_PAIR_MINUTES) {
+        results.push({ entryId: entry.id, driverId: entry.driverId, date: entry.date, entrada: p.entrada, saida: p.saida, minutes });
+      }
+    }
+  }
+  return results;
+}
+
 // dailyLimitMinutes permite que a jornada normal de um motorista seja
 // estendida por convencao coletiva (Lei 13.103/2015 permite CCT/ACT ampliar
 // a jornada base) — ver src/lib/convencao.ts:driverDailyLimitMinutes.

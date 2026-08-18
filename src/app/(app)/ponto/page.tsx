@@ -10,6 +10,7 @@ import KpiCard from "@/components/ui/KpiCard";
 import { buildSortHref, nextSortDir } from "@/lib/sort";
 import {
   findInterjornadaViolations,
+  findSuspiciousCrossDayPairs,
   overtimeMinutes,
   workedMinutes,
 } from "@/lib/pontoCompliance";
@@ -66,6 +67,13 @@ export default async function PontoPage({
     entriesInWeek.some((e) => e.id === v.nextEntryId)
   );
   const violatedEntryIds = new Set(violationsInWeek.map((v) => v.nextEntryId));
+
+  // Sinaliza (sem corrigir sozinho) pares curtos cruzando a virada do dia —
+  // ver comentario em findSuspiciousCrossDayPairs sobre por que o
+  // pareamento do TiqueTaque pode confundir isso com um turno noturno real.
+  const suspiciousByEntryId = new Map(
+    findSuspiciousCrossDayPairs(entriesInWeek).map((s) => [s.entryId, s])
+  );
 
   const dailyLimitByDriver = new Map(drivers.map((d) => [d.id, driverDailyLimitMinutes(d)]));
   const dailyLimitFor = (driverId: string) =>
@@ -325,6 +333,7 @@ export default async function PontoPage({
                             const worked = workedMinutes(e);
                             const overtime = overtimeMinutes(worked, limit?.minutes);
                             const violated = violatedEntryIds.has(e.id);
+                            const suspicious = suspiciousByEntryId.get(e.id);
                             const tone = !e.clockOut
                               ? "bg-slate-100 text-slate-500 border border-dashed border-slate-300"
                               : overtime > 0
@@ -336,7 +345,7 @@ export default async function PontoPage({
                                 href={`/ponto/${e.id}`}
                                 prefetch={false}
                                 className={`block rounded-md px-1.5 py-1 text-center text-xs font-medium hover:opacity-80 ${tone} ${
-                                  violated ? "ring-2 ring-red-400" : ""
+                                  violated ? "ring-2 ring-red-400" : suspicious ? "ring-2 ring-purple-400" : ""
                                 }`}
                               >
                                 <span className="block whitespace-nowrap text-[10px]">
@@ -360,6 +369,14 @@ export default async function PontoPage({
                                     title="Atualizado numa reimportação do TiqueTaque — ver histórico de correções"
                                   >
                                     <History className="h-2.5 w-2.5" /> corrigido
+                                  </span>
+                                )}
+                                {suspicious && (
+                                  <span
+                                    className="mt-0.5 flex items-center justify-center gap-0.5 text-[9px] font-medium text-purple-700"
+                                    title={`Par curto (${formatHoursMinutes(suspicious.minutes)}) cruzando a virada do dia, ${suspicious.entrada}–${suspicious.saida} — pode ser uma marcação mal atribuída pelo pareamento automático do TiqueTaque. Confira contra o extrato oficial antes de confiar neste turno.`}
+                                  >
+                                    <AlertTriangle className="h-2.5 w-2.5" /> conferir
                                   </span>
                                 )}
                               </Link>
