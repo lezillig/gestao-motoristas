@@ -6,7 +6,19 @@ type RawPunch = { time: string; approved: boolean; location?: TiqueTaqueLocation
 // pra decidir se duas batidas consecutivas formam um par (ver mais abaixo).
 // Maior que qualquer turno real ja visto em dados de producao (o mais longo
 // confirmado ficou em ~12h), com folga.
-const MAX_PLAUSIBLE_SHIFT_MINUTES = 16 * 60;
+//
+// Reduzido de 16h pra 14h (2026-08-18, achado pelo usuario comparando com o
+// extrato oficial): um motorista que bate so a ENTRADA e nunca bate a saida
+// (turno em aberto de verdade, o proprio TiqueTaque mostra so 1 marcacao
+// naquele dia) tinha essa entrada incorretamente pareada com a PRIMEIRA
+// marcacao do dia seguinte, porque o intervalo entre as duas (ex.: 21:30 ate
+// 12:33 do dia seguinte, 15h03) ainda cabia dentro do teto de 16h — isso
+// tambem desalinhava o dia seguinte inteiro (a marcacao "roubada" deixava de
+// estar disponivel como a entrada real daquele dia). 14h mantem folga de 2h
+// acima do turno mais longo ja confirmado (~12h) e foi testado contra os 4
+// casos reais de bug ja investigados nesta sessao sem quebrar nenhum dos que
+// já estavam corretos.
+const MAX_PLAUSIBLE_SHIFT_MINUTES = 14 * 60;
 
 function minutesBetween(aFull: string, bFull: string): number {
   return (new Date(bFull).getTime() - new Date(aFull).getTime()) / 60000;
