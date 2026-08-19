@@ -291,24 +291,38 @@ function segmentNightMinutes(entrada: string, saida: string): number {
   );
 }
 
-// Adicional noturno (art. 73 CLT): minutos efetivamente trabalhados entre
-// 22h e 5h, descontando o(s) intervalo(s) do mesmo jeito que workedMinutes.
-// Nao aplica a reducao ficta da "hora noturna" (52min30s = 1h) — o
-// percentual de adicional e calculado sobre os minutos reais, abordagem
-// mais simples e conservadora quando o CCT nao detalha a reducao em
-// separado (ver src/lib/convencao.ts:nightPremiumCents).
+// 52min30s = 1 "hora noturna" no periodo urbano (22h-5h) — art. 73, §1º CLT
+// ("A hora do trabalho noturno sera computada como de 52 minutos e 30
+// segundos"). Cada minuto real trabalhado nesse periodo conta como
+// 60/52,5 = 8/7 de minuto pra fins de duracao E do calculo do adicional
+// (ver src/lib/convencao.ts:nightPremiumCents, que so recebe "minutos" e
+// nao sabe da reducao).
+const HORA_NOTURNA_REDUZIDA_SEGUNDOS = 52 * 60 + 30;
+const NIGHT_MINUTES_FICTA_FACTOR = 3600 / HORA_NOTURNA_REDUZIDA_SEGUNDOS;
+
+// Adicional noturno (art. 73 CLT): minutos noturnos COMPUTADOS (ja com a
+// reducao ficta acima aplicada) entre 22h e 5h, descontando o(s)
+// intervalo(s) do mesmo jeito que workedMinutes. Confirmado contra o
+// extrato oficial de um motorista real (2026-08-18, RH do usuario): 78min
+// reais entre 22h-23h18 -> 89,14min computados, diferenca de ~11min que
+// batia exatamente com o "Total" oficial do TiqueTaque (que ja aplica essa
+// regra) pro mesmo turno. Arredonda pro minuto inteiro antes de retornar —
+// o valor alimenta formatHoursMinutes, que faz Math.floor/% e quebra com
+// entrada fracionaria.
 export function nightMinutes(
   entry: Pick<PontoEntryLike, "clockIn" | "clockOut" | "intervaloInicio" | "intervaloFim" | "punches">
 ): number {
   const punches = parsePunches(entry.punches);
+  let realMinutes = 0;
   if (punches.length > 0) {
-    return punches.reduce((sum, p) => sum + (p.saida ? segmentNightMinutes(p.entrada, p.saida) : 0), 0);
+    realMinutes = punches.reduce((sum, p) => sum + (p.saida ? segmentNightMinutes(p.entrada, p.saida) : 0), 0);
+  } else if (entry.clockOut) {
+    realMinutes =
+      entry.intervaloInicio && entry.intervaloFim
+        ? segmentNightMinutes(entry.clockIn, entry.intervaloInicio) + segmentNightMinutes(entry.intervaloFim, entry.clockOut)
+        : segmentNightMinutes(entry.clockIn, entry.clockOut);
   }
-  if (!entry.clockOut) return 0;
-  if (entry.intervaloInicio && entry.intervaloFim) {
-    return segmentNightMinutes(entry.clockIn, entry.intervaloInicio) + segmentNightMinutes(entry.intervaloFim, entry.clockOut);
-  }
-  return segmentNightMinutes(entry.clockIn, entry.clockOut);
+  return Math.round(realMinutes * NIGHT_MINUTES_FICTA_FACTOR);
 }
 
 export type EscalaLike = { driverId: string; date: Date };
