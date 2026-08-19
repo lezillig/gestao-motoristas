@@ -80,7 +80,12 @@ export async function fetchAllEmployees(deadline?: number): Promise<TiqueTaqueEm
       if (!item.cpf) continue; // alguns cadastros no TiqueTaque nao tem CPF preenchido (so NIS)
       employees.push({
         id: item._id,
-        fullName: item.full_name,
+        // .trim() — o TiqueTaque as vezes devolve full_name com espaco extra
+        // no fim (confirmado real: "CLEBSON MAURO DA SILVA " com espaco),
+        // que ia parar direto no Driver.name e quebrava qualquer comparacao
+        // exata de nome depois (ex. casamento por nome na importacao da
+        // planilha oficial, src/lib/tiquetaque/csvImport.ts).
+        fullName: item.full_name.trim(),
         cpf: item.cpf,
         jobRole: item.contract_data?.job_role ?? "",
         dismissed: Boolean(item.contract_data?.dismissal_date),

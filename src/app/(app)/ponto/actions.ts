@@ -425,9 +425,20 @@ export async function importCsvForDriver(
     return { created: 0, corrected: 0, errors: [{ driverName, message: "Dados da planilha em formato inválido." }] };
   }
 
-  const driver = await prisma.driver.findFirst({
-    where: { companyId: session.companyId, name: { equals: driverName, mode: "insensitive" } },
+  // Casamento tolerante a espaco extra em Driver.name (confirmado real:
+  // alguns motoristas importados do TiqueTaque antes do trim em
+  // src/lib/tiquetaque/client.ts ficaram com espaco no fim do nome — um
+  // `equals` exato do Prisma nunca bate nesses casos, mesmo com
+  // mode:"insensitive", porque espaco em branco nao e ignorado). Busca
+  // todos os motoristas da empresa (so id+name, leve) e compara em JS com
+  // trim() dos dois lados.
+  const target = driverName.trim().toUpperCase();
+  const candidates = await prisma.driver.findMany({
+    where: { companyId: session.companyId },
+    select: { id: true, name: true },
   });
+  const match = candidates.find((d) => d.name.trim().toUpperCase() === target);
+  const driver = match ? await prisma.driver.findUnique({ where: { id: match.id } }) : null;
   if (!driver) {
     return { created: 0, corrected: 0, errors: [{ driverName, message: "Motorista não encontrado no cadastro." }] };
   }
