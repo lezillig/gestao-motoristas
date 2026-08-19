@@ -399,6 +399,9 @@ export default async function PontoPage({
                                 {e.fonte === "TIQUETAQUE" && (
                                   <span className="block text-[9px] italic text-slate-500">TiqueTaque</span>
                                 )}
+                                {e.fonte === "TIQUETAQUE_CSV" && (
+                                  <span className="block text-[9px] italic text-slate-500">TiqueTaque (planilha oficial)</span>
+                                )}
                                 {correctedEntryIds.has(e.id) && (
                                   <span
                                     className="mt-0.5 flex items-center justify-center gap-0.5 text-[9px] font-medium text-amber-700"

@@ -8,8 +8,9 @@ import { prisma } from "@/lib/prisma";
 import { parseLocalDate } from "@/lib/date";
 import { fetchAllEmployees } from "@/lib/tiquetaque/client";
 import { signTiqueTaquePlanItem, verifyTiqueTaquePlanItem } from "@/lib/tiquetaque/planToken";
-import { importDriverDaysCore } from "@/lib/tiquetaque/importCore";
+import { importDriverDaysCore, reconcileDriverDays } from "@/lib/tiquetaque/importCore";
 import type { TiqueTaqueDriverImportResult } from "@/lib/tiquetaque/importCore";
+import type { TiqueTaqueDayEntry } from "@/lib/tiquetaque/types";
 import { hashPontoState } from "@/lib/integrity";
 
 export type { TiqueTaqueImportRowError, TiqueTaqueDriverImportResult } from "@/lib/tiquetaque/importCore";
@@ -375,6 +376,67 @@ export async function importDriverFromTiqueTaque(
   }
 
   const result = await importDriverDaysCore(session.companyId, driver.id, driver.name, employeeId, startDate, endDate);
+
+  revalidatePath("/ponto");
+  revalidatePath("/ponto/analise");
+  revalidatePath("/ponto/correcoes");
+  return result;
+}
+
+const csvDaySchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  clockIn: z.string().regex(/^\d{1,2}:\d{2}$/),
+  clockOut: z.string().regex(/^\d{1,2}:\d{2}$/).nullable(),
+  intervaloInicio: z.string().regex(/^\d{1,2}:\d{2}$/).nullable(),
+  intervaloFim: z.string().regex(/^\d{1,2}:\d{2}$/).nullable(),
+  pairs: z.array(
+    z.object({
+      entrada: z.string().regex(/^\d{1,2}:\d{2}$/),
+      saida: z.string().regex(/^\d{1,2}:\d{2}$/).nullable(),
+    })
+  ),
+});
+const csvDaysSchema = z.array(csvDaySchema);
+
+// Importa um motorista da planilha oficial de exportacao em massa do
+// TiqueTaque (upload em src/app/(app)/ponto/TiqueTaqueCsvImportForm.tsx) —
+// os dias ja vem pareados certo (o proprio TiqueTaque decidiu entrada vs
+// saida), entao aqui e so reconciliar contra o banco, sem nenhum pareamento
+// heuristico. Casamento de motorista e por NOME (a planilha nao tem CPF),
+// escopado a companyId da sessao — nao ha token de assinatura tipo
+// verifyTiqueTaquePlanItem porque os dias ja vieram do arquivo que o
+// proprio usuario enviou (nao ha segredo externo a proteger aqui, so o
+// isolamento normal por companyId).
+//
+// A planilha oficial pode corrigir um registro vindo da importacao via API
+// (fonte "TIQUETAQUE", que so adivinha o pareamento — ver comentario em
+// src/lib/tiquetaque/pairing.ts), mas nunca sobrescreve um registro
+// lancado manualmente. E, no sentido contrario, a importacao via API nunca
+// sobrescreve um registro que ja veio da planilha oficial (mais confiavel)
+// — ver overwritableFontes em importDriverDaysCore/reconcileDriverDays.
+export async function importCsvForDriver(
+  driverName: string,
+  days: TiqueTaqueDayEntry[]
+): Promise<TiqueTaqueDriverImportResult> {
+  const session = await requireRole("ADMIN", "GESTOR");
+
+  const parsed = csvDaysSchema.safeParse(days);
+  if (!parsed.success) {
+    return { created: 0, corrected: 0, errors: [{ driverName, message: "Dados da planilha em formato inválido." }] };
+  }
+
+  const driver = await prisma.driver.findFirst({
+    where: { companyId: session.companyId, name: { equals: driverName, mode: "insensitive" } },
+  });
+  if (!driver) {
+    return { created: 0, corrected: 0, errors: [{ driverName, message: "Motorista não encontrado no cadastro." }] };
+  }
+
+  const result = await reconcileDriverDays(session.companyId, driver.id, driver.name, parsed.data, {
+    fonte: "TIQUETAQUE_CSV",
+    origemCorrecao: "TIQUETAQUE_CSV_IMPORT",
+    overwritableFontes: ["TIQUETAQUE", "TIQUETAQUE_CSV"],
+  });
 
   revalidatePath("/ponto");
   revalidatePath("/ponto/analise");

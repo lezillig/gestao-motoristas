@@ -205,7 +205,9 @@ export default async function DossiePage({
                     <td className="px-4 py-2 text-slate-700">{format(entry.date, "dd/MM/yyyy (EEE)", { locale: ptBR })}</td>
                     <td className="px-3 py-2 text-slate-700">{t.range}</td>
                     <td className="px-3 py-2 text-slate-700">{t.worked}</td>
-                    <td className="px-3 py-2 text-slate-600">{entry.fonte ? "TiqueTaque" : "Manual"}</td>
+                    <td className="px-3 py-2 text-slate-600">
+                      {entry.fonte === "TIQUETAQUE_CSV" ? "TiqueTaque (planilha oficial)" : entry.fonte === "TIQUETAQUE" ? "TiqueTaque" : "Manual"}
+                    </td>
                     <td className="px-3 py-2">
                       <span className={`${badgeClass} ${tone}`}>{label}</span>
                     </td>

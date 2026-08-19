@@ -341,9 +341,14 @@ model TimeClockEntry {
   // (um unico intervalo, os campos acima bastam).
   punches   Json?
   // Origem do registro: nulo para lancamento manual, "TIQUETAQUE" quando
-  // veio da importacao via src/lib/tiquetaque. So informativo — a
-  // importacao nunca sobrescreve um registro ja existente de nenhuma
-  // origem, ver src/app/(app)/ponto/actions.ts:importFromTiqueTaque.
+  // veio da importacao via API de batidas avulsas (pareamento heuristico,
+  // ver src/lib/tiquetaque/pairing.ts), "TIQUETAQUE_CSV" quando veio da
+  // planilha oficial de exportacao em massa (pareamento decidido pelo
+  // proprio TiqueTaque, mais confiavel — ver
+  // src/lib/tiquetaque/csvImport.ts). Nunca sobrescreve um lancamento
+  // manual; entre as duas fontes automaticas, CSV pode corrigir API mas
+  // API nunca sobrescreve CSV — ver overwritableFontes em
+  // src/lib/tiquetaque/importCore.ts:reconcileDriverDays.
   fonte     String?
   notes     String?
   // Hash SHA-256 (hex) do conteudo atual do registro (horarios, intervalo,
@@ -387,9 +392,10 @@ model TimeClockCorrection {
   entry     TimeClockEntry? @relation(fields: [entryId], references: [id], onDelete: SetNull)
   date      DateTime // data do turno corrigido, para listar/filtrar sem join
 
-  // "TIQUETAQUE_REIMPORT" | "EDICAO_MANUAL" | "EXCLUSAO_MANUAL" — texto
-  // livre (nao enum) pra nao precisar de migration toda vez que uma nova
-  // origem for adicionada, mesmo padrao ja usado em TimeClockEntry.fonte.
+  // "TIQUETAQUE_REIMPORT" | "TIQUETAQUE_CSV_IMPORT" | "EDICAO_MANUAL" |
+  // "EXCLUSAO_MANUAL" — texto livre (nao enum) pra nao precisar de
+  // migration toda vez que uma nova origem for adicionada, mesmo padrao ja
+  // usado em TimeClockEntry.fonte.
   origem           String @default("TIQUETAQUE_REIMPORT")
   // Quem fez a alteracao — so preenchido pra edicao/exclusao manual (a
   // reimportacao do TiqueTaque reflete uma mudanca feita por outra pessoa,

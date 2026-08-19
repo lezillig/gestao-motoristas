@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { parseLocalDate } from "@/lib/date";
 import { fetchEmployeeDays } from "@/lib/tiquetaque/client";
 import { hashPontoState } from "@/lib/integrity";
+import type { TiqueTaqueDayEntry } from "@/lib/tiquetaque/types";
 
 export type TiqueTaqueImportRowError = { driverName: string; date?: string; message: string };
 export type TiqueTaqueDriverImportResult = {
@@ -43,7 +44,7 @@ export async function importDriverDaysCore(
   endDate: string,
   deadline?: number
 ): Promise<TiqueTaqueDriverImportResult> {
-  let days;
+  let days: TiqueTaqueDayEntry[];
   try {
     days = await fetchEmployeeDays(employeeId, startDate, endDate, deadline);
   } catch (e) {
@@ -54,13 +55,37 @@ export async function importDriverDaysCore(
     };
   }
 
-  const existingEntries = await prisma.timeClockEntry.findMany({
-    where: {
-      companyId,
-      driverId,
-      date: { gte: parseLocalDate(startDate), lte: parseLocalDate(endDate) },
-    },
+  return reconcileDriverDays(companyId, driverId, driverName, days, {
+    fonte: "TIQUETAQUE",
+    origemCorrecao: "TIQUETAQUE_REIMPORT",
+    overwritableFontes: ["TIQUETAQUE"],
   });
+}
+
+// Dado um array de dias ja pareados (de onde vieram os pares nao importa
+// pra esta funcao — pode ser da API de batidas avulsas, reconstruidas por
+// pairing.ts, ou direto da planilha oficial de exportacao em massa do
+// TiqueTaque via src/lib/tiquetaque/csvImport.ts, ja sem nenhum pareamento
+// heuristico), reconcilia contra o banco: cria o que nao existe, corrige
+// (com rastro em TimeClockCorrection) o que existe e mudou, e recusa
+// sobrescrever qualquer registro cuja `fonte` atual nao esteja em
+// `opts.overwritableFontes` (protege lancamento manual sempre, e permite
+// escolher hierarquia entre fontes automaticas — ver comentario em
+// src/app/(app)/ponto/actions.ts:importCsvForDriver sobre por que a
+// importacao via planilha oficial pode corrigir um registro vindo da API,
+// mas a API nunca sobrescreve um registro vindo da planilha oficial).
+export async function reconcileDriverDays(
+  companyId: string,
+  driverId: string,
+  driverName: string,
+  days: TiqueTaqueDayEntry[],
+  opts: { fonte: string; origemCorrecao: string; overwritableFontes: string[] }
+): Promise<TiqueTaqueDriverImportResult> {
+  const existingEntries = days.length
+    ? await prisma.timeClockEntry.findMany({
+        where: { companyId, driverId, date: { in: days.map((d) => parseLocalDate(d.date)) } },
+      })
+    : [];
   const existingByDate = new Map(existingEntries.map((e) => [format(e.date, "yyyy-MM-dd"), e]));
 
   const errors: TiqueTaqueImportRowError[] = [];
@@ -81,7 +106,7 @@ export async function importDriverDaysCore(
           intervaloInicio: day.intervaloInicio,
           intervaloFim: day.intervaloFim,
           punches: day.pairs,
-          fonte: "TIQUETAQUE",
+          fonte: opts.fonte,
           hashAtual: hashPontoState({
             clockIn: day.clockIn,
             clockOut: day.clockOut,
@@ -97,14 +122,14 @@ export async function importDriverDaysCore(
       continue;
     }
 
-    if (existing.fonte !== "TIQUETAQUE") {
+    if (!opts.overwritableFontes.includes(existing.fonte ?? "")) {
       errors.push({ driverName, date: day.date, message: "Já existe registro de ponto nesta data — não sobrescrito." });
       continue;
     }
 
-    // Registro ja veio do TiqueTaque antes: se os horarios ou os pares
-    // entrada/saida vieram diferentes desta vez, e porque a correcao foi
-    // feita direto no TiqueTaque — atualiza e guarda o antes/depois em
+    // Registro ja veio de uma fonte sobrescrevivel antes: se os horarios ou
+    // os pares entrada/saida vieram diferentes desta vez, e porque a fonte
+    // trouxe uma correcao — atualiza e guarda o antes/depois em
     // TimeClockCorrection (nunca sobrescreve sem deixar rastro), em vez de
     // reportar como conflito. Compara `punches` tambem (nao so os 4 campos
     // planos) porque uma correcao dentro de uma pausa do meio do dia pode
@@ -117,20 +142,25 @@ export async function importDriverDaysCore(
       existing.intervaloInicio !== day.intervaloInicio ||
       existing.intervaloFim !== day.intervaloFim ||
       punchesKey(existing.punches) !== punchesKey(day.pairs);
+    const fonteChanged = existing.fonte !== opts.fonte;
     if (!changed) {
       // Horario bate, mas o par pode trazer metadado que a importacao
       // original nao capturava ainda (geolocalizacao/tipo de registro,
       // adicionados depois — reimportar um periodo ja importado antes e
-      // como isso e retroativamente preenchido). Atualiza so `punches`,
-      // SEM criar TimeClockCorrection: nao e uma correcao de jornada (a
-      // jornada continua identica), so enriquecimento de um dado que ja
-      // estava certo — registrar isso como "correcao" poluiria o
-      // historico de /ponto/correcoes com entradas que nao mudam nenhum
-      // horario, so a presenca de metadado.
-      if (JSON.stringify(existing.punches) !== JSON.stringify(day.pairs)) {
+      // como isso e retroativamente preenchido), ou a fonte pode ter subido
+      // de hierarquia (ex. API -> planilha oficial, mesmo horario, so
+      // confirmando com uma fonte mais confiavel — precisa persistir isso
+      // pra fonte menos confiavel nao poder mais sobrescrever no futuro).
+      // Atualiza `punches`/`fonte` quando necessario, SEM criar
+      // TimeClockCorrection: nao e uma correcao de jornada (a jornada
+      // continua identica), so enriquecimento — registrar isso como
+      // "correcao" poluiria o historico de /ponto/correcoes com entradas
+      // que nao mudam nenhum horario.
+      const punchesChanged = JSON.stringify(existing.punches) !== JSON.stringify(day.pairs);
+      if (punchesChanged || fonteChanged) {
         await prisma.timeClockEntry.update({
           where: { id: existing.id },
-          data: { punches: day.pairs },
+          data: { ...(punchesChanged ? { punches: day.pairs } : {}), ...(fonteChanged ? { fonte: opts.fonte } : {}) },
         });
       }
       continue;
@@ -166,6 +196,7 @@ export async function importDriverDaysCore(
           intervaloInicio: day.intervaloInicio,
           intervaloFim: day.intervaloFim,
           punches: day.pairs,
+          fonte: opts.fonte,
           hashAtual: hashDepois,
         },
       }),
@@ -175,7 +206,7 @@ export async function importDriverDaysCore(
           driverId,
           entryId: existing.id,
           date: existing.date,
-          origem: "TIQUETAQUE_REIMPORT",
+          origem: opts.origemCorrecao,
           clockInAntes: existing.clockIn,
           clockOutAntes: existing.clockOut,
           intervaloInicioAntes: existing.intervaloInicio,
