@@ -31,11 +31,13 @@ function turno(
 
 const ORIGEM_LABELS: Record<string, string> = {
   TIQUETAQUE_REIMPORT: "TiqueTaque",
+  TIQUETAQUE_CSV_IMPORT: "TiqueTaque (planilha oficial)",
   EDICAO_MANUAL: "Edição manual",
   EXCLUSAO_MANUAL: "Exclusão manual",
 };
 const ORIGEM_TONE: Record<string, string> = {
   TIQUETAQUE_REIMPORT: "bg-blue-100 text-blue-700",
+  TIQUETAQUE_CSV_IMPORT: "bg-indigo-100 text-indigo-700",
   EDICAO_MANUAL: "bg-amber-100 text-amber-700",
   EXCLUSAO_MANUAL: "bg-red-100 text-red-700",
 };
