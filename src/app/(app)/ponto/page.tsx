@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { addDays, addWeeks, format, startOfWeek, subWeeks } from "date-fns";
+import { addDays, addWeeks, format, startOfWeek, subDays, subWeeks } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Clock, History, Plus } from "lucide-react";
 import { requireRole } from "@/lib/auth";
@@ -9,8 +9,10 @@ import PageHeader from "@/components/ui/PageHeader";
 import KpiCard from "@/components/ui/KpiCard";
 import { buildSortHref, nextSortDir } from "@/lib/sort";
 import {
+  findImplausibleDailyTotals,
   findInterjornadaViolations,
   findSuspiciousCrossDayPairs,
+  IMPLAUSIBLE_DAILY_TOTAL_MINUTES,
   overtimeMinutes,
   workedMinutes,
 } from "@/lib/pontoCompliance";
@@ -34,7 +36,7 @@ export default async function PontoPage({
   const prevWeek = format(subWeeks(weekStart, 1), "yyyy-MM-dd");
   const nextWeek = format(addWeeks(weekStart, 1), "yyyy-MM-dd");
 
-  const [drivers, entriesInWeek, entriesForInterjornada] = await Promise.all([
+  const [drivers, entriesInWeek, entriesForInterjornada, entriesForRecurrencia] = await Promise.all([
     prisma.driver.findMany({
       where: { companyId: session.companyId, active: true },
       orderBy: { name: "asc" },
@@ -47,6 +49,12 @@ export default async function PontoPage({
     // violacao de interjornada que comeca no ultimo turno da semana passada.
     prisma.timeClockEntry.findMany({
       where: { companyId: session.companyId, date: { gte: addDays(weekStart, -1), lt: weekEnd } },
+    }),
+    // Lookback de 60 dias so pra decidir, por motorista, se o par curto
+    // cruzando meia-noite e um padrao recorrente (turno duplo real) — ver
+    // comentario em findSuspiciousCrossDayPairs. Nao usado pra exibir nada.
+    prisma.timeClockEntry.findMany({
+      where: { companyId: session.companyId, date: { gte: subDays(weekStart, 60), lt: weekEnd } },
     }),
   ]);
 
@@ -68,11 +76,33 @@ export default async function PontoPage({
   );
   const violatedEntryIds = new Set(violationsInWeek.map((v) => v.nextEntryId));
 
+  // Motoristas com turno duplo habitual (par curto cruzando meia-noite em
+  // 5+ dias nos ultimos 60 dias) nao entram no alerta — ver comentario em
+  // findSuspiciousCrossDayPairs, e RECORRENCIA_TURNO_DUPLO_DIAS abaixo.
+  const RECORRENCIA_TURNO_DUPLO_DIAS = 5;
+  const suspiciousRecurrenceCount = new Map<string, number>();
+  for (const s of findSuspiciousCrossDayPairs(entriesForRecurrencia)) {
+    suspiciousRecurrenceCount.set(s.driverId, (suspiciousRecurrenceCount.get(s.driverId) ?? 0) + 1);
+  }
+  const habitualDoubleShiftDriverIds = new Set(
+    [...suspiciousRecurrenceCount.entries()]
+      .filter(([, count]) => count >= RECORRENCIA_TURNO_DUPLO_DIAS)
+      .map(([driverId]) => driverId)
+  );
+
   // Sinaliza (sem corrigir sozinho) pares curtos cruzando a virada do dia —
   // ver comentario em findSuspiciousCrossDayPairs sobre por que o
   // pareamento do TiqueTaque pode confundir isso com um turno noturno real.
   const suspiciousByEntryId = new Map(
-    findSuspiciousCrossDayPairs(entriesInWeek).map((s) => [s.entryId, s])
+    findSuspiciousCrossDayPairs(entriesInWeek)
+      .filter((s) => !habitualDoubleShiftDriverIds.has(s.driverId))
+      .map((s) => [s.entryId, s])
+  );
+
+  // Sinaliza (sem corrigir sozinho) dias com total implausivel — ver
+  // comentario em findImplausibleDailyTotals.
+  const implausibleEntryIds = new Set(
+    findImplausibleDailyTotals(entriesInWeek).flatMap((d) => d.entryIds)
   );
 
   const dailyLimitByDriver = new Map(drivers.map((d) => [d.id, driverDailyLimitMinutes(d)]));
@@ -334,19 +364,25 @@ export default async function PontoPage({
                             const overtime = overtimeMinutes(worked, limit?.minutes);
                             const violated = violatedEntryIds.has(e.id);
                             const suspicious = suspiciousByEntryId.get(e.id);
+                            const implausible = implausibleEntryIds.has(e.id);
                             const tone = !e.clockOut
                               ? "bg-slate-100 text-slate-500 border border-dashed border-slate-300"
                               : overtime > 0
                                 ? "bg-amber-50 text-amber-800"
                                 : "bg-blue-50 text-blue-800";
+                            const ring = violated
+                              ? "ring-2 ring-red-400"
+                              : implausible
+                                ? "ring-2 ring-orange-400"
+                                : suspicious
+                                  ? "ring-2 ring-purple-400"
+                                  : "";
                             return (
                               <Link
                                 key={e.id}
                                 href={`/ponto/${e.id}`}
                                 prefetch={false}
-                                className={`block rounded-md px-1.5 py-1 text-center text-xs font-medium hover:opacity-80 ${tone} ${
-                                  violated ? "ring-2 ring-red-400" : suspicious ? "ring-2 ring-purple-400" : ""
-                                }`}
+                                className={`block rounded-md px-1.5 py-1 text-center text-xs font-medium hover:opacity-80 ${tone} ${ring}`}
                               >
                                 <span className="block whitespace-nowrap text-[10px]">
                                   {e.clockIn}–{e.clockOut ?? "?"}
@@ -377,6 +413,14 @@ export default async function PontoPage({
                                     title={`Par curto (${formatHoursMinutes(suspicious.minutes)}) cruzando a virada do dia, ${suspicious.entrada}–${suspicious.saida} — pode ser uma marcação mal atribuída pelo pareamento automático do TiqueTaque. Confira contra o extrato oficial antes de confiar neste turno.`}
                                   >
                                     <AlertTriangle className="h-2.5 w-2.5" /> conferir
+                                  </span>
+                                )}
+                                {implausible && (
+                                  <span
+                                    className="mt-0.5 flex items-center justify-center gap-0.5 text-[9px] font-medium text-orange-700"
+                                    title={`Total do dia excede ${formatHoursMinutes(IMPLAUSIBLE_DAILY_TOTAL_MINUTES)} somando todos os registros — prováveis batidas de entrada/saída faltando que o pareamento automático emendou como se fossem 1 turno só. Confira contra o extrato oficial do TiqueTaque.`}
+                                  >
+                                    <AlertTriangle className="h-2.5 w-2.5" /> total implausível
                                   </span>
                                 )}
                               </Link>

@@ -115,6 +115,15 @@ export function waitingMinutes(entry: Pick<PontoEntryLike, "esperaInicio" | "esp
 // (ex. regime 12x36 "18:00 as 06:00") duram bem mais que isso — o limite
 // aqui e deliberadamente curto pra nao marcar turno noturno real como
 // suspeito, so o padrao curto que indicou o bug real.
+//
+// Limitacao conhecida (2026-08-18): motorista com turno duplo genuino (2
+// batidas reais no dia, a 2ª curta e cruzando a meia-noite) dispara esse
+// alerta todo santo dia — casos reais confirmados via GPS/horario das
+// batidas (EDER VALERIO DOS SANTOS, KLEBER FREIRE MONTEIRO). Essa funcao
+// continua reportando toda ocorrencia crua (nao sabe distinguir turno duplo
+// de bug so olhando 1 dia); quem decide o que exibir, considerando
+// recorrencia por motorista num lookback mais largo, e a pagina que chama
+// (ver src/app/(app)/ponto/page.tsx).
 export const SUSPICIOUS_CROSS_DAY_PAIR_MINUTES = 4 * 60;
 
 export type SuspiciousCrossDayPair = {
@@ -147,12 +156,53 @@ export function findSuspiciousCrossDayPairs(
   return results;
 }
 
+// Total diario (somando todos os registros do motorista naquele dia) acima
+// do qual e fisicamente improvavel ser 1 dia de trabalho real, mesmo com
+// turno duplo — sinal de que falta uma batida de saida/entrada em algum
+// lugar e o pareamento automatico emendou 2 periodos como se fossem 1 so.
+// Caso real que motivou isso (2026-08-18): RUBENS BRITO DA SILVA, 04/02/2026
+// — 3 pares normais + um 4º par 19:09->06:17 (11h08, mesma geolocalizacao
+// dos outros, tudo aprovado), somando 21,2h no dia. Esse par fica abaixo do
+// teto de MAX_PLAUSIBLE_SHIFT_MINUTES (14h, em pairing.ts) e acima do teto
+// de SUSPICIOUS_CROSS_DAY_PAIR_MINUTES (4h) — nao pego por nenhum dos dois
+// alertas isoladamente, so fica obvio somando o dia inteiro. So sinaliza,
+// nunca corrige sozinho — nao da pra saber onde a batida faltou.
+export const IMPLAUSIBLE_DAILY_TOTAL_MINUTES = 16 * 60;
+
+export type ImplausibleDailyTotal = {
+  driverId: string;
+  date: Date;
+  entryIds: string[];
+  totalMinutes: number;
+};
+
+export function findImplausibleDailyTotals(
+  entries: (PontoEntryLike & { id: string; driverId: string })[]
+): ImplausibleDailyTotal[] {
+  const byKey = new Map<string, ImplausibleDailyTotal>();
+  for (const entry of entries) {
+    const worked = workedMinutes(entry);
+    if (worked === null) continue;
+    const key = `${entry.driverId}_${entry.date.toISOString().slice(0, 10)}`;
+    const acc = byKey.get(key) ?? { driverId: entry.driverId, date: entry.date, entryIds: [], totalMinutes: 0 };
+    acc.entryIds.push(entry.id);
+    acc.totalMinutes += worked;
+    byKey.set(key, acc);
+  }
+  return [...byKey.values()].filter((v) => v.totalMinutes > IMPLAUSIBLE_DAILY_TOTAL_MINUTES);
+}
+
 // dailyLimitMinutes permite que a jornada normal de um motorista seja
 // estendida por convencao coletiva (Lei 13.103/2015 permite CCT/ACT ampliar
 // a jornada base) — ver src/lib/convencao.ts:driverDailyLimitMinutes.
+// Tolerancia de ponto (art. 58, §1º CLT): variacoes de ate 10min/dia no
+// registro nao sao computadas como hora extra nem descontadas — e um
+// limiar, nao um desconto (mesma logica ja usada em findLatenessEvents):
+// abaixo do limite nao conta nada, acima conta o excedente inteiro.
 export function overtimeMinutes(worked: number | null, dailyLimitMinutes = STANDARD_DAILY_MINUTES) {
   if (worked === null) return 0;
-  return Math.max(0, worked - dailyLimitMinutes);
+  const excess = worked - dailyLimitMinutes;
+  return excess > PONTUALIDADE_TOLERANCIA_MINUTOS ? excess : 0;
 }
 
 export type InterjornadaViolation = {
