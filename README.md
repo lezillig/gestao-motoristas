@@ -29,6 +29,13 @@ Login de demonstração após o seed: `admin@exemplo.com` / `admin123`.
 - `ANTHROPIC_API_KEY` — opcional; habilita a extração assistida por IA das
   regras da convenção coletiva. Sem ela, o cadastro manual de regras
   continua funcionando normalmente.
+- `CRON_SECRET` — segredo dos agendamentos (`Authorization: Bearer <valor>`),
+  usado pela importação diária do TiqueTaque e pelo sincronismo da Ituran.
+- `ITURAN_BASE_URL` + `ITURAN_API_TOKEN` (ou `ITURAN_USERNAME`/
+  `ITURAN_PASSWORD`) — opcionais; ligam a integração de telemetria com a
+  Ituran. Sem elas a tela de Telemetria segue no provedor simulado. As
+  demais variáveis e o que pedir à Ituran estão em
+  [`docs/integracao-ituran.md`](docs/integracao-ituran.md).
 
 ## Deploy
 

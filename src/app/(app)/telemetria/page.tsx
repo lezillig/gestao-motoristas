@@ -2,12 +2,13 @@ import { format } from "date-fns";
 import { AlertTriangle, Gauge, Satellite, Trophy } from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { cardClass, badgeClass, primaryButtonClass } from "@/lib/ui";
+import { cardClass, badgeClass, primaryButtonClass, secondaryButtonClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import SortableTh from "@/components/ui/SortableTh";
 import { getActiveTelemetryProvider } from "@/lib/telemetry";
+import { describeIturanConfig } from "@/lib/ituran/config";
 import { findSpeedAlerts, isSpeeding, SPEED_LIMIT_KMH } from "@/lib/speedCompliance";
-import { generateReadings } from "./actions";
+import { syncTelemetry, testarConexao } from "./actions";
 import type { Prisma } from "@prisma/client";
 
 const SORT_FIELDS = ["vehicle", "speedKmh", "recordedAt"] as const;
@@ -16,11 +17,12 @@ type SortField = (typeof SORT_FIELDS)[number];
 export default async function TelemetriaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ sort?: string; dir?: string }>;
+  searchParams: Promise<{ sort?: string; dir?: string; ok?: string; erro?: string }>;
 }) {
   const session = await requireRole("ADMIN", "GESTOR");
-  const { sort, dir } = await searchParams;
+  const { sort, dir, ok, erro } = await searchParams;
   const provider = getActiveTelemetryProvider();
+  const ituran = describeIturanConfig();
 
   const sortField: SortField = SORT_FIELDS.includes(sort as SortField) ? (sort as SortField) : "recordedAt";
   const sortDir = dir === "asc" ? "asc" : "desc";
@@ -69,24 +71,66 @@ export default async function TelemetriaPage({
     <div className="max-w-6xl">
       <PageHeader title="Telemetria" subtitle="Velocidade e comportamento de direção por veículo." />
 
+      {ok && (
+        <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          {ok}
+        </div>
+      )}
+      {erro && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {erro}
+        </div>
+      )}
+
       <div className={`${cardClass} mb-6 flex flex-wrap items-center justify-between gap-3`}>
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+          <div
+            className={`flex h-9 w-9 items-center justify-center rounded-lg ${
+              provider.live ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"
+            }`}
+          >
             <Satellite className="h-4 w-4" />
           </div>
           <div>
-            <p className="text-sm font-medium text-slate-800">Fornecedor ativo: {provider.name}</p>
+            <p className="flex items-center gap-2 text-sm font-medium text-slate-800">
+              Fornecedor ativo: {provider.name}
+              <span
+                className={`${badgeClass} ${
+                  provider.live ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+                }`}
+              >
+                {provider.live ? "integração real" : "simulado"}
+              </span>
+            </p>
             <p className="text-xs text-slate-500">
-              Sem credenciais da Ituran ainda — leituras simuladas por um adapter que segue a mesma
-              interface do fornecedor real, então trocar para a API da Ituran não muda o resto do produto.
+              {ituran.configured ? (
+                <>
+                  Posições lidas da API da Ituran em {ituran.baseUrl} (autenticação por{" "}
+                  {ituran.authMode === "token" ? "token" : `login de ${ituran.username}`}), casadas com o
+                  cadastro pela placa. O sincronismo é incremental e roda também por agendamento diário.
+                </>
+              ) : (
+                <>
+                  Sem credenciais da Ituran configuradas (ITURAN_BASE_URL + token ou usuário/senha) — as
+                  leituras são simuladas por um adapter que segue a mesma interface do fornecedor real,
+                  então ligar a Ituran não muda o resto do produto.
+                </>
+              )}
             </p>
           </div>
         </div>
-        <form action={generateReadings}>
-          <button type="submit" className={primaryButtonClass}>
-            Gerar leituras simuladas
-          </button>
-        </form>
+        <div className="flex flex-wrap items-center gap-2">
+          <form action={testarConexao}>
+            <button type="submit" className={secondaryButtonClass}>
+              Testar conexão
+            </button>
+          </form>
+          <form action={syncTelemetry}>
+            <button type="submit" className={primaryButtonClass}>
+              {provider.live ? "Sincronizar agora" : "Gerar leituras simuladas"}
+            </button>
+          </form>
+        </div>
       </div>
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -136,14 +180,17 @@ export default async function TelemetriaPage({
                 <SortableTh label="Veículo" field="vehicle" basePath="/telemetria" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <SortableTh label="Velocidade" field="speedKmh" basePath="/telemetria" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <th className="px-4 py-3">Motorista</th>
+                <th className="px-4 py-3">Local</th>
                 <SortableTh label="Registrado em" field="recordedAt" basePath="/telemetria" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
               </tr>
             </thead>
             <tbody>
               {readings.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
-                    Nenhuma leitura ainda. Clique em &quot;Gerar leituras simuladas&quot; para começar.
+                  <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                    Nenhuma leitura ainda. Clique em{" "}
+                    {provider.live ? "“Sincronizar agora”" : "“Gerar leituras simuladas”"} para
+                    começar.
                   </td>
                 </tr>
               )}
@@ -165,6 +212,11 @@ export default async function TelemetriaPage({
                       </span>
                     </td>
                     <td className="px-4 py-3 text-slate-600">{driver?.name ?? "—"}</td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {/* Endereço só vem de fornecedor real; sem ele, mostra a
+                          coordenada crua, que é o que o mock produz. */}
+                      {r.address ?? `${r.latitude.toFixed(4)}, ${r.longitude.toFixed(4)}`}
+                    </td>
                     <td className="px-4 py-3 text-slate-600">{format(r.recordedAt, "dd/MM/yyyy HH:mm")}</td>
                   </tr>
                 );

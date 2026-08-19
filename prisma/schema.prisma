@@ -512,6 +512,9 @@ model VehicleUsageLog {
 // mudar este modelo, so o adapter que grava aqui. Excesso de velocidade e
 // calculado em runtime (src/lib/speedCompliance.ts), nao persistido, no
 // mesmo padrao do motor de conformidade de ponto.
+// Uma linha por posição de rastreador importada do fornecedor de telemetria
+// ativo (ver src/lib/telemetry/index.ts): Ituran quando há credenciais
+// configuradas, provedor simulado enquanto não houver.
 model TelemetryReading {
   id         String   @id @default(cuid())
   companyId  String
@@ -523,8 +526,17 @@ model TelemetryReading {
   longitude  Float
   provider   String
   recordedAt DateTime
+  // Metadado que so um fornecedor real preenche (o simulado deixa nulo).
+  // Hodometro fica aqui e NAO atualiza Vehicle.currentMileage: esse campo e
+  // fechado no checkout de utilizacao (VehicleUsageLog) e alimenta o alerta
+  // de manutencao — deixar duas fontes escrevendo nele criaria divergencia
+  // silenciosa entre o km do rastreador e o km declarado pelo motorista.
+  ignition   Boolean?
+  odometerKm Int?
+  address    String?
   createdAt  DateTime @default(now())
 
+  @@unique([vehicleId, recordedAt, provider])
   @@index([vehicleId, recordedAt])
 }
 
