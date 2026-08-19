@@ -22,6 +22,26 @@ npm run dev
 Requer um `DATABASE_URL` de Postgres em `.env` (ver `.env` para o formato).
 Login de demonstração após o seed: `admin@exemplo.com` / `admin123`.
 
+Testes (não fazem rede, usam `fetch` simulado):
+
+```bash
+npm test
+```
+
+## Integração com o TiqueTaque
+
+O ponto, os afastamentos e o cadastro de motoristas são sincronizados do
+TiqueTaque, o sistema de ponto eletrônico oficial da empresa. A API v2.1
+deles não tem documentação pública — o que já foi confirmado (endpoints que
+existem, endpoints que **não** existem, limite de taxa e armadilhas reais)
+está em [`docs/tiquetaque-api.md`](docs/tiquetaque-api.md).
+
+Para descobrir quais recursos a API expõe, sem tentativa e erro manual:
+
+```bash
+npm run tiquetaque:discover
+```
+
 ## Variáveis de ambiente em produção
 
 - `DATABASE_URL` — string de conexão Postgres (Neon, Supabase, Vercel Postgres, etc.)
@@ -29,6 +49,15 @@ Login de demonstração após o seed: `admin@exemplo.com` / `admin123`.
 - `ANTHROPIC_API_KEY` — opcional; habilita a extração assistida por IA das
   regras da convenção coletiva. Sem ela, o cadastro manual de regras
   continua funcionando normalmente.
+- `TIQUETAQUE_API_TOKEN` — token da API do TiqueTaque. Sem ela, as telas de
+  importação ficam indisponíveis e o cron diário não roda.
+- `CRON_SECRET` — segredo do `Authorization: Bearer` da importação diária
+  D-1 agendada no `vercel.json`.
+- `TIQUETAQUE_ALLOW_WRITES` — opcional, **desligada por padrão**. Só com
+  `=1` o sistema pode escrever no TiqueTaque (criar/ajustar afastamento ou
+  batida). O TiqueTaque é a fonte oficial do ponto eletrônico, e registro de
+  ponto tem valor probatório: uma escrita errada altera a jornada legal de
+  um funcionário real na fonte. Ver `docs/tiquetaque-api.md`.
 
 ## Deploy
 

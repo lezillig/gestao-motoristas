@@ -51,6 +51,67 @@ export type TiqueTaquePunchPair = {
   saidaType?: string | null;
 };
 
+// Uma batida CRUA do TiqueTaque, como GET /times devolve, sem o pareamento
+// entrada/saida de pairing.ts. Existe porque o pareamento e lossy de
+// proposito (agrupa em dias e descarta o que nao vira par) e algumas
+// perguntas so podem ser respondidas com a batida individual: qual foi a
+// justificativa de uma marcacao invalidada, quais batidas ainda estao
+// pendentes de aprovacao, qual foi a marcacao exata reprovada numa auditoria.
+// `justification` e o texto que o TiqueTaque guarda ao invalidar uma batida
+// (ex.: "Duplicidade de registro", "DUPLICADO") — confirmado real na mesma
+// investigacao que descobriu `type: "desconsiderado"` (ver pairing.ts).
+export type TiqueTaqueRawPunch = {
+  id: string | null;
+  employeeId: string | null;
+  /** Datetime completo como veio ("AAAA-MM-DDTHH:mm:ss..."). */
+  time: string;
+  approved: boolean;
+  location: TiqueTaqueLocation | null;
+  /** "app", "desconsiderado", etc. — texto cru, nao normalizado. */
+  type: string | null;
+  justification: string | null;
+};
+
+// Departamento ("unidade de alocacao" na UI) com quantos funcionarios ativos
+// ele tem. NAO vem de um endpoint proprio: e agregado de
+// contract_data.department dos funcionarios. A API publica v2.1 nao expoe
+// colecao de departamentos — o que existe e esse texto livre por
+// funcionario. Ver docs/tiquetaque-api.md.
+export type TiqueTaqueDepartment = {
+  name: string;
+  employeeCount: number;
+};
+
+// Empregador legal (razao social de um dos CNPJs reais da empresa), vindo de
+// GET /payment-sources, com a contagem de funcionarios ativos vinculados.
+export type TiqueTaqueEmployer = {
+  id: string;
+  name: string;
+  employeeCount: number;
+};
+
+// Campos aceitos ao criar/ajustar um afastamento (POST/PATCH /work-leaves).
+export type TiqueTaqueLeaveInput = {
+  employeeId: string;
+  leaveType: string;
+  /** AAAA-MM-DD */
+  startDate: string;
+  /** AAAA-MM-DD */
+  endDate: string;
+  details?: string | null;
+  paidLeave?: boolean;
+};
+
+// Campos aceitos ao criar/ajustar uma batida (POST/PATCH /times).
+export type TiqueTaquePunchInput = {
+  employeeId: string;
+  /** Datetime completo, ex. "2026-08-19T07:03:00+00:00". */
+  time: string;
+  approved?: boolean;
+  location?: TiqueTaqueLocation | null;
+  justification?: string | null;
+};
+
 // Um dia de trabalho ja pareado a partir das batidas avulsas do TiqueTaque
 // (o endpoint /times devolve batidas soltas, nao pares entrada/saida). Um
 // dia pode ter mais de 1 par (mais de uma pausa) — `pairs` guarda todos,

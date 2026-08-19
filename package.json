@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "postinstall": "prisma generate",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "tiquetaque:discover": "tsx scripts/tiquetaque-discover.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.70.0",
