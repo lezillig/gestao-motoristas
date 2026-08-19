@@ -93,6 +93,7 @@ model Company {
   timeClockCorrections TimeClockCorrection[]
   driverLeaves      DriverLeave[]
   clientes          Cliente[]
+  sofitSyncLogs     SofitSyncLog[]
 }
 
 model User {
@@ -634,4 +635,42 @@ model FuelConsumptionSummary {
 
   @@unique([companyId, placaOriginal, contrato, tipoCombustivel, periodoInicio, periodoFim, ultimoKmOuHora])
   @@index([companyId, periodoInicio])
+}
+
+// ---------- Integracao Sofit (gestao de frota) ----------
+// Uma linha por entidade sincronizada por execucao (uma sincronizacao de
+// "Veiculos + Abastecimentos" grava 2 linhas). Serve a tres coisas
+// concretas: mostrar na tela de integracoes quando foi a ultima
+// sincronizacao bem-sucedida de cada entidade, dar rastro de auditoria do
+// que mudou no cadastro por conta de dado vindo de fora, e servir de marco
+// pra sincronizacao incremental (o cron busca desde a ultima execucao com
+// sucesso, nao desde sempre). Deliberadamente sem FK pro usuario: origem
+// CRON/WEBHOOK nao tem usuario, e guardar so o id evita bloquear a exclusao
+// de um usuario por causa de log de integracao.
+model SofitSyncLog {
+  id            String    @id @default(cuid())
+  companyId     String
+  company       Company   @relation(fields: [companyId], references: [id])
+  // VEICULOS | ABASTECIMENTOS | MANUTENCOES | ODOMETRO (ver SOFIT_ENTITIES
+  // em src/lib/sofit/types.ts). Texto, nao enum, pelo mesmo motivo de
+  // DriverLeave.leaveType: entidade nova nao deve exigir migracao de enum.
+  entidade      String
+  // MANUAL (tela de integracoes) | CRON (agendado) | WEBHOOK (push do Sofit)
+  origem        String
+  periodoInicio DateTime?
+  periodoFim    DateTime?
+  lidos         Int       @default(0)
+  criados       Int       @default(0)
+  atualizados   Int       @default(0)
+  ignorados     Int       @default(0)
+  sucesso       Boolean   @default(true)
+  // Avisos e erros da execucao, ja truncados (ver MAX_MENSAGENS_LOG em
+  // src/lib/sofit/importCore.ts) — um lote com 3 mil itens invalidos nao
+  // pode virar uma linha de log de megabytes.
+  mensagens     Json?
+  duracaoMs     Int?
+  executadoPor  String?
+  createdAt     DateTime  @default(now())
+
+  @@index([companyId, entidade, createdAt])
 }
