@@ -7,7 +7,7 @@ import PageHeader from "@/components/ui/PageHeader";
 import SortableTh from "@/components/ui/SortableTh";
 import { getActiveTelemetryProvider } from "@/lib/telemetry";
 import { findSpeedAlerts, isSpeeding, SPEED_LIMIT_KMH } from "@/lib/speedCompliance";
-import { generateReadings } from "./actions";
+import { sincronizarTelemetria } from "./actions";
 import type { Prisma } from "@prisma/client";
 
 const SORT_FIELDS = ["vehicle", "speedKmh", "recordedAt"] as const;
@@ -16,10 +16,22 @@ type SortField = (typeof SORT_FIELDS)[number];
 export default async function TelemetriaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ sort?: string; dir?: string }>;
+  searchParams: Promise<{
+    sort?: string;
+    dir?: string;
+    sync?: string;
+    criadas?: string;
+    repetidas?: string;
+    vinculos?: string;
+    semCadastro?: string;
+    inativos?: string;
+    semPosicao?: string;
+    mensagem?: string;
+  }>;
 }) {
   const session = await requireRole("ADMIN", "GESTOR");
-  const { sort, dir } = await searchParams;
+  const { sort, dir, sync, criadas, repetidas, vinculos, semCadastro, inativos, semPosicao, mensagem } =
+    await searchParams;
   const provider = getActiveTelemetryProvider();
 
   const sortField: SortField = SORT_FIELDS.includes(sort as SortField) ? (sort as SortField) : "recordedAt";
@@ -31,7 +43,7 @@ export default async function TelemetriaPage({
         ? { speedKmh: sortDir }
         : { recordedAt: sortDir };
 
-  const [readings, usageLogs] = await Promise.all([
+  const [readings, usageLogs, veiculosAtivos, veiculosVinculados, ultimaLeitura] = await Promise.all([
     prisma.telemetryReading.findMany({
       where: { companyId: session.companyId },
       include: { vehicle: true },
@@ -41,6 +53,20 @@ export default async function TelemetriaPage({
     prisma.vehicleUsageLog.findMany({
       where: { companyId: session.companyId },
       include: { driver: true },
+    }),
+    prisma.vehicle.count({
+      where: { companyId: session.companyId, status: { not: "INATIVO" } },
+    }),
+    prisma.vehicle.count({
+      where: { companyId: session.companyId, status: { not: "INATIVO" }, cobliDeviceId: { not: null } },
+    }),
+    // Ultima leitura GRAVADA (createdAt), nao a mais recente por horario do
+    // GPS (recordedAt): o que esta linha responde e "quando foi a ultima
+    // sincronizacao", nao "qual a posicao mais nova".
+    prisma.telemetryReading.findFirst({
+      where: { companyId: session.companyId },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true, provider: true },
     }),
   ]);
 
@@ -69,22 +95,67 @@ export default async function TelemetriaPage({
     <div className="max-w-6xl">
       <PageHeader title="Telemetria" subtitle="Velocidade e comportamento de direção por veículo." />
 
+      {sync === "ok" && (
+        <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          Sincronização concluída: {criadas ?? 0} leitura(s) nova(s), {repetidas ?? 0} posição(ões) sem
+          mudança desde a última sincronização
+          {Number(vinculos ?? 0) > 0 && `, ${vinculos} veículo(s) vinculado(s) ao rastreador pela primeira vez`}.
+          {(Number(semCadastro ?? 0) > 0 || Number(inativos ?? 0) > 0 || Number(semPosicao ?? 0) > 0) && (
+            <span className="mt-1 block text-xs">
+              Rastreadores que não viraram leitura:
+              {Number(semCadastro ?? 0) > 0 && ` ${semCadastro} sem veículo correspondente no cadastro;`}
+              {Number(inativos ?? 0) > 0 && ` ${inativos} em veículo marcado como inativo;`}
+              {Number(semPosicao ?? 0) > 0 && ` ${semPosicao} sem posição reportada.`}
+            </span>
+          )}
+        </div>
+      )}
+      {sync === "erro" && (
+        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {/* Truncado: a mensagem vem da query string (a acao redireciona com
+              ela), entao qualquer link pode injetar texto aqui. O React ja
+              escapa o conteudo — o corte e so pra ninguem conseguir despejar
+              um texto enorme dentro do aviso. */}
+          {(mensagem ?? "Falha ao sincronizar a telemetria.").slice(0, 300)}
+        </div>
+      )}
+
       <div className={`${cardClass} mb-6 flex flex-wrap items-center justify-between gap-3`}>
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
             <Satellite className="h-4 w-4" />
           </div>
           <div>
-            <p className="text-sm font-medium text-slate-800">Fornecedor ativo: {provider.name}</p>
-            <p className="text-xs text-slate-500">
-              Sem credenciais da Ituran ainda — leituras simuladas por um adapter que segue a mesma
-              interface do fornecedor real, então trocar para a API da Ituran não muda o resto do produto.
+            <p className="text-sm font-medium text-slate-800">
+              Fornecedor ativo: {provider.name}
+              {!provider.real && (
+                <span className={`${badgeClass} ml-2 bg-amber-100 text-amber-800`}>dados simulados</span>
+              )}
             </p>
+            <p className="text-xs text-slate-500">
+              {provider.real ? (
+                <>
+                  Posições e velocidade vêm da API da Cobli. {veiculosVinculados} de {veiculosAtivos} veículo(s)
+                  ativo(s) já estão vinculados a um rastreador — o vínculo é gravado automaticamente na primeira
+                  vez que a placa casa.
+                </>
+              ) : (
+                <>
+                  Sem COBLI_API_KEY configurada — leituras simuladas por um adapter que segue a mesma interface do
+                  fornecedor real, então ligar a Cobli não muda o resto do produto.
+                </>
+              )}
+            </p>
+            {ultimaLeitura && (
+              <p className="mt-0.5 text-xs text-slate-400">
+                Última sincronização: {format(ultimaLeitura.createdAt, "dd/MM/yyyy HH:mm")} ({ultimaLeitura.provider})
+              </p>
+            )}
           </div>
         </div>
-        <form action={generateReadings}>
+        <form action={sincronizarTelemetria}>
           <button type="submit" className={primaryButtonClass}>
-            Gerar leituras simuladas
+            {provider.real ? "Sincronizar com a Cobli" : "Gerar leituras simuladas"}
           </button>
         </form>
       </div>
@@ -143,7 +214,7 @@ export default async function TelemetriaPage({
               {readings.length === 0 && (
                 <tr>
                   <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
-                    Nenhuma leitura ainda. Clique em &quot;Gerar leituras simuladas&quot; para começar.
+                    Nenhuma leitura ainda. Use o botão acima para sincronizar.
                   </td>
                 </tr>
               )}

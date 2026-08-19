@@ -52,6 +52,25 @@ export async function updateVehicle(id: string, formData: FormData) {
   redirect("/cadastros/veiculos");
 }
 
+// Desfaz o vinculo com o rastreador da Cobli. Necessario quando o
+// equipamento troca de veiculo: a sincronizacao nunca reescreve um vinculo
+// existente sozinha (ver src/lib/telemetry/sync.ts), entao sem isto o
+// rastreador continuaria alimentando o veiculo errado — e o indice unico
+// impediria de vincula-lo ao veiculo certo. Depois de desvincular, a
+// proxima sincronizacao casa de novo pela placa.
+export async function desvincularRastreadorCobli(id: string) {
+  const session = await requireRole("ADMIN", "GESTOR");
+
+  await prisma.vehicle.update({
+    where: { id, companyId: session.companyId },
+    data: { cobliDeviceId: null },
+  });
+
+  revalidatePath(`/cadastros/veiculos/${id}`);
+  revalidatePath("/telemetria");
+  redirect(`/cadastros/veiculos/${id}`);
+}
+
 export type ImportRowError = { row: number; message: string };
 export type ImportResult = { created: number; errors: ImportRowError[] };
 export type ImportState = { error?: string; result?: ImportResult };

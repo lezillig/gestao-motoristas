@@ -272,6 +272,16 @@ model Vehicle {
   year      Int
   type      String
   status    VehicleStatus @default(ATIVO)
+  // Id do rastreador deste veiculo na Cobli (fornecedor de telemetria) —
+  // mesma ideia do tiquetaqueId em DriverLeave: guarda a chave estavel do
+  // sistema de origem pra nao depender de casar por texto toda vez. Nulo
+  // ate a primeira sincronizacao casar a placa; a partir dai o casamento e
+  // por este id, entao corrigir a placa no cadastro nao quebra a telemetria.
+  // Unico porque um rastreador nao pode estar em dois veiculos ao mesmo
+  // tempo — trocar o equipamento de veiculo exige desvincular aqui primeiro
+  // (botao na tela do veiculo), de proposito: a sincronizacao nunca
+  // reescreve um vinculo existente sozinha, ver src/lib/telemetry/sync.ts.
+  cobliDeviceId String? @unique
   // Atualizado a cada encerramento de VehicleUsageLog (checkout com km final).
   currentMileage         Int @default(0)
   // Marca o km em que a ultima manutencao foi registrada; a diferenca para
