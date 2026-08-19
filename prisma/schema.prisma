@@ -66,6 +66,22 @@ enum EscalaSemanal {
   CINCO_DOIS
 }
 
+// Titulo financeiro vindo do Omie: RECEBER = contas a receber (faturamento
+// do contrato de fretamento), PAGAR = contas a pagar (custo). Os dois vem
+// de endpoints diferentes da API do Omie mas tem a mesma forma, por isso
+// dividem a mesma tabela (ver model OmieLancamento).
+enum OmieTipoLancamento {
+  RECEBER
+  PAGAR
+}
+
+// Recurso do Omie sincronizado por uma execucao (ver model OmieSyncLog).
+enum OmieRecurso {
+  CLIENTES
+  CONTAS_RECEBER
+  CONTAS_PAGAR
+}
+
 // ---------- Multi-tenant: empresa/cliente ----------
 // Mesmo desenho do Sistema Agendamento (ver memoria design-system-agendamento):
 // cada empresa e um tenant isolado. Fase 2 roda com uma unica empresa, mas o
@@ -93,6 +109,8 @@ model Company {
   timeClockCorrections TimeClockCorrection[]
   driverLeaves      DriverLeave[]
   clientes          Cliente[]
+  omieLancamentos   OmieLancamento[]
+  omieSyncLogs      OmieSyncLog[]
 }
 
 model User {
@@ -109,6 +127,7 @@ model User {
 
   driver             Driver?
   convencoesEnviadas ConvencaoColetiva[]
+  omieSyncsExecutados OmieSyncLog[]
 }
 
 // ---------- Sindicato / Convencao Coletiva (base para MOD.06, futuro) ----------
@@ -158,12 +177,36 @@ model Cliente {
   // cliente so fica de fora dessa checagem especifica, sem quebrar nada.
   latitude  Float?
   longitude Float?
+  // ---- Vinculo com o cadastro de clientes do Omie (ERP financeiro) ----
+  // `codigo_cliente_omie` e a chave estavel de la; guardado como String (e um
+  // inteiro grande no Omie, mas nada aqui faz aritmetica com ele — String
+  // evita BigInt, que o Next nao serializa de Server Component pra cliente).
+  // Nulo = cliente criado a mao ou pela importacao da planilha de centro de
+  // custo, ainda sem par no Omie. O vinculo e feito por CNPJ/CPF quando
+  // possivel e so cai pra nome normalizado como ultimo recurso — ver
+  // src/lib/omie/sync.ts. Unico por empresa (@@unique abaixo), nao global:
+  // cada tenant tem sua propria conta Omie, e nada garante que o codigo 1234
+  // de uma seja o mesmo cliente da outra.
+  omieCodigoCliente String?
+  // CNPJ/CPF so digitos (normalizado) — chave de casamento com o Omie, e dado
+  // util por si so no cadastro. Preenchido pelo sync ou manualmente.
+  cnpjCpf   String?
+  // Razao social e nome fantasia crus do Omie, preservados pra auditoria do
+  // vinculo (o `nome` local nao e sobrescrito pelo sync: quem manda no rotulo
+  // exibido e o cadastro daqui, que costuma usar o apelido operacional do
+  // contrato — ex. "FEMSA Jundiai" — e nao a razao social completa).
+  omieRazaoSocial  String?
+  omieNomeFantasia String?
+  omieSyncedAt     DateTime?
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  drivers Driver[]
+  drivers         Driver[]
+  omieLancamentos OmieLancamento[]
 
   @@unique([companyId, nome])
+  @@unique([companyId, omieCodigoCliente])
+  @@index([companyId, cnpjCpf])
 }
 
 // ---------- Motorista ----------
@@ -634,4 +677,116 @@ model FuelConsumptionSummary {
 
   @@unique([companyId, placaOriginal, contrato, tipoCombustivel, periodoInicio, periodoFim, ultimoKmOuHora])
   @@index([companyId, periodoInicio])
+}
+// ---------- Integracao Omie (ERP financeiro) ----------
+// Titulo financeiro espelhado do Omie (contas a receber e a pagar, mesma
+// forma, endpoints diferentes — ver src/lib/omie/financeiro.ts). Espelho de
+// LEITURA: este sistema nunca escreve no Omie, quem manda no dado financeiro
+// continua sendo o ERP. O valor de trazer isso pra ca e cruzar receita por
+// cliente/contrato com o custo de mao de obra que o sistema ja calcula
+// (hora extra estrutural por cliente, ver Cliente e src/lib/pontoCompliance.ts)
+// — comparacao que hoje ninguem consegue fazer sem exportar planilha dos dois
+// lados.
+//
+// Valores em centavos (Int) pelo mesmo motivo do resto do schema (valorCents
+// em FuelTransaction, valorHoraCents em Driver): a API do Omie devolve float
+// e float nao fecha centavo em soma de milhares de titulos.
+model OmieLancamento {
+  id                          String             @id @default(cuid())
+  companyId                   String
+  company                     Company            @relation(fields: [companyId], references: [id])
+  tipo                        OmieTipoLancamento
+  // `codigo_lancamento_omie` — chave estavel do titulo no Omie, criterio de
+  // duplicata do sync (mesma filosofia de codigoTransacao em FuelTransaction
+  // e tiquetaqueId em DriverLeave). E unico por tipo, nao globalmente: um
+  // titulo a pagar e um a receber podem ter o mesmo numero.
+  omieCodigoLancamento        String
+  // Cliente local vinculado — nulo quando o cliente/fornecedor do titulo nao
+  // tem par no cadastro daqui (fornecedores, na pratica, quase nunca tem).
+  // Mesma filosofia de FuelTransaction: o titulo e importado do mesmo jeito
+  // (visibilidade financeira antes de vinculo estrito) e os campos crus
+  // abaixo preservam a identidade da outra ponta pra auditoria.
+  clienteId                   String?
+  cliente                     Cliente?           @relation(fields: [clienteId], references: [id])
+  omieCodigoClienteFornecedor String?
+  nomeClienteFornecedor       String?
+  cnpjCpfClienteFornecedor    String?
+
+  numeroDocumento    String?
+  // Categoria/departamento/projeto do Omie (codigos crus). Departamento no
+  // Omie e o centro de custo do ERP — NAO e o Driver.departamento vindo do
+  // TiqueTaque (que e granularidade de rota); nomes iguais, dominios
+  // diferentes, por isso nada aqui tenta casar os dois automaticamente.
+  codigoCategoria    String?
+  codigoDepartamento String?
+  codigoProjeto      String?
+
+  dataEmissao    DateTime?
+  dataVencimento DateTime
+  // Data da baixa (pagamento/recebimento efetivo). Nula enquanto em aberto.
+  dataPagamento  DateTime?
+  valorCents     Int
+  valorPagoCents Int?
+  // `status_titulo` cru do Omie ("ATRASADO", "A VENCER", "RECEBIDO", "PAGO",
+  // "CANCELADO"...) — texto livre, nao enum, pra nao precisar de migration
+  // quando o ERP introduzir um status novo (mesmo padrao ja usado em
+  // TimeClockEntry.fonte e TimeClockCorrection.origem).
+  status         String?
+  observacao     String?
+  // Ultima vez que o sync tocou esta linha — um titulo pode mudar no Omie
+  // depois de importado (baixa, cancelamento, alteracao de valor) e o sync
+  // reescreve o registro; este campo diz quao fresco o espelho esta.
+  syncedAt       DateTime  @default(now())
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([companyId, tipo, omieCodigoLancamento])
+  @@index([companyId, dataVencimento])
+  @@index([clienteId, dataVencimento])
+}
+
+// Historico de execucoes do sync com o Omie — uma linha por recurso por
+// execucao (manual ou cron). Existe pelo mesmo motivo de TimeClockCorrection
+// existir: quando um numero financeiro aparece diferente do ERP, a primeira
+// pergunta e "quando isso foi sincronizado pela ultima vez e o que entrou",
+// e sem registro a resposta e chute. Tambem e o que a tela /integracoes usa
+// pra mostrar o estado da integracao sem chamar a API do Omie a cada
+// carregamento de pagina (a API tem bloqueio por consumo indevido — ver
+// src/lib/omie/client.ts).
+model OmieSyncLog {
+  id                 String      @id @default(cuid())
+  companyId          String
+  company            Company     @relation(fields: [companyId], references: [id])
+  recurso            OmieRecurso
+  // "MANUAL" | "CRON" — texto livre pelo mesmo motivo dos demais campos de
+  // origem do schema.
+  origem             String      @default("MANUAL")
+  executadoPorUserId String?
+  executadoPor       User?       @relation(fields: [executadoPorUserId], references: [id])
+  // Janela consultada, quando o recurso aceita filtro por data (contas a
+  // pagar/receber). Nula pro sync de clientes, que e sempre integral.
+  periodoInicio      DateTime?
+  periodoFim         DateTime?
+
+  criados      Int     @default(0)
+  atualizados  Int     @default(0)
+  // Registros lidos do Omie que nao viraram/atualizaram linha nenhuma aqui
+  // (ex.: cliente do Omie sem par no cadastro local e sem criacao automatica).
+  ignorados    Int     @default(0)
+  paginasLidas Int     @default(0)
+  // A leitura parou antes do fim por falta de orcamento de tempo (teto de 60s
+  // da funcao na Vercel). Nao e erro — o que entrou esta correto, so esta
+  // incompleto — mas precisa aparecer no historico, senao uma execucao parcial
+  // passa por completa e a proxima pergunta ("por que falta titulo de maio?")
+  // fica sem resposta.
+  interrompido Boolean @default(false)
+  // Mensagem de erro quando a execucao falhou no meio — a linha e gravada
+  // do mesmo jeito, com os contadores do que ja tinha entrado antes da
+  // falha (o sync grava incrementalmente, nao numa transacao unica).
+  erro         String?
+
+  iniciadoEm  DateTime  @default(now())
+  concluidoEm DateTime?
+
+  @@index([companyId, iniciadoEm])
 }

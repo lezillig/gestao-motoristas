@@ -26,6 +26,7 @@ import {
   Scale,
   FlaskConical,
   Building2,
+  Plug,
 } from "lucide-react";
 
 type NavItem = {
@@ -104,6 +105,13 @@ const NAV: NavItem[] = [
     label: "Combustível",
     icon: Fuel,
     roles: ["ADMIN", "GESTOR"],
+  },
+  {
+    href: "/integracoes",
+    label: "Integrações",
+    icon: Plug,
+    roles: ["ADMIN", "GESTOR"],
+    children: [{ href: "/integracoes/omie", label: "Omie", icon: Landmark }],
   },
   {
     href: "/usuarios",
