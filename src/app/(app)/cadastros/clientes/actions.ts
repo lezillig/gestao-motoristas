@@ -17,6 +17,8 @@ const schema = z.object({
     .string()
     .regex(/^\d{2}:\d{2}$/)
     .optional(),
+  latitude: z.coerce.number().min(-90).max(90).optional(),
+  longitude: z.coerce.number().min(-180).max(180).optional(),
 });
 
 function parseClienteForm(formData: FormData) {
@@ -24,6 +26,8 @@ function parseClienteForm(formData: FormData) {
     nome: formData.get("nome"),
     horarioInicioContratado: formData.get("horarioInicioContratado") || undefined,
     horarioFimContratado: formData.get("horarioFimContratado") || undefined,
+    latitude: formData.get("latitude") || undefined,
+    longitude: formData.get("longitude") || undefined,
   });
 }
 

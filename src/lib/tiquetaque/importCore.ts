@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { parseLocalDate } from "@/lib/date";
 import { fetchEmployeeDays } from "@/lib/tiquetaque/client";
 import { hashPontoState } from "@/lib/integrity";
-import type { TiqueTaqueDayEntry } from "@/lib/tiquetaque/types";
+import type { TiqueTaqueDayEntry, TiqueTaquePunchPair } from "@/lib/tiquetaque/types";
 
 export type TiqueTaqueImportRowError = { driverName: string; date?: string; message: string };
 export type TiqueTaqueDriverImportResult = {
@@ -27,6 +27,31 @@ function punchesKey(value: unknown): string {
       return `${entrada ?? ""}|${saida ?? ""}`;
     })
     .join(",");
+}
+
+// Copia geolocalizacao/tipo de registro de pares antigos pra pares novos com
+// o MESMO entrada/saida — nunca inventa location pra um par que mudou de
+// horario de verdade. Existe porque a planilha oficial (CSV) nunca traz essa
+// metadata (so a API de batidas avulsas traz), entao sem isso qualquer
+// reimportacao via planilha apagaria silenciosamente location ja capturada
+// antes por uma importacao via API, mesmo quando o horario real nao mudou —
+// achado real (2026-08-19) depois de rodar a importacao da planilha em
+// producao. So preenche o que o par novo ainda nao tem (nunca sobrescreve).
+function mergeLocationMetadata(newPairs: TiqueTaquePunchPair[], existingPunchesRaw: unknown): TiqueTaquePunchPair[] {
+  if (!Array.isArray(existingPunchesRaw) || existingPunchesRaw.length === 0) return newPairs;
+  const oldPairs = existingPunchesRaw as Partial<TiqueTaquePunchPair>[];
+  return newPairs.map((p) => {
+    if (p.entradaLocation || p.saidaLocation) return p; // ja tem, nao mexe
+    const match = oldPairs.find((old) => old.entrada === p.entrada && (old.saida ?? null) === (p.saida ?? null));
+    if (!match) return p;
+    return {
+      ...p,
+      entradaLocation: match.entradaLocation ?? p.entradaLocation,
+      saidaLocation: match.saidaLocation ?? p.saidaLocation,
+      entradaType: match.entradaType ?? p.entradaType,
+      saidaType: match.saidaType ?? p.saidaType,
+    };
+  });
 }
 
 // Nucleo da importacao por motorista, sem checagem de sessao/autorizacao —
@@ -127,6 +152,12 @@ export async function reconcileDriverDays(
       continue;
     }
 
+    // Preenche geolocalizacao/tipo de registro nos pares novos a partir dos
+    // pares antigos, quando entrada/saida batem — ver mergeLocationMetadata.
+    // Dali pra frente do loop, `pairs` (nao `day.pairs`) e o que deve ser
+    // comparado/gravado.
+    const pairs = mergeLocationMetadata(day.pairs, existing.punches);
+
     // Registro ja veio de uma fonte sobrescrevivel antes: se os horarios ou
     // os pares entrada/saida vieram diferentes desta vez, e porque a fonte
     // trouxe uma correcao — atualiza e guarda o antes/depois em
@@ -141,7 +172,7 @@ export async function reconcileDriverDays(
       existing.clockOut !== day.clockOut ||
       existing.intervaloInicio !== day.intervaloInicio ||
       existing.intervaloFim !== day.intervaloFim ||
-      punchesKey(existing.punches) !== punchesKey(day.pairs);
+      punchesKey(existing.punches) !== punchesKey(pairs);
     const fonteChanged = existing.fonte !== opts.fonte;
     if (!changed) {
       // Horario bate, mas o par pode trazer metadado que a importacao
@@ -156,11 +187,11 @@ export async function reconcileDriverDays(
       // continua identica), so enriquecimento — registrar isso como
       // "correcao" poluiria o historico de /ponto/correcoes com entradas
       // que nao mudam nenhum horario.
-      const punchesChanged = JSON.stringify(existing.punches) !== JSON.stringify(day.pairs);
+      const punchesChanged = JSON.stringify(existing.punches) !== JSON.stringify(pairs);
       if (punchesChanged || fonteChanged) {
         await prisma.timeClockEntry.update({
           where: { id: existing.id },
-          data: { ...(punchesChanged ? { punches: day.pairs } : {}), ...(fonteChanged ? { fonte: opts.fonte } : {}) },
+          data: { ...(punchesChanged ? { punches: pairs } : {}), ...(fonteChanged ? { fonte: opts.fonte } : {}) },
         });
       }
       continue;
@@ -182,7 +213,7 @@ export async function reconcileDriverDays(
       intervaloFim: day.intervaloFim,
       esperaInicio: existing.esperaInicio,
       esperaFim: existing.esperaFim,
-      punches: day.pairs,
+      punches: pairs,
     };
     const hashAntes = existing.hashAtual ?? hashPontoState(stateAntes);
     const hashDepois = hashPontoState(stateDepois);
@@ -195,7 +226,7 @@ export async function reconcileDriverDays(
           clockOut: day.clockOut,
           intervaloInicio: day.intervaloInicio,
           intervaloFim: day.intervaloFim,
-          punches: day.pairs,
+          punches: pairs,
           fonte: opts.fonte,
           hashAtual: hashDepois,
         },
@@ -216,7 +247,7 @@ export async function reconcileDriverDays(
           clockOutDepois: day.clockOut,
           intervaloInicioDepois: day.intervaloInicio,
           intervaloFimDepois: day.intervaloFim,
-          punchesDepois: day.pairs,
+          punchesDepois: pairs,
           hashAntes,
           hashDepois,
         },

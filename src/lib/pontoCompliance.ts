@@ -1,4 +1,5 @@
 import { durationMinutes, toMinutes } from "@/lib/time";
+import { distanceMeters, median, type LatLon } from "@/lib/geo";
 
 // Lei 13.103/2015 (Lei do Motorista), art. 235-C: jornada padrao de 8h/dia.
 export const STANDARD_DAILY_MINUTES = 8 * 60;
@@ -472,4 +473,120 @@ export function findAbsences(escalas: EscalaLike[], entries: PontoEntryLike[]): 
     absences.push({ driverId: escala.driverId, date: escala.date });
   }
   return absences;
+}
+
+// Geolocalizacao das marcacoes (2026-08-19) — so sinaliza, nunca corrige
+// sozinho, mesmo espirito de findSuspiciousCrossDayPairs. Todos os 3
+// detectores abaixo dependem de entradaLocation/saidaLocation em `punches`
+// (so existe quando a batida veio da API do TiqueTaque via app com GPS —
+// ver comentario em PunchPair acima; nunca existe pra lancamento manual nem
+// pra importacao via planilha oficial/CSV).
+export const CLIENT_LOCATION_DIVERGENCE_METERS = 500;
+export const ENTRADA_SAIDA_DIVERGENCE_METERS = 2000;
+export const DRIVER_LOCATION_OUTLIER_METERS = 1000;
+const DRIVER_LOCATION_OUTLIER_MIN_SAMPLES = 5;
+
+export type ClientLocationDivergence = {
+  entryId: string;
+  driverId: string;
+  date: Date;
+  marco: "entrada" | "saida";
+  distanceMeters: number;
+};
+
+// Compara cada batida (entrada e saida, separadamente) contra o local
+// esperado do cliente vinculado ao motorista (Cliente.latitude/longitude) —
+// so verifica motoristas com cliente vinculado E cliente com coordenadas
+// cadastradas, o resto fica de fora silenciosamente (sem erro).
+export function findClientLocationDivergences(
+  entries: (PontoEntryLike & { id: string; driverId: string })[],
+  clienteLocationByDriverId: Map<string, LatLon>
+): ClientLocationDivergence[] {
+  const results: ClientLocationDivergence[] = [];
+  for (const entry of entries) {
+    const clienteLoc = clienteLocationByDriverId.get(entry.driverId);
+    if (!clienteLoc) continue;
+    for (const p of parsePunches(entry.punches)) {
+      if (p.entradaLocation) {
+        const d = distanceMeters(p.entradaLocation, clienteLoc);
+        if (d > CLIENT_LOCATION_DIVERGENCE_METERS) {
+          results.push({ entryId: entry.id, driverId: entry.driverId, date: entry.date, marco: "entrada", distanceMeters: d });
+        }
+      }
+      if (p.saidaLocation) {
+        const d = distanceMeters(p.saidaLocation, clienteLoc);
+        if (d > CLIENT_LOCATION_DIVERGENCE_METERS) {
+          results.push({ entryId: entry.id, driverId: entry.driverId, date: entry.date, marco: "saida", distanceMeters: d });
+        }
+      }
+    }
+  }
+  return results;
+}
+
+export type EntradaSaidaLocationDivergence = {
+  entryId: string;
+  driverId: string;
+  date: Date;
+  distanceMeters: number;
+};
+
+// Compara a localizacao da entrada com a da saida do MESMO par — teto bem
+// mais folgado que o do cliente de proposito (2km): motorista de fretamento
+// legitimamente sai de um ponto e chega bem longe (embarque x desembarque),
+// isso aqui e so pra pegar caso extremo.
+export function findEntradaSaidaLocationDivergences(
+  entries: (PontoEntryLike & { id: string; driverId: string })[]
+): EntradaSaidaLocationDivergence[] {
+  const results: EntradaSaidaLocationDivergence[] = [];
+  for (const entry of entries) {
+    for (const p of parsePunches(entry.punches)) {
+      if (!p.entradaLocation || !p.saidaLocation) continue;
+      const d = distanceMeters(p.entradaLocation, p.saidaLocation);
+      if (d > ENTRADA_SAIDA_DIVERGENCE_METERS) {
+        results.push({ entryId: entry.id, driverId: entry.driverId, date: entry.date, distanceMeters: d });
+      }
+    }
+  }
+  return results;
+}
+
+export type DriverLocationOutlier = {
+  entryId: string;
+  driverId: string;
+  date: Date;
+  distanceMeters: number;
+};
+
+// "Local habitual" do motorista = mediana de latitude e mediana de
+// longitude da entrada do 1º par de cada dia, dentro do conjunto de
+// `entries` recebido (quem chama decide a janela — normalmente o mesmo mes
+// de /ponto/analise). So calcula se houver pelo menos
+// DRIVER_LOCATION_OUTLIER_MIN_SAMPLES dias com localizacao — mediana de
+// amostra pequena nao significa nada. Mediana (nao media) porque e robusta
+// a um ou dois dias fora do padrao nao puxarem o proprio baseline.
+export function findDriverLocationOutliers(
+  entries: (PontoEntryLike & { id: string; driverId: string })[]
+): DriverLocationOutlier[] {
+  const byDriver = new Map<string, { entryId: string; date: Date; loc: LatLon }[]>();
+  for (const entry of entries) {
+    const firstPair = parsePunches(entry.punches)[0];
+    if (!firstPair?.entradaLocation) continue;
+    const list = byDriver.get(entry.driverId) ?? [];
+    list.push({ entryId: entry.id, date: entry.date, loc: firstPair.entradaLocation });
+    byDriver.set(entry.driverId, list);
+  }
+
+  const results: DriverLocationOutlier[] = [];
+  for (const [driverId, days] of byDriver) {
+    if (days.length < DRIVER_LOCATION_OUTLIER_MIN_SAMPLES) continue;
+    const baseline: LatLon = [median(days.map((d) => d.loc[0])), median(days.map((d) => d.loc[1]))];
+    for (const day of days) {
+      const d = distanceMeters(day.loc, baseline);
+      if (d > DRIVER_LOCATION_OUTLIER_METERS) {
+        results.push({ entryId: day.entryId, driverId, date: day.date, distanceMeters: d });
+      }
+    }
+  }
+  return results;
 }

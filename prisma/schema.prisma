@@ -151,6 +151,13 @@ model Cliente {
   // vinculados a este cliente já estao pagando pra cobri-la.
   horarioInicioContratado String?
   horarioFimContratado    String?
+  // Local esperado de marcacao de ponto (endereco do cliente/base) — opcional,
+  // usado so pra comparar contra a geolocalizacao das batidas dos motoristas
+  // vinculados a este cliente (ver src/lib/pontoCompliance.ts:findClientLocationDivergences).
+  // Nenhum motorista/turno e obrigado a ter isso preenchido; sem lat/lon, o
+  // cliente so fica de fora dessa checagem especifica, sem quebrar nada.
+  latitude  Float?
+  longitude Float?
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
 

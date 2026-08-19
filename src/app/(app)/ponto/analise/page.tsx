@@ -17,6 +17,7 @@ import {
   Coffee,
   Gavel,
   Hourglass,
+  MapPin,
   Moon,
   ScrollText,
   ShieldAlert,
@@ -33,7 +34,10 @@ import {
   REGIME_12X36_REST_MINUTES,
   REGIME_12X36_WORK_MINUTES,
   findAbsences,
+  findClientLocationDivergences,
+  findDriverLocationOutliers,
   findEarlyDepartureEvents,
+  findEntradaSaidaLocationDivergences,
   findInterjornadaViolations,
   findLatenessEvents,
   findMissingIntervalViolations,
@@ -121,7 +125,7 @@ export default async function AnaliseDeRiscosPage({
   const drivers = await prisma.driver.findMany({
     where: { companyId: session.companyId, active: true },
     orderBy: { name: "asc" },
-    include: { sindicato: { include: { convencoes: { include: { regras: true } } } } },
+    include: { sindicato: { include: { convencoes: { include: { regras: true } } } }, cliente: true },
   });
   const driverById = new Map(drivers.map((d) => [d.id, d]));
   const driverName = (id: string) => driverById.get(id)?.name ?? "—";
@@ -512,7 +516,7 @@ export default async function AnaliseDeRiscosPage({
   // filtrar a tabela.
   const ROW_BACKED_TIPOS = new Set<TipoOcorrencia>(["hora-extra", "intervalo", "interjornada", "dsr", "jurisprudencia"]);
   const tipoAtivo = tipo && ROW_BACKED_TIPOS.has(tipo as TipoOcorrencia) ? (tipo as TipoOcorrencia) : null;
-  const drillAtivo = tipo === "noturno" || tipo === "espera" || tipo === "atrasos" ? tipo : null;
+  const drillAtivo = tipo === "noturno" || tipo === "espera" || tipo === "atrasos" || tipo === "geolocalizacao" ? tipo : null;
   const categoriaAtiva = categoriaFiltro === "CLT" || categoriaFiltro === "CCT/ACT" || categoriaFiltro === "Jurisprudência" ? categoriaFiltro : null;
 
   const filteredRows = rows.filter((r) => {
@@ -547,7 +551,9 @@ export default async function AnaliseDeRiscosPage({
         ? "Tempo de espera"
         : drillAtivo === "atrasos"
           ? "Atrasos"
-          : categoriaAtiva ?? "";
+          : drillAtivo === "geolocalizacao"
+            ? "Geolocalização"
+            : categoriaAtiva ?? "";
 
   const nightRanking = [...nightByDriver.entries()]
     .map(([id, v]) => ({ id, name: driverName(id), ...v }))
@@ -578,6 +584,38 @@ export default async function AnaliseDeRiscosPage({
   const atrasosRanking = [...atrasosByDriver.entries()]
     .map(([id, v]) => ({ id, name: driverName(id), ...v }))
     .sort((a, b) => b.lateMinutes + b.earlyMinutes - (a.lateMinutes + a.earlyMinutes));
+
+  // Geolocalizacao das marcacoes (2026-08-19) — so avalia quem tem
+  // entradaLocation/saidaLocation nas batidas (so via app com GPS, API do
+  // TiqueTaque) E, pro primeiro detector, cliente vinculado com
+  // latitude/longitude cadastrados. Indicador, nao violacao legal — mesmo
+  // motivo de noturno/espera/atrasos usarem o drill por motorista em vez de
+  // linha na tabela.
+  const clienteLocationByDriverId = new Map<string, [number, number]>();
+  for (const d of drivers) {
+    if (d.cliente?.latitude != null && d.cliente?.longitude != null) {
+      clienteLocationByDriverId.set(d.id, [d.cliente.latitude, d.cliente.longitude]);
+    }
+  }
+  const clientLocationDivergences = findClientLocationDivergences(entriesInMonth, clienteLocationByDriverId);
+  const entradaSaidaLocationDivergences = findEntradaSaidaLocationDivergences(entriesInMonth);
+  const driverLocationOutliers = findDriverLocationOutliers(entriesInMonth);
+
+  const geoByDriver = new Map<string, { clientCount: number; entradaSaidaCount: number; outlierCount: number }>();
+  const getGeo = (id: string) => {
+    let g = geoByDriver.get(id);
+    if (!g) {
+      g = { clientCount: 0, entradaSaidaCount: 0, outlierCount: 0 };
+      geoByDriver.set(id, g);
+    }
+    return g;
+  };
+  for (const d of clientLocationDivergences) getGeo(d.driverId).clientCount++;
+  for (const d of entradaSaidaLocationDivergences) getGeo(d.driverId).entradaSaidaCount++;
+  for (const d of driverLocationOutliers) getGeo(d.driverId).outlierCount++;
+  const geoRanking = [...geoByDriver.entries()]
+    .map(([id, v]) => ({ id, name: driverName(id), ...v }))
+    .sort((a, b) => b.clientCount + b.entradaSaidaCount + b.outlierCount - (a.clientCount + a.entradaSaidaCount + a.outlierCount));
 
   return (
     <div className="max-w-6xl">
@@ -722,6 +760,27 @@ export default async function AnaliseDeRiscosPage({
             </p>
           </div>
         </Link>
+
+        <Link href={tipoHref("geolocalizacao")} className={`${cardClass} block transition-shadow hover:shadow-md ${drillAtivo === "geolocalizacao" ? "ring-2 ring-blue-400" : ""}`}>
+          <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-100 text-cyan-700">
+            <MapPin className="h-4 w-4" />
+          </div>
+          <p className="text-sm text-slate-500">Geolocalização</p>
+          <p className="mt-1 text-2xl font-semibold text-slate-900">{clientLocationDivergences.length}</p>
+          <p className="text-xs text-slate-500">
+            {clienteLocationByDriverId.size > 0 ? "longe do local esperado do cliente" : "cadastre lat/lon no Cliente pra ativar"}
+          </p>
+          <div className="mt-3 flex gap-3 border-t border-slate-100 pt-3 text-sm">
+            <div>
+              <p className="font-semibold text-slate-900">{entradaSaidaLocationDivergences.length}</p>
+              <p className="text-xs text-slate-500">entrada×saída distante</p>
+            </div>
+            <div>
+              <p className="font-semibold text-slate-900">{driverLocationOutliers.length}</p>
+              <p className="text-xs text-slate-500">fora do padrão do motorista</p>
+            </div>
+          </div>
+        </Link>
       </div>
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -864,6 +923,33 @@ export default async function AnaliseDeRiscosPage({
                     {d.earlyCount > 0 && (
                       <span className={`${badgeClass} bg-amber-100 text-amber-700`}>
                         {d.earlyCount} saída{d.earlyCount === 1 ? "" : "s"} cedo ({formatHoursMinutes(d.earlyMinutes)})
+                      </span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {drillAtivo === "geolocalizacao" && (
+            <ul className="flex flex-col gap-1">
+              {geoRanking.length === 0 && <li className="px-2 py-6 text-center text-sm text-slate-500">Sem divergência de geolocalização neste período.</li>}
+              {geoRanking.map((d) => (
+                <li key={d.id} className="flex items-center justify-between rounded-lg px-2 py-1.5 text-sm">
+                  <span className="text-slate-700">{d.name}</span>
+                  <span className="flex items-center gap-2 text-xs">
+                    {d.clientCount > 0 && (
+                      <span className={`${badgeClass} bg-cyan-100 text-cyan-700`}>
+                        {d.clientCount} longe do cliente
+                      </span>
+                    )}
+                    {d.entradaSaidaCount > 0 && (
+                      <span className={`${badgeClass} bg-slate-100 text-slate-700`}>
+                        {d.entradaSaidaCount} entrada×saída distante
+                      </span>
+                    )}
+                    {d.outlierCount > 0 && (
+                      <span className={`${badgeClass} bg-amber-100 text-amber-700`}>
+                        {d.outlierCount} fora do padrão
                       </span>
                     )}
                   </span>
