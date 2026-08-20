@@ -16,6 +16,13 @@ enum Role {
   // anual/mensal, Historico de correcoes) — nao ve cadastros, escalas,
   // convencao, utilizacao/telemetria/combustivel nem analise de riscos.
   FOLHA
+  // Acesso restrito ao menu Controladoria (painel financeiro, auditoria,
+  // contas a pagar/receber, conciliacao, custos, DRE, fluxo de caixa,
+  // relatorios) — nao ve cadastros operacionais, ponto, escalas nem folha.
+  // Mesma filosofia de FOLHA: um perfil que so enxerga o seu proprio
+  // dominio, para dar acesso ao financeiro/contabilidade (inclusive
+  // terceirizados) sem expor dado trabalhista e pessoal de motorista.
+  CONTROLADORIA
   MOTORISTA
 }
 
@@ -78,21 +85,38 @@ model Company {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users             User[]
-  sindicatos        Sindicato[]
-  drivers           Driver[]
-  vehicles          Vehicle[]
-  escalas           Escala[]
-  timeClockEntries  TimeClockEntry[]
-  convencoes        ConvencaoColetiva[]
-  regrasConvencao   RegraConvencao[]
-  usageLogs         VehicleUsageLog[]
-  telemetryReadings TelemetryReading[]
-  fuelTransactions  FuelTransaction[]
-  consumptionSummaries FuelConsumptionSummary[]
-  timeClockCorrections TimeClockCorrection[]
-  driverLeaves      DriverLeave[]
-  clientes          Cliente[]
+  users                   User[]
+  sindicatos              Sindicato[]
+  drivers                 Driver[]
+  vehicles                Vehicle[]
+  escalas                 Escala[]
+  timeClockEntries        TimeClockEntry[]
+  convencoes              ConvencaoColetiva[]
+  regrasConvencao         RegraConvencao[]
+  usageLogs               VehicleUsageLog[]
+  telemetryReadings       TelemetryReading[]
+  fuelTransactions        FuelTransaction[]
+  consumptionSummaries    FuelConsumptionSummary[]
+  timeClockCorrections    TimeClockCorrection[]
+  driverLeaves            DriverLeave[]
+  clientes                Cliente[]
+  omieParceiros           OmieParceiro[]
+  omieCategorias          OmieCategoria[]
+  omieDepartamentos       OmieDepartamento[]
+  omieProjetos            OmieProjeto[]
+  omieContasCorrentes     OmieContaCorrente[]
+  omieTitulos             OmieTitulo[]
+  omieBaixas              OmieBaixa[]
+  omieMovimentos          OmieMovimento[]
+  omieNotas               OmieNota[]
+  omieSyncRuns            OmieSyncRun[]
+  auditFindings           AuditFinding[]
+  relatoriosDiarios       RelatorioDiario[]
+  controladoriaConfig     ControladoriaConfig?
+  bscMetas                BscMeta[]
+  bscSnapshots            BscSnapshot[]
+  controladoriaEventLogs  ControladoriaEventLog[]
+  omieVinculoCentroCustos OmieVinculoCentroCusto[]
 }
 
 model User {
@@ -139,10 +163,10 @@ model Sindicato {
 // planilha financeira de centro de custo, nunca tocado pelo sync do
 // TiqueTaque, para não arriscar perder o vínculo silenciosamente.
 model Cliente {
-  id        String   @id @default(cuid())
-  companyId String
-  company   Company  @relation(fields: [companyId], references: [id])
-  nome      String
+  id                      String   @id @default(cuid())
+  companyId               String
+  company                 Company  @relation(fields: [companyId], references: [id])
+  nome                    String
   // Janela de horario contratada (HH:mm, texto igual TimeClockEntry.clockIn)
   // — a maioria dos contratos define inicio/fim estimados de operacao, nao
   // um total de horas/mes nem numero de motoristas fixos (confirmado com o
@@ -156,45 +180,46 @@ model Cliente {
   // vinculados a este cliente (ver src/lib/pontoCompliance.ts:findClientLocationDivergences).
   // Nenhum motorista/turno e obrigado a ter isso preenchido; sem lat/lon, o
   // cliente so fica de fora dessa checagem especifica, sem quebrar nada.
-  latitude  Float?
-  longitude Float?
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
+  latitude                Float?
+  longitude               Float?
+  active                  Boolean  @default(true)
+  createdAt               DateTime @default(now())
 
-  drivers Driver[]
+  drivers                 Driver[]
+  omieVinculoCentroCustos OmieVinculoCentroCusto[]
 
   @@unique([companyId, nome])
 }
 
 // ---------- Motorista ----------
 model Driver {
-  id            String    @id @default(cuid())
-  companyId     String
-  company       Company   @relation(fields: [companyId], references: [id])
-  userId        String?   @unique
-  user          User?     @relation(fields: [userId], references: [id])
-  sindicatoId   String?
-  sindicato     Sindicato? @relation(fields: [sindicatoId], references: [id])
+  id             String         @id @default(cuid())
+  companyId      String
+  company        Company        @relation(fields: [companyId], references: [id])
+  userId         String?        @unique
+  user           User?          @relation(fields: [userId], references: [id])
+  sindicatoId    String?
+  sindicato      Sindicato?     @relation(fields: [sindicatoId], references: [id])
   // Cliente/centro de custo — ver comentário no model Cliente sobre por que
   // isto é separado de `departamento`.
-  clienteId     String?
-  cliente       Cliente?  @relation(fields: [clienteId], references: [id])
-  name          String
-  cpf           String    @unique
+  clienteId      String?
+  cliente        Cliente?       @relation(fields: [clienteId], references: [id])
+  name           String
+  cpf            String         @unique
   // Opcionais: motoristas importados do TiqueTaque (sem dado de CNH) ficam
   // com esses tres campos nulos ate serem completados manualmente — ver
   // src/lib/driverAlerts.ts ("pendente") em vez de tratar como vencida.
-  cnh           String?
-  cnhCategory   String?
-  cnhExpiration DateTime?
+  cnh            String?
+  cnhCategory    String?
+  cnhExpiration  DateTime?
   // Data de admissao — opcional (nao vem do TiqueTaque, so cadastro manual).
   // Sem isso o sistema nao consegue calcular periodo aquisitivo/concessivo
   // de ferias, ferias em dobro (art. 137 CLT) nem aviso previo proporcional
   // (Lei 12.506/2011) — motoristas sem esse campo ficam de fora desses
   // calculos especificos, sem travar o resto do cadastro.
-  admissao      DateTime?
-  phone         String?
-  photoUrl      String?
+  admissao       DateTime?
+  phone          String?
+  photoUrl       String?
   // Empregador (razao social, resolvida de contract_data.payment_source via
   // GET /payment-sources) e unidade de alocacao/centro de custos do
   // motorista (campo `departamento`, vem de contract_data.department —
@@ -206,29 +231,30 @@ model Driver {
   // DIFERENTE, que nao existe na API publica v2.1 — investigado e
   // confirmado ausente em /employees e em varios endpoints candidatos
   // (todos 404), ver src/lib/tiquetaque/client.ts.
-  empregador    String?
-  departamento  String?
+  empregador     String?
+  departamento   String?
   // Cargo/funcao real do funcionario no TiqueTaque (contract_data.job_role,
   // ex. "MOTORISTA DE MICRO ONIBUS", "VIGILANTE", "AJUDANTE DE MOTORISTA") —
   // ja era buscado pela integracao (TiqueTaqueEmployee.jobRole, usado so
   // pra filtrar quem importar) mas nao ficava salvo no cadastro.
-  funcao        String?
-  regimeHoras   RegimeHoras?
-  escalaSemanal EscalaSemanal?
+  funcao         String?
+  regimeHoras    RegimeHoras?
+  escalaSemanal  EscalaSemanal?
   // Valor-hora em centavos (evita float) — usado so para o card de custo
   // de hora extra em /ponto/analise. Nulo = motorista fica de fora da
   // soma de custo (nao trava o calculo dos demais).
   valorHoraCents Int?
-  active        Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  active         Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
-  escalas          Escala[]
-  timeClockEntries TimeClockEntry[]
-  timeClockCorrections TimeClockCorrection[]
-  usageLogs        VehicleUsageLog[]
-  fuelTransactions FuelTransaction[]
-  leaves           DriverLeave[]
+  escalas                 Escala[]
+  timeClockEntries        TimeClockEntry[]
+  timeClockCorrections    TimeClockCorrection[]
+  usageLogs               VehicleUsageLog[]
+  fuelTransactions        FuelTransaction[]
+  leaves                  DriverLeave[]
+  omieVinculoCentroCustos OmieVinculoCentroCusto[]
 }
 
 // Folga/atestado/ferias/abono do motorista, importado do TiqueTaque
@@ -263,28 +289,29 @@ model DriverLeave {
 
 // ---------- Veiculo ----------
 model Vehicle {
-  id        String        @id @default(cuid())
-  companyId String
-  company   Company       @relation(fields: [companyId], references: [id])
-  plate     String        @unique
-  brand     String
-  model     String
-  year      Int
-  type      String
-  status    VehicleStatus @default(ATIVO)
+  id                     String        @id @default(cuid())
+  companyId              String
+  company                Company       @relation(fields: [companyId], references: [id])
+  plate                  String        @unique
+  brand                  String
+  model                  String
+  year                   Int
+  type                   String
+  status                 VehicleStatus @default(ATIVO)
   // Atualizado a cada encerramento de VehicleUsageLog (checkout com km final).
-  currentMileage         Int @default(0)
+  currentMileage         Int           @default(0)
   // Marca o km em que a ultima manutencao foi registrada; a diferenca para
   // currentMileage alimenta o alerta de manutencao pendente em /utilizacao.
-  lastMaintenanceMileage Int @default(0)
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
+  lastMaintenanceMileage Int           @default(0)
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
 
-  escalas           Escala[]
-  usageLogs         VehicleUsageLog[]
-  telemetryReadings TelemetryReading[]
-  fuelTransactions  FuelTransaction[]
-  consumptionSummaries FuelConsumptionSummary[]
+  escalas                 Escala[]
+  usageLogs               VehicleUsageLog[]
+  telemetryReadings       TelemetryReading[]
+  fuelTransactions        FuelTransaction[]
+  consumptionSummaries    FuelConsumptionSummary[]
+  omieVinculoCentroCustos OmieVinculoCentroCusto[]
 }
 
 // ---------- Escala (MOD.02) ----------
@@ -317,14 +344,14 @@ model Escala {
 // checagens de hora extra e interjornada (Lei 13.103/2015, art. 235-C/235-D)
 // rodam em src/lib/pontoCompliance.ts a partir destes registros.
 model TimeClockEntry {
-  id        String   @id @default(cuid())
-  companyId String
-  company   Company  @relation(fields: [companyId], references: [id])
-  driverId  String
-  driver    Driver   @relation(fields: [driverId], references: [id])
-  date      DateTime
-  clockIn   String // HH:mm
-  clockOut  String? // HH:mm, nulo enquanto o turno esta aberto
+  id              String   @id @default(cuid())
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id])
+  driverId        String
+  driver          Driver   @relation(fields: [driverId], references: [id])
+  date            DateTime
+  clockIn         String // HH:mm
+  clockOut        String? // HH:mm, nulo enquanto o turno esta aberto
   // Pausa dentro do turno (intervalo intrajornada, art. 71 CLT). Opcionais
   // para nao invalidar registros antigos — ausencia dos dois em turnos
   // longos e o que alimenta o alerta de "intervalo nao registrado".
@@ -336,8 +363,8 @@ model TimeClockEntry {
   // minimo legal 30%). Opcionais, so lancamento manual (a API do TiqueTaque
   // nao distingue esse tipo de pausa das demais) — ver
   // src/lib/pontoCompliance.ts:waitingMinutes.
-  esperaInicio String? // HH:mm
-  esperaFim    String? // HH:mm
+  esperaInicio    String? // HH:mm
+  esperaFim       String? // HH:mm
   // Lista ordenada de pares {entrada, saida} do dia — so populado pra
   // importacao TiqueTaque (a API devolve batidas avulsas, sem rotulo de
   // entrada/saida, so pareaveis por ordem cronologica; um dia pode ter mais
@@ -346,7 +373,7 @@ model TimeClockEntry {
   // (soma de cada par fechado) em vez do span bruto clockIn->clockOut — ver
   // src/lib/pontoCompliance.ts:workedMinutes. Nulo para lancamento manual
   // (um unico intervalo, os campos acima bastam).
-  punches   Json?
+  punches         Json?
   // Origem do registro: nulo para lancamento manual, "TIQUETAQUE" quando
   // veio da importacao via API de batidas avulsas (pareamento heuristico,
   // ver src/lib/tiquetaque/pairing.ts), "TIQUETAQUE_CSV" quando veio da
@@ -356,8 +383,8 @@ model TimeClockEntry {
   // manual; entre as duas fontes automaticas, CSV pode corrigir API mas
   // API nunca sobrescreve CSV — ver overwritableFontes em
   // src/lib/tiquetaque/importCore.ts:reconcileDriverDays.
-  fonte     String?
-  notes     String?
+  fonte           String?
+  notes           String?
   // Hash SHA-256 (hex) do conteudo atual do registro (horarios, intervalo,
   // espera, punches) — ver src/lib/integrity.ts:hashPontoState. Atualizado
   // a cada escrita feita pelo app (criacao/edicao). Permite ao "dossie"
@@ -365,9 +392,9 @@ model TimeClockEntry {
   // dos campos atuais e comparar com este valor: uma divergencia indica que
   // o registro foi alterado por fora do fluxo normal do app (ex.: script
   // direto no banco), sem passar pelo log de TimeClockCorrection abaixo.
-  hashAtual String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  hashAtual       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   corrections TimeClockCorrection[]
 
@@ -390,11 +417,11 @@ model TimeClockEntry {
 // depois de criada — e a base do relatorio /ponto/correcoes e do "dossie"
 // de defesa por motorista.
 model TimeClockCorrection {
-  id        String   @id @default(cuid())
+  id        String          @id @default(cuid())
   companyId String
-  company   Company  @relation(fields: [companyId], references: [id])
+  company   Company         @relation(fields: [companyId], references: [id])
   driverId  String
-  driver    Driver   @relation(fields: [driverId], references: [id])
+  driver    Driver          @relation(fields: [driverId], references: [id])
   entryId   String?
   entry     TimeClockEntry? @relation(fields: [entryId], references: [id], onDelete: SetNull)
   date      DateTime // data do turno corrigido, para listar/filtrar sem join
@@ -403,7 +430,7 @@ model TimeClockCorrection {
   // "EXCLUSAO_MANUAL" — texto livre (nao enum) pra nao precisar de
   // migration toda vez que uma nova origem for adicionada, mesmo padrao ja
   // usado em TimeClockEntry.fonte.
-  origem           String @default("TIQUETAQUE_REIMPORT")
+  origem           String  @default("TIQUETAQUE_REIMPORT")
   // Quem fez a alteracao — so preenchido pra edicao/exclusao manual (a
   // reimportacao do TiqueTaque reflete uma mudanca feita por outra pessoa,
   // fora deste sistema; nao ha um usuario "daqui" pra atribuir).
@@ -411,7 +438,7 @@ model TimeClockCorrection {
   motivo           String?
 
   clockInAntes         String
-  clockOutAntes         String?
+  clockOutAntes        String?
   intervaloInicioAntes String?
   intervaloFimAntes    String?
   punchesAntes         Json?
@@ -419,7 +446,7 @@ model TimeClockCorrection {
   // Nulos na linha de EXCLUSAO_MANUAL — nao ha um "depois", o registro foi
   // removido.
   clockInDepois         String?
-  clockOutDepois         String?
+  clockOutDepois        String?
   intervaloInicioDepois String?
   intervaloFimDepois    String?
   punchesDepois         Json?
@@ -430,7 +457,7 @@ model TimeClockCorrection {
   // hashAtual do TimeClockEntry se for a mais recente. Nulo em linhas
   // antigas, criadas antes deste campo existir — tratado como "nao
   // verificavel", nunca como "violado".
-  hashAntes String?
+  hashAntes  String?
   hashDepois String?
 
   corrigidoEm DateTime @default(now())
@@ -446,21 +473,21 @@ model TimeClockCorrection {
 // formulario estruturado manual; a extracao assistida por IA fica para a
 // Fase 3, apos termos volume real de CCTs cadastradas.
 model ConvencaoColetiva {
-  id             String   @id @default(cuid())
+  id             String        @id @default(cuid())
   companyId      String
-  company        Company  @relation(fields: [companyId], references: [id])
+  company        Company       @relation(fields: [companyId], references: [id])
   sindicatoId    String
-  sindicato      Sindicato @relation(fields: [sindicatoId], references: [id])
+  sindicato      Sindicato     @relation(fields: [sindicatoId], references: [id])
   tipo           TipoConvencao @default(CCT)
   fileName       String
   fileUrl        String
   vigenciaInicio DateTime
   vigenciaFim    DateTime?
   uploadedById   String
-  uploadedBy     User     @relation(fields: [uploadedById], references: [id])
-  uploadedAt     DateTime @default(now())
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  uploadedBy     User          @relation(fields: [uploadedById], references: [id])
+  uploadedAt     DateTime      @default(now())
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
   regras RegraConvencao[]
 
@@ -485,22 +512,22 @@ model RegraConvencao {
 // alimenta o alerta de divergencia em /utilizacao. Ao encerrar (checkOutAt +
 // kmFinal preenchidos), a action atualiza Vehicle.currentMileage.
 model VehicleUsageLog {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   companyId  String
-  company    Company  @relation(fields: [companyId], references: [id])
+  company    Company   @relation(fields: [companyId], references: [id])
   driverId   String
-  driver     Driver   @relation(fields: [driverId], references: [id])
+  driver     Driver    @relation(fields: [driverId], references: [id])
   vehicleId  String
-  vehicle    Vehicle  @relation(fields: [vehicleId], references: [id])
+  vehicle    Vehicle   @relation(fields: [vehicleId], references: [id])
   escalaId   String?
-  escala     Escala?  @relation(fields: [escalaId], references: [id])
+  escala     Escala?   @relation(fields: [escalaId], references: [id])
   checkInAt  DateTime
   checkOutAt DateTime?
   kmInicial  Int
   kmFinal    Int?
   notes      String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   @@index([companyId, checkInAt])
 }
@@ -634,4 +661,680 @@ model FuelConsumptionSummary {
 
   @@unique([companyId, placaOriginal, contrato, tipoCombustivel, periodoInicio, periodoFim, ultimoKmOuHora])
   @@index([companyId, periodoInicio])
+}
+
+// ============================================================================
+// CONTROLADORIA / AUDITORIA — espelho da Omie (MOD.08)
+// ============================================================================
+// Estes models sao um ESPELHO LOCAL, somente leitura, do ERP Omie: nada aqui
+// e fonte de verdade contabil, a Omie e. O espelho existe porque auditoria de
+// verdade precisa de tres coisas que a API da Omie sozinha nao da: (1)
+// historico estavel (a API responde o estado de agora; o achado de auditoria
+// precisa provar o que estava la ontem), (2) cruzamento entre dominios (titulo
+// x baixa x extrato x nota fiscal x frota/combustivel deste mesmo sistema) e
+// (3) consulta rapida o suficiente pra rodar dezenas de regras num relatorio
+// diario sem estourar o limite de chamadas da Omie.
+//
+// Todo valor monetario em CENTAVOS (Int), mesmo padrao ja usado em
+// FuelTransaction/Driver.valorHoraCents — float em dinheiro acumula erro de
+// arredondamento e, num sistema cujo proposito e apontar divergencia de
+// centavos, isso geraria achado falso.
+//
+// Todo codigo vindo da Omie e guardado como String, nao Int: os codigos reais
+// (codigo_lancamento_omie, codigo_cliente_omie) passam de 10 digitos e
+// estouram Int32 do Postgres.
+
+enum OmieNaturezaTitulo {
+  PAGAR
+  RECEBER
+}
+
+enum OmieSyncStatus {
+  EXECUTANDO
+  CONCLUIDO
+  ERRO
+}
+
+// Severidade do achado — dirige a ordenacao do relatorio diario e o que vira
+// alerta imediato no e-mail (CRITICA/ALTA aparecem no topo, no bloco
+// executivo; MEDIA/BAIXA ficam no anexo gerencial).
+enum AuditSeveridade {
+  CRITICA
+  ALTA
+  MEDIA
+  BAIXA
+  INFO
+}
+
+// Natureza do achado. Separado da severidade de proposito: um indicio de
+// FRAUDE de valor baixo continua sendo fraude (tratativa diferente de um erro
+// de digitacao do mesmo valor), e OPORTUNIDADE nao e problema nenhum — e
+// dinheiro que da pra economizar, com acao recomendada e impacto estimado.
+enum AuditCategoria {
+  // Indicio de ma-fe: fracionamento pra burlar alcada, fornecedor que e
+  // tambem funcionario, troca de conta bancaria de fornecedor, duplicidade
+  // de pagamento, desvio de padrao numerico (Benford).
+  FRAUDE
+  // Falha humana ou de processo: lancamento sem categoria, titulo sem
+  // documento fiscal, baixa sem movimento bancario, cadastro incompleto.
+  ERRO_PROCESSO
+  // Dinheiro que JA saiu e nao deveria: juros, multa, tarifa, desconto
+  // concedido indevidamente, pagamento acima do documento.
+  PERDA_FINANCEIRA
+  // Ainda nao virou perda, mas vira: saldo projetado negativo, concentracao
+  // de fornecedor, inadimplencia crescente, titulo vencido em aberto.
+  RISCO_FINANCEIRO
+  // Conformidade fiscal/contabil e de processo (nota cancelada com titulo
+  // ativo, imposto fora da faixa esperada, sync desatualizado).
+  CONFORMIDADE
+  // Economia identificada com acao recomendada e impacto estimado.
+  OPORTUNIDADE
+}
+
+enum AuditStatus {
+  ABERTO
+  EM_ANALISE
+  RESOLVIDO
+  IGNORADO
+  // Fechado automaticamente pelo proprio motor: a condicao que gerou o
+  // achado deixou de existir na base (ex.: o titulo vencido foi pago).
+  // Diferente de RESOLVIDO, que e uma tratativa humana registrada.
+  OBSOLETO
+}
+
+enum RelatorioStatus {
+  GERADO
+  ENVIADO
+  ERRO_ENVIO
+}
+
+// ---------- Cadastros espelhados (dimensoes) ----------
+
+// Cliente e fornecedor sao a MESMA entidade na Omie (geral/clientes/), com
+// tags/flags dizendo o papel — por isso um model so, com `ehCliente`/
+// `ehFornecedor` em vez de duas tabelas.
+model OmieParceiro {
+  id                      String    @id @default(cuid())
+  companyId               String
+  company                 Company   @relation(fields: [companyId], references: [id])
+  codigoOmie              String
+  codigoIntegracao        String?
+  nome                    String
+  nomeFantasia            String?
+  // Somente digitos (ver normalizeDocumento em src/lib/omie/mapping.ts) —
+  // o cruzamento com o CPF do motorista (fornecedor que e funcionario, red
+  // flag classica) so funciona com os dois lados normalizados.
+  documento               String?
+  ehCliente               Boolean   @default(false)
+  ehFornecedor            Boolean   @default(false)
+  email                   String?
+  cidade                  String?
+  estado                  String?
+  inativo                 Boolean   @default(false)
+  bloqueado               Boolean   @default(false)
+  // Hash SHA-256 de banco+agencia+conta, NUNCA os dados em claro. Serve a um
+  // proposito unico: detectar TROCA de conta bancaria de um fornecedor entre
+  // duas sincronizacoes — o vetor mais comum de fraude de boleto/pagamento
+  // no Brasil (o golpista altera o cadastro e o pagamento seguinte cai na
+  // conta dele). Guardar o hash da o alerta sem este sistema virar mais um
+  // lugar de onde vazar dado bancario de terceiro.
+  contaBancariaHash       String?
+  contaBancariaAlteradaEm DateTime?
+  sincronizadoEm          DateTime  @default(now())
+
+  @@unique([companyId, codigoOmie])
+  @@index([companyId, documento])
+}
+
+model OmieCategoria {
+  id                String   @id @default(cuid())
+  companyId         String
+  company           Company  @relation(fields: [companyId], references: [id])
+  codigo            String
+  descricao         String
+  // "R" (receita) / "D" (despesa) / outros — texto cru da Omie, ver
+  // classificarNatureza em src/lib/omie/mapping.ts.
+  natureza          String?
+  categoriaSuperior String?
+  totalizadora      Boolean  @default(false)
+  inativa           Boolean  @default(false)
+  sincronizadoEm    DateTime @default(now())
+
+  @@unique([companyId, codigo])
+}
+
+model OmieDepartamento {
+  id             String   @id @default(cuid())
+  companyId      String
+  company        Company  @relation(fields: [companyId], references: [id])
+  codigo         String
+  descricao      String
+  estrutura      String?
+  inativo        Boolean  @default(false)
+  sincronizadoEm DateTime @default(now())
+
+  @@unique([companyId, codigo])
+}
+
+model OmieProjeto {
+  id             String   @id @default(cuid())
+  companyId      String
+  company        Company  @relation(fields: [companyId], references: [id])
+  codigo         String
+  nome           String
+  inativo        Boolean  @default(false)
+  sincronizadoEm DateTime @default(now())
+
+  @@unique([companyId, codigo])
+}
+
+model OmieContaCorrente {
+  id                String   @id @default(cuid())
+  companyId         String
+  company           Company  @relation(fields: [companyId], references: [id])
+  codigo            String
+  descricao         String
+  tipo              String?
+  banco             String?
+  agencia           String?
+  numeroConta       String?
+  saldoInicialCents Int      @default(0)
+  inativa           Boolean  @default(false)
+  sincronizadoEm    DateTime @default(now())
+
+  @@unique([companyId, codigo])
+}
+
+// ---------- Titulos (contas a pagar e a receber) ----------
+// Uma tabela para as duas naturezas, discriminadas por `natureza`. As regras
+// de auditoria sao quase simetricas (atraso, duplicidade, falta de categoria,
+// divergencia de valor pago) — duas tabelas obrigariam a escrever cada regra
+// duas vezes, e e exatamente ai que uma das copias fica pra tras.
+model OmieTitulo {
+  id               String             @id @default(cuid())
+  companyId        String
+  company          Company            @relation(fields: [companyId], references: [id])
+  natureza         OmieNaturezaTitulo
+  codigoLancamento String
+  codigoIntegracao String?
+
+  parceiroCodigo    String?
+  // Nome desnormalizado: o relatorio diario e o e-mail listam dezenas de
+  // titulos e nao podem depender de join com OmieParceiro pra um cadastro
+  // que pode nem ter sido sincronizado ainda (a Omie devolve o titulo antes
+  // do cadastro se o backfill parou no meio).
+  parceiroNome      String?
+  parceiroDocumento String?
+
+  numeroDocumento     String?
+  numeroParcela       String?
+  tipoDocumento       String?
+  categoriaCodigo     String?
+  categoriaDescricao  String?
+  departamentoCodigo  String?
+  projetoCodigo       String?
+  contaCorrenteCodigo String?
+
+  dataEmissao    DateTime?
+  dataVencimento DateTime
+  dataPrevisao   DateTime?
+  dataRegistro   DateTime?
+  dataEntrada    DateTime?
+
+  valorDocumentoCents Int
+  saldoCents          Int?
+  // Totais consolidados das baixas (ver model OmieBaixa). Ficam aqui, e nao
+  // so na tabela de baixas, porque toda regra de auditoria de perda
+  // financeira ("pagou juros", "pagou acima do documento") filtra por esses
+  // valores em cima de milhares de titulos — agregar por join a cada regra
+  // era o gargalo do relatorio diario.
+  valorPagoCents      Int       @default(0)
+  jurosCents          Int       @default(0)
+  multaCents          Int       @default(0)
+  descontoCents       Int       @default(0)
+  tarifaCents         Int       @default(0)
+  dataUltimaBaixa     DateTime?
+
+  // Texto cru da Omie ("ATRASADO", "A VENCER", "PAGO", "RECEBIDO",
+  // "LIQUIDADO", "CANCELADO"...). Nao normalizado pra enum de proposito,
+  // mesmo padrao de TimeClockEntry.fonte e DriverLeave.leaveType: um status
+  // novo do ERP nao pode quebrar o sync.
+  status         String
+  liquidado      Boolean   @default(false)
+  cancelado      Boolean   @default(false)
+  observacao     String?
+  origem         String?
+  alteradoEmOmie DateTime?
+  sincronizadoEm DateTime  @default(now())
+
+  baixas OmieBaixa[]
+
+  @@unique([companyId, natureza, codigoLancamento])
+  @@index([companyId, natureza, dataVencimento])
+  @@index([companyId, natureza, status])
+  @@index([companyId, dataUltimaBaixa])
+  @@index([companyId, parceiroCodigo])
+}
+
+// Cada pagamento/recebimento (baixa) de um titulo. Um titulo parcelado ou
+// pago em partes tem varias. E aqui que moram juros, multa, desconto e
+// tarifa — os numeros que respondem "quanto a ma gestao de prazo custou este
+// mes", que o titulo sozinho nao conta.
+model OmieBaixa {
+  id                  String     @id @default(cuid())
+  companyId           String
+  company             Company    @relation(fields: [companyId], references: [id])
+  tituloId            String
+  titulo              OmieTitulo @relation(fields: [tituloId], references: [id], onDelete: Cascade)
+  // Chave natural do registro dentro da empresa, montada em
+  // src/lib/omie/mapping.ts (codigo da baixa quando a Omie devolve um; senao
+  // titulo+data+valor). Existe porque nem todo endpoint de baixa da Omie
+  // devolve um identificador proprio, e sem chave estavel a reimportacao
+  // duplicaria as baixas — inflando juros/multa do relatorio.
+  chave               String
+  dataBaixa           DateTime
+  valorCents          Int
+  jurosCents          Int        @default(0)
+  multaCents          Int        @default(0)
+  descontoCents       Int        @default(0)
+  tarifaCents         Int        @default(0)
+  contaCorrenteCodigo String?
+  observacao          String?
+  liquidaTitulo       Boolean    @default(true)
+  sincronizadoEm      DateTime   @default(now())
+
+  @@unique([companyId, chave])
+  @@index([companyId, dataBaixa])
+  @@index([tituloId])
+}
+
+// ---------- Extrato / movimentacao de conta corrente ----------
+// Base da conciliacao bancaria: o que de fato entrou e saiu da conta,
+// independente de existir titulo. Movimento sem titulo e titulo baixado sem
+// movimento sao os dois lados do mesmo furo.
+model OmieMovimento {
+  id                  String    @id @default(cuid())
+  companyId           String
+  company             Company   @relation(fields: [companyId], references: [id])
+  contaCorrenteCodigo String
+  codigoLancamento    String
+  data                DateTime
+  // Com sinal: negativo = saida (debito), positivo = entrada (credito). O
+  // campo `natureza` guarda o texto cru ("C"/"D") pra rastreabilidade, mas
+  // toda soma usa valorCents direto — somar valor absoluto e depois aplicar
+  // sinal por natureza e a receita classica pro erro de sinal invertido.
+  valorCents          Int
+  natureza            String?
+  tipo                String?
+  categoriaCodigo     String?
+  parceiroCodigo      String?
+  parceiroNome        String?
+  documento           String?
+  observacao          String?
+  conciliado          Boolean   @default(false)
+  dataConciliacao     DateTime?
+  // Codigo do titulo que originou o movimento, quando a Omie informa —
+  // e o que permite casar baixa x extrato sem heuristica.
+  tituloCodigo        String?
+  sincronizadoEm      DateTime  @default(now())
+
+  @@unique([companyId, codigoLancamento])
+  @@index([companyId, data])
+  @@index([companyId, contaCorrenteCodigo, data])
+}
+
+// ---------- Notas fiscais (analise fiscal/contabil) ----------
+// Cabecalho de NF-e (produtos) e NFS-e (servicos). Nao guarda item nem XML
+// completo: o objetivo aqui e analise fiscal agregada (carga tributaria
+// efetiva por periodo, nota cancelada com titulo ativo, faturamento sem nota)
+// — nao substituir o arquivo fiscal, que continua sendo o da Omie/contador.
+model OmieNota {
+  id                 String   @id @default(cuid())
+  companyId          String
+  company            Company  @relation(fields: [companyId], references: [id])
+  // "NFE" | "NFSE"
+  tipo               String
+  chave              String
+  numero             String?
+  serie              String?
+  chaveAcesso        String?
+  dataEmissao        DateTime
+  parceiroCodigo     String?
+  parceiroNome       String?
+  valorCents         Int
+  valorServicosCents Int?
+  baseIssCents       Int?
+  valorIssCents      Int?
+  valorPisCents      Int?
+  valorCofinsCents   Int?
+  valorIcmsCents     Int?
+  valorIpiCents      Int?
+  valorIrCents       Int?
+  valorCsllCents     Int?
+  valorInssCents     Int?
+  cancelada          Boolean  @default(false)
+  naturezaOperacao   String?
+  cfop               String?
+  sincronizadoEm     DateTime @default(now())
+
+  @@unique([companyId, chave])
+  @@index([companyId, dataEmissao])
+}
+
+// ---------- Execucao do sync ----------
+// Uma linha por execucao diaria (que pode ter varias invocacoes encadeadas,
+// ver src/app/api/cron/controladoria/route.ts). E tambem a evidencia de que
+// o sistema esta mesmo em D-1: o agente administrativo audita esta tabela e
+// abre achado quando a ultima execucao concluida ficou pra tras.
+model OmieSyncRun {
+  id             String         @id @default(cuid())
+  companyId      String
+  company        Company        @relation(fields: [companyId], references: [id])
+  iniciadoEm     DateTime       @default(now())
+  finalizadoEm   DateTime?
+  status         OmieSyncStatus @default(EXECUTANDO)
+  // Fase atual da maquina de estados do cron (cadastros -> titulos -> baixas
+  // -> movimentos -> notas -> auditoria -> relatorio). Persistida porque
+  // cada invocacao encadeada e um processo novo, sem memoria da anterior.
+  fase           String         @default("cadastros")
+  cursor         String?
+  janelaInicio   DateTime
+  janelaFim      DateTime
+  // Backfill (carga historica desde a data inicial da base) e diferente do
+  // ciclo diario D-1: roda mes a mes e nao dispara relatorio no fim.
+  backfill       Boolean        @default(false)
+  invocacoes     Int            @default(1)
+  cadastros      Int            @default(0)
+  titulosPagar   Int            @default(0)
+  titulosReceber Int            @default(0)
+  baixas         Int            @default(0)
+  movimentos     Int            @default(0)
+  notas          Int            @default(0)
+  achados        Int            @default(0)
+  erro           String?
+  detalhes       Json?
+
+  @@index([companyId, iniciadoEm])
+  @@index([companyId, status])
+}
+
+// ---------- Achados de auditoria ----------
+// Saida dos agentes (src/lib/controladoria/agents). Persistido, e nao
+// recalculado a cada carregamento como o resto dos motores de conformidade
+// deste sistema (pontoCompliance, fuelCompliance), por tres motivos que so
+// valem aqui: o achado precisa de TRATATIVA (alguem marca como resolvido,
+// escreve o porque), precisa de HISTORICO (quando apareceu, quanto tempo
+// levou pra ser tratado — e o indicador de controle interno) e precisa
+// aparecer no e-mail do dia seguinte mesmo que o dado de origem ja tenha
+// mudado.
+model AuditFinding {
+  id                  String          @id @default(cuid())
+  companyId           String
+  company             Company         @relation(fields: [companyId], references: [id])
+  // Id do agente que gerou (ver AGENTES em src/lib/controladoria/registry.ts)
+  // e codigo da regra dentro dele — o par identifica exatamente que trecho de
+  // codigo apontou o problema, que e o minimo pra um achado ser contestavel.
+  agente              String
+  regra               String
+  severidade          AuditSeveridade
+  categoria           AuditCategoria
+  titulo              String
+  descricao           String
+  // O que fazer a respeito. Obrigatorio na pratica para OPORTUNIDADE (sem
+  // acao, "economia identificada" e so um numero bonito).
+  recomendacao        String?
+  // Dinheiro em jogo no achado (ex.: valor do titulo pago em duplicidade).
+  valorCents          Int?
+  // Economia/recuperacao estimada se a recomendacao for executada. Separado
+  // de valorCents de proposito: num juros de R$ 5.000 pago, valorCents e o
+  // que ja saiu (perda consumada) e impactoCents e o que da pra evitar daqui
+  // pra frente — somar os dois no mesmo campo inflaria o total do relatorio.
+  impactoCents        Int?
+  dataReferencia      DateTime?
+  entidadeTipo        String?
+  entidadeId          String?
+  entidadeRef         String?
+  evidencia           Json?
+  // Chave determinística do achado (agente + regra + entidade + periodo),
+  // montada pelo proprio agente. Uma reexecucao do motor sobre o mesmo dado
+  // reencontra o achado em vez de duplicar — e o que permite rodar a
+  // auditoria todo dia sem a lista virar lixo, e o que preserva a tratativa
+  // ja feita por uma pessoa.
+  chave               String
+  // Grau de confianca atribuido pelo SUPERVISOR (0-100), nao pelo agente que
+  // emitiu. Um agente deterministico sempre "tem certeza" do que calculou —
+  // quem sabe se o dado de base era confiavel, se outro agente disse o
+  // contrario e se aquele mesmo achado ja foi julgado falso-positivo por uma
+  // pessoa antes e a camada de revisao (ver src/lib/controladoria/supervisor.ts).
+  // Abaixo do piso de confianca, o achado continua na tela mas nao entra no
+  // bloco executivo do e-mail.
+  confianca           Int             @default(100)
+  // O que o supervisor mudou e por que (rebaixou severidade, consolidou com
+  // outro achado, marcou como dependente de dado incompleto). Fica visivel na
+  // UI junto do achado: revisao invisivel e indistinguivel de censura.
+  notaSupervisor      String?
+  // Chave do achado ao qual este foi consolidado, quando dois agentes
+  // apontaram o mesmo fato por caminhos diferentes.
+  chaveRelacionada    String?
+  status              AuditStatus     @default(ABERTO)
+  detectadoEm         DateTime        @default(now())
+  atualizadoEm        DateTime        @updatedAt
+  ultimaOcorrencia    DateTime        @default(now())
+  ocorrencias         Int             @default(1)
+  resolvidoEm         DateTime?
+  tratadoPorUserId    String?
+  observacaoTratativa String?
+
+  @@unique([companyId, chave])
+  @@index([companyId, status, severidade])
+  @@index([companyId, categoria, status])
+  @@index([companyId, detectadoEm])
+}
+
+// ---------- Relatorio diario ----------
+// O HTML enviado fica guardado inteiro: o relatorio e uma peca de
+// controladoria com data (o que se sabia naquele dia, com os numeros daquele
+// dia). Reconstrui-lo depois a partir da base atual daria outro resultado, e
+// perderia justamente o valor de trilha.
+model RelatorioDiario {
+  id              String          @id @default(cuid())
+  companyId       String
+  company         Company         @relation(fields: [companyId], references: [id])
+  dataReferencia  DateTime
+  geradoEm        DateTime        @default(now())
+  enviadoEm       DateTime?
+  status          RelatorioStatus @default(GERADO)
+  destinatarios   String
+  assunto         String
+  html            String
+  resumo          Json
+  narrativaIa     Json?
+  erro            String?
+  achadosTotal    Int             @default(0)
+  achadosCriticos Int             @default(0)
+
+  @@unique([companyId, dataReferencia])
+  @@index([companyId, dataReferencia])
+}
+
+// Parametros do modelo de gestao financeira da empresa. Sao os numeros que
+// transformam regra generica em politica DESTA empresa: sem alcada
+// cadastrada, por exemplo, o agente antifraude nao tem como saber que tres
+// pagamentos de R$ 9.900 no mesmo dia pro mesmo fornecedor sao fracionamento
+// de um de R$ 29.700 pra passar por baixo de um limite de R$ 10.000.
+model ControladoriaConfig {
+  id                                  String   @id @default(cuid())
+  companyId                           String   @unique
+  company                             Company  @relation(fields: [companyId], references: [id])
+  emailsRelatorio                     String   @default("")
+  // Inicio da base historica (o usuario definiu 01/01/2026 para a primeira
+  // carga). Comparacao com ano anterior so tem base quando esta data recua.
+  dataInicioBase                      DateTime
+  limiteAlcadaCents                   Int?
+  metaMargemPercent                   Float?
+  toleranciaVariacaoPercent           Float    @default(20)
+  diasAtrasoCritico                   Int      @default(30)
+  saldoMinimoCaixaCents               Int?
+  // Percentual maximo do gasto total que um unico fornecedor pode
+  // representar antes de virar achado de concentracao/dependencia.
+  limiteConcentracaoFornecedorPercent Float    @default(25)
+  atualizadoEm                        DateTime @updatedAt
+
+  @@index([companyId])
+}
+
+// ============================================================================
+// BSC — Balanced Scorecard
+// ============================================================================
+// O catalogo de indicadores (codigo, perspectiva, unidade, direcao, como
+// calcular) vive em CODIGO (src/lib/controladoria/bsc.ts), nao no banco —
+// mesma filosofia ja usada nos motores de conformidade deste sistema: a
+// formula de um indicador e regra de negocio versionada, revisavel em diff,
+// nao dado editavel em tela. O banco guarda so o que e decisao da empresa
+// (a meta) e o que e historico (a medicao de cada dia).
+
+enum BscPerspectiva {
+  FINANCEIRA
+  CLIENTE
+  PROCESSOS_INTERNOS
+  APRENDIZADO_CRESCIMENTO
+}
+
+// Meta definida pela empresa para um indicador do catalogo. Sem meta
+// cadastrada o indicador continua sendo medido e exibido — so nao ganha
+// farol (verde/amarelo/vermelho), porque farol sem meta seria opiniao do
+// sistema disfarçada de numero.
+model BscMeta {
+  id                  String   @id @default(cuid())
+  companyId           String
+  company             Company  @relation(fields: [companyId], references: [id])
+  codigo              String
+  meta                Float
+  // Faixa amarela: quanto o realizado pode se afastar da meta antes de
+  // virar vermelho (em % da meta).
+  toleranciaPercent   Float    @default(10)
+  ativo               Boolean  @default(true)
+  observacao          String?
+  atualizadoEm        DateTime @updatedAt
+  atualizadoPorUserId String?
+
+  @@unique([companyId, codigo])
+}
+
+// Medicao diaria de cada indicador. E o que da tendencia ao BSC (a seta de
+// evolucao no painel e no e-mail) e o que permite auditar depois "o
+// indicador estava mesmo verde naquele dia?" — recalcular a partir da base
+// de hoje nao responde isso.
+model BscSnapshot {
+  id             String         @id @default(cuid())
+  companyId      String
+  company        Company        @relation(fields: [companyId], references: [id])
+  dataReferencia DateTime
+  codigo         String
+  perspectiva    BscPerspectiva
+  valor          Float?
+  meta           Float?
+  // "VERDE" | "AMARELO" | "VERMELHO" | "SEM_META" | "SEM_DADO"
+  farol          String
+  // Numerador/denominador do calculo, pra o indicador ser auditavel sem
+  // reprocessar a base inteira.
+  detalhes       Json?
+  criadoEm       DateTime       @default(now())
+
+  @@unique([companyId, dataReferencia, codigo])
+  @@index([companyId, codigo, dataReferencia])
+}
+
+// ============================================================================
+// Rastreabilidade das acoes humanas na Controladoria
+// ============================================================================
+// Trilha append-only de tudo que uma pessoa faz neste modulo: tratar um
+// achado, mudar um parametro do modelo de gestao, mudar uma meta do BSC,
+// disparar sync/relatorio manualmente. Mesmo principio (e mesmo motivo) do
+// TimeClockCorrection no modulo de ponto: num modulo cujo produto e apontar
+// o erro dos outros, quem mexe no proprio modulo tem que ficar registrado —
+// senao a primeira pergunta de qualquer auditor externo ("quem desligou este
+// alerta, e quando?") nao tem resposta. Nunca atualizada nem apagada.
+model ControladoriaEventLog {
+  id           String   @id @default(cuid())
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id])
+  userId       String?
+  userNome     String?
+  userEmail    String?
+  // "ACHADO_TRATADO" | "CONFIG_ALTERADA" | "META_BSC_ALTERADA" |
+  // "SYNC_MANUAL" | "RELATORIO_MANUAL" | "RELATORIO_ENVIADO" — texto livre
+  // pelo mesmo motivo de TimeClockCorrection.origem: origem nova nao pode
+  // exigir migration.
+  acao         String
+  entidadeTipo String?
+  entidadeId   String?
+  descricao    String
+  antes        Json?
+  depois       Json?
+  // IP e user-agent da requisicao que originou a acao. Guardados porque um
+  // registro de "quem" sem "de onde" perde metade do valor forense quando a
+  // credencial em si e o que esta sob suspeita.
+  ip           String?
+  userAgent    String?
+  criadoEm     DateTime @default(now())
+
+  @@index([companyId, criadoEm])
+  @@index([companyId, entidadeTipo, entidadeId])
+}
+
+// ============================================================================
+// Rateio / unit economics — custo por contrato, veiculo e funcionario
+// ============================================================================
+// De-para entre a dimensao de custo da Omie (departamento, projeto, categoria,
+// fornecedor ou um texto que aparece na observacao/documento do titulo) e os
+// cadastros operacionais que ja existem neste sistema (Cliente = contrato,
+// Vehicle = placa, Driver = funcionario).
+//
+// Por que uma tabela de vinculo, e nao um campo no titulo: o plano de contas
+// da Omie e mantido pelo financeiro/contabilidade e muda de nome com o tempo
+// ("FEMSA JUNDIAI" vira "FEMSA - JUNDIAI 02"); o cadastro de contrato/frota e
+// mantido pela operacao. Amarrar os dois dentro do titulo espalharia a
+// decisao por milhares de linhas e a perderia na proxima reimportacao. Aqui
+// a decisao fica em UMA linha por dimensao, revisavel em tela, e o rateio e
+// recalculado a partir dela (ver src/lib/controladoria/unitEconomics.ts).
+//
+// Sem vinculo cadastrado nada quebra: o custo simplesmente entra no balde
+// "nao alocado" — e a propria cobertura do rateio vira indicador de BSC e
+// achado de auditoria, porque custo sem centro de custo e exatamente o que
+// impede saber a rentabilidade por contrato.
+model OmieVinculoCentroCusto {
+  id                  String    @id @default(cuid())
+  companyId           String
+  company             Company   @relation(fields: [companyId], references: [id])
+  // "DEPARTAMENTO" | "PROJETO" | "CATEGORIA" | "PARCEIRO" | "TEXTO"
+  tipoOrigem          String
+  // Codigo (ou texto, no caso de TEXTO) do lado Omie.
+  valorOrigem         String
+  // Rotulo legivel do lado Omie, so pra tela nao precisar de join.
+  rotuloOrigem        String?
+  clienteId           String?
+  cliente             Cliente?  @relation(fields: [clienteId], references: [id])
+  vehicleId           String?
+  vehicle             Vehicle?  @relation(fields: [vehicleId], references: [id])
+  driverId            String?
+  driver              Driver?   @relation(fields: [driverId], references: [id])
+  // Percentual do valor do titulo que vai para este destino. Permite ratear
+  // um custo compartilhado (ex.: aluguel da garagem) entre contratos, em vez
+  // de obrigar tudo ou nada. A soma por (tipoOrigem, valorOrigem) deveria
+  // fechar 100% — quando nao fecha, o resto entra em "nao alocado" e vira
+  // achado, em vez de o sistema inventar um rateio.
+  percentual          Float     @default(100)
+  // Vinculo sugerido automaticamente por semelhanca de nome (ver
+  // sugerirVinculos) e ainda nao confirmado por uma pessoa. Sugestao NUNCA
+  // entra no calculo sozinha — mesma regra da extracao de CCT por IA neste
+  // projeto: a maquina sugere, a pessoa confirma.
+  sugerido            Boolean   @default(false)
+  confirmadoPorUserId String?
+  confirmadoEm        DateTime?
+  criadoEm            DateTime  @default(now())
+  atualizadoEm        DateTime  @updatedAt
+
+  @@unique([companyId, tipoOrigem, valorOrigem, clienteId, vehicleId, driverId])
+  @@index([companyId, tipoOrigem])
 }

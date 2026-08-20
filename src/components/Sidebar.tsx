@@ -26,6 +26,15 @@ import {
   Scale,
   FlaskConical,
   Building2,
+  Wallet,
+  ShieldCheck,
+  Banknote,
+  TrendingUp,
+  Target,
+  Mail,
+  RefreshCw,
+  Receipt,
+  SlidersHorizontal,
 } from "lucide-react";
 
 type NavItem = {
@@ -85,6 +94,28 @@ const NAV: NavItem[] = [
       { href: "/ponto/mensal", label: "Relatório mensal", icon: FileSpreadsheet },
       { href: "/ponto/simulador", label: "Simulador de cenário", icon: FlaskConical },
       { href: "/cadastros/sindicatos", label: "Sindicatos", icon: Landmark, roles: ["ADMIN", "GESTOR"] },
+    ],
+  },
+  {
+    href: "/controladoria",
+    label: "Controladoria",
+    icon: Wallet,
+    roles: ["ADMIN", "GESTOR", "CONTROLADORIA"],
+    // Ordem por fluxo de trabalho, nao alfabetica (diferente do submenu
+    // Folha): quem abre este menu de manha vai primeiro na auditoria, depois
+    // no que precisa de decisao de caixa, e so no fim nas telas de
+    // configuracao. Alfabetico jogaria "Sincronização" para o meio.
+    children: [
+      { href: "/controladoria/auditoria", label: "Auditoria e achados", icon: ShieldCheck },
+      { href: "/controladoria/titulos", label: "Contas a pagar e receber", icon: Receipt },
+      { href: "/controladoria/fluxo-caixa", label: "Fluxo de caixa", icon: Banknote },
+      { href: "/controladoria/conciliacao", label: "Conciliação bancária", icon: Landmark },
+      { href: "/controladoria/custos", label: "Custos e DRE", icon: TrendingUp },
+      { href: "/controladoria/rentabilidade", label: "Rentabilidade por contrato", icon: PiggyBank },
+      { href: "/controladoria/bsc", label: "Balanced Scorecard", icon: Target },
+      { href: "/controladoria/relatorios", label: "Relatórios diários", icon: Mail },
+      { href: "/controladoria/sincronizacao", label: "Sincronização (Omie)", icon: RefreshCw },
+      { href: "/controladoria/configuracao", label: "Modelo de gestão", icon: SlidersHorizontal, roles: ["ADMIN", "CONTROLADORIA"] },
     ],
   },
   {
