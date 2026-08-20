@@ -20,6 +20,24 @@ function normName(s: string) {
   return s.trim().toUpperCase().replace(/\s+/g, " ");
 }
 
+// Reservation.driver_name vem abreviado com frequencia (confirmado real:
+// "ANTENOR", "Carlos Alberto", "Fernando Martins" — enquanto o motorista
+// esta cadastrado com o nome completo, ex. "ANTENOR AMALIO DE SOUZA
+// JUNIOR", "CARLOS ALBERTO DA SILVA", "FERNANDO MARTINS DOS SANTOS") —
+// casamento exato por nome perde esses casos. Aqui, se o exato nao bate,
+// tenta por PREFIXO (nome da reserva = inicio do nome completo, respeitando
+// fronteira de palavra) — so aceita se o prefixo casar com EXATAMENTE 1
+// motorista, pra nao arriscar casar com a pessoa errada quando 2+ tem o
+// mesmo primeiro nome.
+function findDriverByName(rawName: string, driverByName: Map<string, { id: string; name: string }>, allDrivers: { id: string; name: string }[]) {
+  const target = normName(rawName);
+  const exact = driverByName.get(target);
+  if (exact) return exact;
+  if (target.length < 4) return undefined;
+  const candidates = allDrivers.filter((d) => normName(d.name).startsWith(`${target} `));
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
+
 // Placa brasileira, formato antigo (ABC1234) ou Mercosul (ABC1D23) —
 // extrai de dentro de um texto livre tipo "177 - van - MASTER V A6 PAS -
 // UPD9C09" (formato real confirmado, varia motorista a motorista).
@@ -147,9 +165,10 @@ export async function syncFromSiat(dateFrom: string, dateTo: string): Promise<Si
   }
   const existingEscalas = await prisma.escala.findMany({ where: { companyId: session.companyId, siatId: { not: null } } });
   const escalaBySiatId = new Map(existingEscalas.map((e) => [e.siatId as string, e]));
+  const allDriversArray = [...driverByName.values()];
 
   for (const sr of siatReservations) {
-    const driverLocal = (sr.driverId ? driverBySiatId.get(sr.driverId) : undefined) ?? (sr.driverName ? driverByName.get(normName(sr.driverName)) : undefined);
+    const driverLocal = (sr.driverId ? driverBySiatId.get(sr.driverId) : undefined) ?? (sr.driverName ? findDriverByName(sr.driverName, driverByName, allDriversArray) : undefined);
     const plate = extractPlate(sr.vehicleInfo);
     const vehicleLocal = (sr.vehicleId ? vehicleBySiatId.get(sr.vehicleId) : undefined) ?? (plate ? vehicleByPlate.get(plate) : undefined);
 
