@@ -49,6 +49,8 @@ export default async function EscalasPage({
         subtitle="Vínculo motorista × veículo por turno."
         actionHref="/escalas/novo"
         actionLabel="Nova escala"
+        secondaryActionHref="/escalas/importar-siat"
+        secondaryActionLabel="Sincronizar com SIAT"
       />
 
       <div className="mb-4 flex items-center justify-between">
@@ -115,6 +117,12 @@ export default async function EscalasPage({
                               <span className="block font-mono text-[10px] text-blue-600">
                                 {e.vehicle.plate}
                               </span>
+                              {e.clientName && (
+                                <span className="block truncate text-[9px] text-blue-500">{e.clientName}</span>
+                              )}
+                              {e.fonte === "SIAT" && (
+                                <span className="block text-[9px] italic text-slate-500">SIAT</span>
+                              )}
                             </Link>
                           ))}
                           {items.length === 0 && (

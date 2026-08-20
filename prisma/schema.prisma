@@ -219,6 +219,15 @@ model Driver {
   // de hora extra em /ponto/analise. Nulo = motorista fica de fora da
   // soma de custo (nao trava o calculo dos demais).
   valorHoraCents Int?
+  // Integracao SIAT (sistema de despacho, fonte oficial das escalas — ver
+  // model Escala). O Driver do SIAT nao expoe CPF, entao o 1o casamento e
+  // por nome (normalizado); daqui pra frente usa siatId, mais confiavel.
+  // "type" do SIAT (efetivo/terceirizado etc.) fica num campo separado de
+  // `funcao` (que e cargo, nao tipo de contratacao). CNH vinda do SIAT so
+  // preenche os campos abaixo quando estao vazios aqui — nunca sobrescreve
+  // dado ja cadastrado (sensivel, usado em alerta de vencimento).
+  siatId              String? @unique
+  tipoContratacaoSiat String?
   active        Boolean   @default(true)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -277,6 +286,14 @@ model Vehicle {
   // Marca o km em que a ultima manutencao foi registrada; a diferenca para
   // currentMileage alimenta o alerta de manutencao pendente em /utilizacao.
   lastMaintenanceMileage Int @default(0)
+  // Integracao SIAT — casamento inicial por `plate` (ja unico aqui), depois
+  // por siatId. color/capacity/ownership/licensingMonth so existem no SIAT,
+  // enriquecimento puro (nunca mexe em status/currentMileage, geridos aqui).
+  siatId         String? @unique
+  color          String?
+  capacity       Int?
+  ownership      String?
+  licensingMonth String?
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
 
@@ -303,6 +320,25 @@ model Escala {
   startTime String // HH:mm
   endTime   String // HH:mm
   notes     String?
+  // Integracao SIAT (fonte oficial das escalas, 2026-08-19): siatId e a
+  // chave de sincronizacao idempotente (ID do ScaleAssignment no SIAT).
+  // fonte nulo = lancamento manual (protegido, sincronizacao nunca
+  // sobrescreve); "SIAT" = veio de la, sincronizacoes seguintes atualizam
+  // livremente. Sem historico de correcao tipo TimeClockCorrection de
+  // proposito — escala e dado operacional de despacho, nao prova de
+  // jornada, nao tem a mesma exigencia de auditoria do ponto.
+  siatId          String?   @unique
+  fonte           String?
+  scaleName       String?
+  routeName       String?
+  clientName      String?
+  departureTime   String? // HH:mm
+  boardingAddress String?
+  dropoffAddress  String?
+  startDatetime   DateTime?
+  endDatetime     DateTime?
+  status          String?
+  isAutoRelease   Boolean?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
