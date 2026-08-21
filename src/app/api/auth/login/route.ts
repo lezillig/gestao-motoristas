@@ -17,7 +17,30 @@ export async function POST(req: NextRequest) {
   }
 
   const { email, password } = parsed.data;
-  const user = await prisma.user.findUnique({ where: { email } });
+
+  // A leitura do usuário é protegida para separar DUAS falhas que a tela
+  // mostrava igual: senha errada e banco fora do ar.
+  //
+  // Sem isto, uma indisponibilidade do Postgres derrubava a rota, o navegador
+  // recebia uma página de erro em vez de JSON, e o formulário caía no texto
+  // genérico "Não foi possível entrar" — a mesma frase que apareceria para uma
+  // senha errada. Quem está na frente da tela conclui que errou a senha e
+  // tenta de novo, enquanto o problema real é o banco.
+  //
+  // O texto de credencial continua genérico de propósito: dizer "este e-mail
+  // não existe" entregaria a quem tenta adivinhar quais endereços são válidos.
+  let user;
+  try {
+    user = await prisma.user.findUnique({ where: { email } });
+  } catch {
+    return NextResponse.json(
+      {
+        error:
+          "O banco de dados não respondeu. Não é a sua senha — tente de novo em alguns minutos.",
+      },
+      { status: 503 }
+    );
+  }
 
   if (!user || !user.active) {
     return NextResponse.json({ error: "Credenciais inválidas" }, { status: 401 });
