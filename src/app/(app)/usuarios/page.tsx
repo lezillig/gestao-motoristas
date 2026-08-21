@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass } from "@/lib/ui";
@@ -9,6 +10,7 @@ const ROLE_BADGE_TONE: Record<string, string> = {
   ADMIN: "bg-blue-100 text-blue-700",
   GESTOR: "bg-indigo-100 text-indigo-700",
   FOLHA: "bg-amber-100 text-amber-700",
+  CONTROLADORIA: "bg-teal-100 text-teal-700",
   MOTORISTA: "bg-slate-100 text-slate-600",
 };
 
@@ -24,7 +26,7 @@ export default async function UsuariosPage() {
     <div className="max-w-4xl">
       <PageHeader
         title="Usuários"
-        subtitle="Contas de acesso ao sistema e seus tipos de permissão."
+        subtitle="Contas de acesso ao sistema e seus tipos de permissão. Contas saem de circulação por desativação, nunca por exclusão: aprovações e registros de auditoria apontam para quem fez, e apagar quebraria esse histórico."
         actionHref="/usuarios/novo"
         actionLabel="Novo usuário"
       />
@@ -38,12 +40,13 @@ export default async function UsuariosPage() {
                 <th className="px-4 py-3">E-mail</th>
                 <th className="px-4 py-3">Tipo de acesso</th>
                 <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3 text-right">Ações</th>
               </tr>
             </thead>
             <tbody>
               {users.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
                     Nenhum usuário cadastrado ainda.
                   </td>
                 </tr>
@@ -70,6 +73,14 @@ export default async function UsuariosPage() {
                         {u.active ? "Ativo" : "Inativo"}
                       </button>
                     </form>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <Link
+                      href={`/usuarios/${u.id}`}
+                      className="text-sm font-medium text-blue-700 hover:text-blue-800 hover:underline"
+                    >
+                      Editar
+                    </Link>
                   </td>
                 </tr>
               ))}
