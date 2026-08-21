@@ -3,7 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import { ROLE_LABELS } from "@/lib/permissions";
-import { toggleUserActive } from "./actions";
+import { toggleUserActive, deleteUser } from "./actions";
+import DeleteUserButton from "./DeleteUserButton";
 
 const ROLE_BADGE_TONE: Record<string, string> = {
   ADMIN: "bg-blue-100 text-blue-700",
@@ -38,12 +39,13 @@ export default async function UsuariosPage() {
                 <th className="px-4 py-3">E-mail</th>
                 <th className="px-4 py-3">Tipo de acesso</th>
                 <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody>
               {users.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
                     Nenhum usuário cadastrado ainda.
                   </td>
                 </tr>
@@ -63,13 +65,30 @@ export default async function UsuariosPage() {
                       <button
                         type="submit"
                         disabled={u.id === session.userId}
-                        className={`${badgeClass} ${
+                        title={u.id === session.userId ? undefined : u.active ? "Clique para desativar" : "Clique para ativar"}
+                        className={`group inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
                           u.active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
-                        } ${u.id === session.userId ? "cursor-not-allowed opacity-60" : ""}`}
+                        } ${
+                          u.id === session.userId
+                            ? "cursor-not-allowed opacity-60"
+                            : "hover:ring-2 hover:ring-offset-1 " + (u.active ? "hover:ring-emerald-300" : "hover:ring-slate-300")
+                        }`}
                       >
                         {u.active ? "Ativo" : "Inativo"}
+                        {u.id !== session.userId && (
+                          <span className="text-[10px] font-normal opacity-0 transition-opacity group-hover:opacity-100">
+                            {u.active ? "· desativar" : "· ativar"}
+                          </span>
+                        )}
                       </button>
                     </form>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <DeleteUserButton
+                      action={deleteUser.bind(null, u.id)}
+                      userName={u.name}
+                      disabled={u.id === session.userId}
+                    />
                   </td>
                 </tr>
               ))}

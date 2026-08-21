@@ -58,3 +58,30 @@ export async function toggleUserActive(id: string, active: boolean) {
   });
   revalidatePath("/usuarios");
 }
+
+export async function deleteUser(id: string) {
+  const session = await requireRole("ADMIN");
+  if (id === session.userId) {
+    throw new Error("Você não pode excluir sua própria conta.");
+  }
+
+  const user = await prisma.user.findUnique({ where: { id, companyId: session.companyId } });
+  if (!user) return;
+
+  // ConvencaoColetiva.uploadedById e obrigatorio — nunca apaga em cascata
+  // um documento de convencao coletiva so por causa da conta que o
+  // enviou. Bloqueia com uma mensagem clara em vez disso.
+  const convencoesEnviadas = await prisma.convencaoColetiva.count({ where: { uploadedById: id } });
+  if (convencoesEnviadas > 0) {
+    throw new Error(
+      `Não é possível excluir: ${user.name} enviou ${convencoesEnviadas} convenção(ões) coletiva(s). Inative a conta em vez de excluir.`
+    );
+  }
+
+  // Driver.userId e opcional — so desvincula o cadastro de motorista, nao
+  // apaga o motorista.
+  await prisma.driver.updateMany({ where: { userId: id }, data: { userId: null } });
+  await prisma.user.delete({ where: { id } });
+
+  revalidatePath("/usuarios");
+}
