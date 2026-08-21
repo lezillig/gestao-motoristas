@@ -1,14 +1,27 @@
 "use client";
 
-import { useState } from "react";
-import { AlertTriangle, CheckCircle2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { inputClass, labelClass, primaryButtonClass } from "@/lib/ui";
 import { syncFromSiat, type SiatSyncResult } from "./siatActions";
 
+// Sincronizar reservas dia a dia no SIAT e lento (chamada por dia, com
+// pacing) — um periodo de poucas semanas leva segundos, mas meses/anos
+// pode levar minutos e nao tem nenhum feedback visual continuo alem do
+// texto do botao, o que pareceu "travado" pra quem tava usando (relato
+// real). O cronometro abaixo so existe pra provar que ainda esta vivo.
 export default function SiatSyncForm() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<SiatSyncResult | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, []);
 
   async function handleSubmit(formData: FormData) {
     const dateFrom = String(formData.get("dateFrom") ?? "");
@@ -16,12 +29,15 @@ export default function SiatSyncForm() {
     setRunning(true);
     setError(null);
     setResult(null);
+    setElapsedSeconds(0);
+    intervalRef.current = setInterval(() => setElapsedSeconds((s) => s + 1), 1000);
     try {
       const r = await syncFromSiat(dateFrom, dateTo);
       setResult(r);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Falha ao sincronizar com o SIAT.");
     }
+    if (intervalRef.current) clearInterval(intervalRef.current);
     setRunning(false);
   }
 
@@ -36,14 +52,16 @@ export default function SiatSyncForm() {
           <label className={labelClass}>Data final *</label>
           <input type="date" name="dateTo" required disabled={running} className={inputClass} />
         </div>
-        <button type="submit" disabled={running} className={primaryButtonClass}>
-          {running ? "Sincronizando..." : "Sincronizar"}
+        <button type="submit" disabled={running} className={`${primaryButtonClass} flex items-center gap-2`}>
+          {running && <Loader2 className="h-4 w-4 animate-spin" />}
+          {running ? `Sincronizando... (${elapsedSeconds}s)` : "Sincronizar"}
         </button>
       </form>
       <p className="-mt-3 text-xs text-slate-400">
         Sincroniza veículos e motoristas (cria quando o SIAT traz CPF, senão só enriquece um cadastro já existente)
         e, no período escolhido, as reservas/viagens como escalas (fonte oficial — sincronizações seguintes
-        atualizam livremente o que já veio de lá).
+        atualizam livremente o que já veio de lá). Períodos longos (vários meses) buscam dia a dia no SIAT e podem
+        levar minutos — o contador acima confirma que ainda está rodando, mesmo sem outra mudança na tela.
       </p>
 
       {error && (

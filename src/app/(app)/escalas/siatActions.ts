@@ -213,11 +213,18 @@ export async function syncFromSiat(dateFrom: string, dateTo: string): Promise<Si
     }
 
     if (existing) {
-      await prisma.escala.update({ where: { id: existing.id }, data });
+      const updated = await prisma.escala.update({ where: { id: existing.id }, data });
       result.escalas.updated++;
+      escalaBySiatId.set(sr.id, updated);
     } else {
-      await prisma.escala.create({ data: { ...data, companyId: session.companyId } });
+      // Atualiza o Map na hora — sem isso, a mesma reserva aparecendo 2x no
+      // mesmo lote (confirmado real: SIAT as vezes devolve a mesma reserva
+      // em mais de um dia) tenta criar de novo na segunda vez e quebra por
+      // siatId duplicado (mesmo padrao ja usado pra vehicleBySiatId/
+      // driverBySiatId acima).
+      const created = await prisma.escala.create({ data: { ...data, companyId: session.companyId } });
       result.escalas.created++;
+      escalaBySiatId.set(sr.id, created);
     }
   }
 
