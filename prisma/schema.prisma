@@ -318,7 +318,11 @@ model Escala {
   vehicle   Vehicle  @relation(fields: [vehicleId], references: [id])
   date      DateTime
   startTime String // HH:mm
-  endTime   String // HH:mm
+  // Nulo quando a reserva do SIAT nao informa trip_end_time (confirmado
+  // real: ~45% das reservas com motorista atribuido no periodo 01-20/08 —
+  // ver siatActions.ts). Antes o sync pulava essas reservas inteiras;
+  // agora cria a Escala so com o inicio em vez de descartar um turno real.
+  endTime   String? // HH:mm
   notes     String?
   // Integracao SIAT (fonte oficial das escalas, 2026-08-19): siatId e a
   // chave de sincronizacao idempotente (ID do ScaleAssignment no SIAT).

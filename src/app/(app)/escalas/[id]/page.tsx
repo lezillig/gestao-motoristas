@@ -44,7 +44,7 @@ export default async function EditarEscalaPage({
             vehicleId: escala.vehicleId,
             date: format(escala.date, "yyyy-MM-dd"),
             startTime: escala.startTime,
-            endTime: escala.endTime,
+            endTime: escala.endTime ?? "",
             notes: escala.notes,
           }}
         />

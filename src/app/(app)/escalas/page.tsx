@@ -1,19 +1,21 @@
 import Link from "next/link";
 import { addDays, addWeeks, format, startOfWeek, subWeeks } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { cardClass } from "@/lib/ui";
+import { cardClass, inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
+import { buildSortHref, nextSortDir } from "@/lib/sort";
+import { toMinutes } from "@/lib/time";
 
 export default async function EscalasPage({
   searchParams,
 }: {
-  searchParams: Promise<{ semana?: string }>;
+  searchParams: Promise<{ semana?: string; motorista?: string; todos?: string; sort?: string; dir?: string }>;
 }) {
   const session = await requireRole("ADMIN", "GESTOR");
-  const { semana } = await searchParams;
+  const { semana, motorista, todos, sort, dir } = await searchParams;
 
   const anchor = semana ? new Date(`${semana}T00:00:00`) : new Date();
   const weekStart = startOfWeek(anchor, { weekStartsOn: 1 });
@@ -41,6 +43,38 @@ export default async function EscalasPage({
     list.push(e);
     cell.set(key, list);
   }
+
+  // Horario mais cedo da semana, por motorista — usado pro sort por horario
+  // e pra decidir quem "tem escala nesta semana".
+  const earliestStartByDriver = new Map<string, number>();
+  for (const e of escalas) {
+    const current = earliestStartByDriver.get(e.driverId);
+    const minutes = toMinutes(e.startTime);
+    if (current === undefined || minutes < current) earliestStartByDriver.set(e.driverId, minutes);
+  }
+
+  const motoristaFiltro = motorista?.trim().toLowerCase();
+  const mostrarTodos = todos === "1";
+  const filteredDrivers = drivers.filter((d) => {
+    if (motoristaFiltro && !d.name.toLowerCase().includes(motoristaFiltro)) return false;
+    if (!mostrarTodos && !earliestStartByDriver.has(d.id)) return false;
+    return true;
+  });
+
+  const sortDir = dir === "asc" ? "asc" : "desc";
+  const sortedDrivers =
+    sort === "horario"
+      ? [...filteredDrivers].sort((a, b) => {
+          const av = earliestStartByDriver.get(a.id) ?? Infinity;
+          const bv = earliestStartByDriver.get(b.id) ?? Infinity;
+          return sortDir === "asc" ? av - bv : bv - av;
+        })
+      : sort === "nome" && sortDir === "desc"
+        ? [...filteredDrivers].sort((a, b) => b.name.localeCompare(a.name))
+        : filteredDrivers; // padrao: ja vem alfabetico do orderBy do Prisma
+
+  const sortLinkParams = { semana: format(weekStart, "yyyy-MM-dd"), motorista, todos: mostrarTodos ? "1" : undefined };
+  const baseHref = `/escalas?semana=${format(weekStart, "yyyy-MM-dd")}${motorista ? `&motorista=${encodeURIComponent(motorista)}` : ""}${sort ? `&sort=${sort}&dir=${sortDir}` : ""}`;
 
   return (
     <div className="max-w-6xl">
@@ -71,12 +105,66 @@ export default async function EscalasPage({
         </Link>
       </div>
 
+      <form className="mb-4 flex flex-wrap items-end gap-3" method="get">
+        <input type="hidden" name="semana" value={format(weekStart, "yyyy-MM-dd")} />
+        {sort && <input type="hidden" name="sort" value={sort} />}
+        {dir && <input type="hidden" name="dir" value={dir} />}
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">Motorista</label>
+          <input
+            type="text"
+            name="motorista"
+            defaultValue={motorista ?? ""}
+            placeholder="nome"
+            className={`${inputClass} w-56`}
+          />
+        </div>
+        <label className="mb-2 flex items-center gap-1.5 text-sm text-slate-600">
+          <input type="checkbox" name="todos" value="1" defaultChecked={mostrarTodos} className="h-4 w-4 rounded border-slate-300" />
+          Mostrar todos (mesmo sem escala nesta semana)
+        </label>
+        <button type="submit" className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+          Filtrar
+        </button>
+        {(motorista || mostrarTodos) && (
+          <Link
+            href={`/escalas?semana=${format(weekStart, "yyyy-MM-dd")}${sort ? `&sort=${sort}&dir=${sortDir}` : ""}`}
+            className="text-sm text-slate-500 hover:underline"
+          >
+            Limpar filtro
+          </Link>
+        )}
+      </form>
+
       <div className={`${cardClass} p-0 overflow-hidden`}>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
-                <th className="sticky left-0 bg-slate-50 px-4 py-3">Motorista</th>
+                <th className="sticky left-0 bg-slate-50 px-4 py-3">
+                  <span className="inline-flex items-center gap-3">
+                    {(() => {
+                      const active = sort === "nome" || !sort;
+                      const linkDir = nextSortDir(sort ?? "nome", sortDir, "nome");
+                      const Icon = active && sort ? (sortDir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
+                      return (
+                        <Link href={buildSortHref("/escalas", sortLinkParams, "nome", linkDir)} className={`inline-flex items-center gap-1 hover:text-slate-700 ${active ? "text-slate-800" : ""}`}>
+                          Motorista <Icon className="h-3 w-3" />
+                        </Link>
+                      );
+                    })()}
+                    {(() => {
+                      const active = sort === "horario";
+                      const linkDir = nextSortDir(sort, sortDir, "horario");
+                      const Icon = active ? (sortDir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
+                      return (
+                        <Link href={buildSortHref("/escalas", sortLinkParams, "horario", linkDir)} className={`inline-flex items-center gap-1 normal-case font-normal hover:text-slate-700 ${active ? "text-slate-800" : ""}`}>
+                          horário <Icon className="h-3 w-3" />
+                        </Link>
+                      );
+                    })()}
+                  </span>
+                </th>
                 {days.map((d) => (
                   <th key={d.toISOString()} className="px-3 py-3 text-center">
                     {format(d, "EEE", { locale: ptBR })}
@@ -88,14 +176,18 @@ export default async function EscalasPage({
               </tr>
             </thead>
             <tbody>
-              {drivers.length === 0 && (
+              {sortedDrivers.length === 0 && (
                 <tr>
                   <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
-                    Nenhum motorista ativo cadastrado.
+                    {drivers.length === 0
+                      ? "Nenhum motorista ativo cadastrado."
+                      : mostrarTodos
+                        ? "Nenhum motorista encontrado."
+                        : "Nenhum motorista com escala nesta semana — marque \"Mostrar todos\" pra ver o cadastro completo."}
                   </td>
                 </tr>
               )}
-              {drivers.map((driver) => (
+              {sortedDrivers.map((driver) => (
                 <tr key={driver.id} className="border-b border-slate-100 last:border-0">
                   <td className="sticky left-0 bg-white px-4 py-2.5 font-medium text-slate-800">
                     {driver.name}
@@ -113,7 +205,8 @@ export default async function EscalasPage({
                               prefetch={false}
                               className="block rounded-md bg-blue-50 px-2 py-1 text-center text-xs font-medium text-blue-800 hover:bg-blue-100"
                             >
-                              {e.startTime}–{e.endTime}
+                              {e.startTime}
+                              {e.endTime && `–${e.endTime}`}
                               <span className="block font-mono text-[10px] text-blue-600">
                                 {e.vehicle.plate}
                               </span>

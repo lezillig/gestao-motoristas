@@ -390,7 +390,7 @@ export const PONTUALIDADE_TOLERANCIA_MINUTOS = 10;
 // absurdo.
 const PONTUALIDADE_MAX_PLAUSIVEL_MINUTOS = 12 * 60;
 
-export type EscalaScheduleLike = { driverId: string; date: Date; startTime: string; endTime: string };
+export type EscalaScheduleLike = { driverId: string; date: Date; startTime: string; endTime: string | null };
 
 export type LatenessEvent = {
   driverId: string;
@@ -443,7 +443,9 @@ export function findEarlyDepartureEvents(
   const events: EarlyDepartureEvent[] = [];
   for (const escala of escalas) {
     const entry = entryByKey.get(localDayKey(escala.driverId, escala.date));
-    if (!entry || !entry.clockOut) continue;
+    // Sem horario de fim programado (reserva do SIAT sem trip_end_time) nao
+    // da pra saber se a saida foi antecipada.
+    if (!entry || !entry.clockOut || !escala.endTime) continue;
     const earlyMinutes = toMinutes(escala.endTime) - toMinutes(entry.clockOut);
     if (earlyMinutes > PONTUALIDADE_TOLERANCIA_MINUTOS && earlyMinutes <= PONTUALIDADE_MAX_PLAUSIVEL_MINUTOS) {
       events.push({ driverId: escala.driverId, date: escala.date, scheduledEnd: escala.endTime, actualEnd: entry.clockOut, earlyMinutes });

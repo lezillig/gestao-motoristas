@@ -37,6 +37,9 @@ export async function findEscalaConflicts(params: {
 
   const conflicts: EscalaConflict[] = [];
   for (const escala of sameDay) {
+    // Sem horario de fim (reserva do SIAT sem trip_end_time) nao da pra
+    // checar sobreposicao — nao entra na comparacao.
+    if (!escala.endTime) continue;
     if (!timeRangesOverlap(params.startTime, params.endTime, escala.startTime, escala.endTime)) {
       continue;
     }
@@ -96,7 +99,7 @@ export async function findInterjornadaWarnings(params: {
   rangeEnd.setDate(rangeEnd.getDate() + 4);
   rangeEnd.setHours(0, 0, 0, 0);
 
-  const [driver, nearby] = await Promise.all([
+  const [driver, nearbyRaw] = await Promise.all([
     prisma.driver.findUnique({
       where: { id: params.driverId, companyId: params.companyId },
       include: { sindicato: { include: { convencoes: { include: { regras: true } } } } },
@@ -112,6 +115,11 @@ export async function findInterjornadaWarnings(params: {
     }),
   ]);
   if (!driver) return [];
+
+  // Escala sem horario de fim (reserva do SIAT sem trip_end_time) nao
+  // participa da checagem de interjornada — nao da pra calcular a folga ate
+  // ela sem saber quando o turno termina.
+  const nearby: EscalaTimeLike[] = nearbyRaw.filter((n): n is EscalaTimeLike => n.endTime != null);
 
   const candidate: EscalaTimeLike = { date: params.date, startTime: params.startTime, endTime: params.endTime };
   const sorted = [...nearby, candidate].sort((a, b) => {

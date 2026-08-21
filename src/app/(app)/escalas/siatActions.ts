@@ -180,11 +180,10 @@ export async function syncFromSiat(dateFrom: string, dateTo: string): Promise<Si
       result.errors.push({ context: `reserva ${sr.reservationNumber ?? sr.id} (${sr.date})`, message: sr.vehicleInfo ? `Veículo "${sr.vehicleInfo}" não encontrado no cadastro.` : "Sem veículo atribuído no SIAT ainda." });
       continue;
     }
-    if (!sr.endTime) {
-      result.errors.push({ context: `reserva ${sr.reservationNumber ?? sr.id} (${sr.date})`, message: "Sem horário de término da viagem no SIAT — não sincronizada." });
-      continue;
-    }
 
+    // sr.endTime vem nulo em boa parte das reservas reais (SIAT nao
+    // preenche trip_end_time) — cria a escala so com o inicio em vez de
+    // descartar um turno de verdade (ver comentario no schema).
     const data = {
       driverId: driverLocal.id,
       vehicleId: vehicleLocal.id,
@@ -207,13 +206,18 @@ export async function syncFromSiat(dateFrom: string, dateTo: string): Promise<Si
       continue;
     }
 
-    const conflicts = await findEscalaConflicts({ companyId: session.companyId, driverId: data.driverId, vehicleId: data.vehicleId, date: data.date, startTime: data.startTime, endTime: data.endTime, excludeId: existing?.id });
-    if (conflicts.length > 0) {
-      result.errors.push({ context: `reserva ${sr.reservationNumber ?? sr.id} (${sr.date})`, message: `Aviso: conflito de horário — ${conflicts.map((c) => `${c.type} (${c.startTime}–${c.endTime})`).join(", ")}.` });
-    }
-    const interjornada = await findInterjornadaWarnings({ companyId: session.companyId, driverId: data.driverId, date: data.date, startTime: data.startTime, endTime: data.endTime, excludeId: existing?.id });
-    if (interjornada.length > 0) {
-      result.errors.push({ context: `reserva ${sr.reservationNumber ?? sr.id} (${sr.date})`, message: "Aviso: descanso insuficiente entre turnos do motorista." });
+    // Sem horario de fim nao da pra checar sobreposicao/descanso desse
+    // turno especifico (ver guards em escalaConflicts.ts pro lado inverso —
+    // essa escala tambem nao entra na checagem de outras).
+    if (data.endTime) {
+      const conflicts = await findEscalaConflicts({ companyId: session.companyId, driverId: data.driverId, vehicleId: data.vehicleId, date: data.date, startTime: data.startTime, endTime: data.endTime, excludeId: existing?.id });
+      if (conflicts.length > 0) {
+        result.errors.push({ context: `reserva ${sr.reservationNumber ?? sr.id} (${sr.date})`, message: `Aviso: conflito de horário — ${conflicts.map((c) => `${c.type} (${c.startTime}–${c.endTime})`).join(", ")}.` });
+      }
+      const interjornada = await findInterjornadaWarnings({ companyId: session.companyId, driverId: data.driverId, date: data.date, startTime: data.startTime, endTime: data.endTime, excludeId: existing?.id });
+      if (interjornada.length > 0) {
+        result.errors.push({ context: `reserva ${sr.reservationNumber ?? sr.id} (${sr.date})`, message: "Aviso: descanso insuficiente entre turnos do motorista." });
+      }
     }
 
     if (existing) {
