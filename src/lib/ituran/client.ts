@@ -70,8 +70,13 @@ async function iturarFetch<T>(path: string, params: Record<string, string>, atte
   return (await res.json()) as T;
 }
 
+// nickname segue o padrao "PLACA - descricao" em toda a frota observada
+// (ex. "UPN2F99 - FAB / PERNAMBUCANAS - Mahas") — restringe a extracao ao
+// primeiro trecho antes do " - " em vez de buscar em qualquer parte do
+// texto, pra nao arriscar casar algo parecido com placa no meio da
+// descricao livre.
 function mapVehicleSnapshot(v: IturanVehicleRaw): IturanVehicleSnapshot | null {
-  const plate = v.license_plate?.trim().toUpperCase() || extractPlate(v.nickname);
+  const plate = v.license_plate?.trim().toUpperCase() || extractPlate(v.nickname?.split(" - ")[0]);
   if (!plate) return null;
   const loc = v.last_location;
   return {
