@@ -24,6 +24,8 @@ export async function generateReadings() {
         speedKmh: r.speedKmh,
         latitude: r.latitude,
         longitude: r.longitude,
+        odometerKm: r.odometerKm ?? null,
+        speedLimitKmh: r.speedLimitKmh ?? null,
         recordedAt: r.recordedAt,
         provider: provider.name,
       })),

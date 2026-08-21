@@ -4,6 +4,9 @@ export type TelemetryReadingInput = {
   latitude: number;
   longitude: number;
   recordedAt: Date;
+  // So a Ituran preenche — mock e leituras antigas ficam nulas.
+  odometerKm?: number | null;
+  speedLimitKmh?: number | null;
 };
 
 // Ponto de troca para o fornecedor real: uma IturanProvider (ou Sascar,

@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/tiquetaque-import",
       "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/cron/ituran-import",
+      "schedule": "0 6 * * *"
     }
   ]
 }

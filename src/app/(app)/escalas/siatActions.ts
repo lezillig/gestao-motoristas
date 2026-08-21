@@ -7,6 +7,7 @@ import { parseLocalDate } from "@/lib/date";
 import { fetchDrivers, fetchReservations, fetchVehicles, isSiatAvailable } from "@/lib/siat/client";
 import type { SiatDriver, SiatReservation, SiatVehicle } from "@/lib/siat/types";
 import { findEscalaConflicts, findInterjornadaWarnings } from "@/lib/escalaConflicts";
+import { extractPlate } from "@/lib/plate";
 
 export type SiatSyncRowError = { context: string; message: string };
 export type SiatSyncResult = {
@@ -38,15 +39,6 @@ function findDriverByName(rawName: string, driverByName: Map<string, { id: strin
   return candidates.length === 1 ? candidates[0] : undefined;
 }
 
-// Placa brasileira, formato antigo (ABC1234) ou Mercosul (ABC1D23) —
-// extrai de dentro de um texto livre tipo "177 - van - MASTER V A6 PAS -
-// UPD9C09" (formato real confirmado, varia motorista a motorista).
-const PLATE_PATTERN = /\b[A-Z]{3}[0-9][A-Z0-9][0-9]{2}\b/;
-function extractPlate(vehicleInfo: string | null): string | null {
-  if (!vehicleInfo) return null;
-  const match = vehicleInfo.toUpperCase().match(PLATE_PATTERN);
-  return match ? match[0] : null;
-}
 
 // Sincroniza Veiculos, Motoristas e Escalas (a partir de Reservation — ver
 // comentario em src/lib/siat/types.ts sobre por que nao e ScaleAssignment)

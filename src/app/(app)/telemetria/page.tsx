@@ -67,7 +67,12 @@ export default async function TelemetriaPage({
 
   return (
     <div className="max-w-6xl">
-      <PageHeader title="Telemetria" subtitle="Velocidade e comportamento de direção por veículo." />
+      <PageHeader
+        title="Telemetria"
+        subtitle="Velocidade e comportamento de direção por veículo."
+        secondaryActionHref="/telemetria/viagens"
+        secondaryActionLabel="Viagens x escala"
+      />
 
       <div className={`${cardClass} mb-6 flex flex-wrap items-center justify-between gap-3`}>
         <div className="flex items-center gap-3">
@@ -77,14 +82,15 @@ export default async function TelemetriaPage({
           <div>
             <p className="text-sm font-medium text-slate-800">Fornecedor ativo: {provider.name}</p>
             <p className="text-xs text-slate-500">
-              Sem credenciais da Ituran ainda — leituras simuladas por um adapter que segue a mesma
-              interface do fornecedor real, então trocar para a API da Ituran não muda o resto do produto.
+              {provider.name === "Ituran"
+                ? "Posição, velocidade, odômetro e limite de velocidade real vindos da Ituran."
+                : "Sem credenciais da Ituran ainda — leituras simuladas por um adapter que segue a mesma interface do fornecedor real, então trocar para a API da Ituran não muda o resto do produto."}
             </p>
           </div>
         </div>
         <form action={generateReadings}>
           <button type="submit" className={primaryButtonClass}>
-            Gerar leituras simuladas
+            {provider.name === "Ituran" ? "Gerar leituras" : "Gerar leituras simuladas"}
           </button>
         </form>
       </div>
@@ -100,7 +106,8 @@ export default async function TelemetriaPage({
           </div>
           <p className="text-2xl font-semibold text-slate-900">{alerts.length}</p>
           <p className="mt-0.5 text-xs text-slate-500">
-            Leituras com excesso de velocidade (&gt;{SPEED_LIMIT_KMH} km/h, últimas {readings.length} leituras)
+            Leituras com excesso de velocidade (limite real da via quando disponível, senão{" "}
+            {SPEED_LIMIT_KMH} km/h — últimas {readings.length} leituras)
           </p>
         </div>
         <div className={cardClass}>
@@ -149,7 +156,7 @@ export default async function TelemetriaPage({
               )}
               {readings.map((r) => {
                 const driver = driverAt(r.vehicleId, r.recordedAt);
-                const speeding = isSpeeding(r);
+                const speeding = isSpeeding(r, r.speedLimitKmh ?? SPEED_LIMIT_KMH);
                 return (
                   <tr key={r.id} className="border-b border-slate-100 last:border-0">
                     <td className="px-4 py-3 font-mono text-xs text-slate-600">{r.vehicle.plate}</td>

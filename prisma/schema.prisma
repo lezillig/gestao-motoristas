@@ -88,6 +88,7 @@ model Company {
   regrasConvencao   RegraConvencao[]
   usageLogs         VehicleUsageLog[]
   telemetryReadings TelemetryReading[]
+  vehicleTrips      VehicleTrip[]
   fuelTransactions  FuelTransaction[]
   consumptionSummaries FuelConsumptionSummary[]
   timeClockCorrections TimeClockCorrection[]
@@ -302,6 +303,7 @@ model Vehicle {
   telemetryReadings TelemetryReading[]
   fuelTransactions  FuelTransaction[]
   consumptionSummaries FuelConsumptionSummary[]
+  vehicleTrips      VehicleTrip[]
 }
 
 // ---------- Escala (MOD.02) ----------
@@ -346,7 +348,8 @@ model Escala {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  usageLogs VehicleUsageLog[]
+  usageLogs    VehicleUsageLog[]
+  vehicleTrips VehicleTrip[]
 
   @@index([companyId, date])
 }
@@ -561,11 +564,42 @@ model TelemetryReading {
   speedKmh   Float
   latitude   Float
   longitude  Float
+  // Novos (integracao Ituran), nulos pra leituras antigas/mock que nao
+  // informam. speedLimitKmh e o limite real do local da leitura — quando
+  // presente, sobrepoe o SPEED_LIMIT_KMH generico em src/lib/speedCompliance.ts.
+  odometerKm    Float?
+  speedLimitKmh Int?
   provider   String
   recordedAt DateTime
   createdAt  DateTime @default(now())
 
   @@index([vehicleId, recordedAt])
+}
+
+// ---------- Viagens reais (MOD.05, integracao Ituran) ----------
+// Uma linha por viagem detectada pelo rastreador (fonte: GET /api/v2/trips
+// da Ituran), usada pra cruzar com a Escala planejada do mesmo veiculo e
+// sinalizar quem rodou sem escala correspondente (ver
+// src/lib/vehicleTripEscala.ts). driverNameRaw e o cadastro proprio da
+// Ituran (nao casa com o nosso Driver) — so informativo.
+model VehicleTrip {
+  id            String   @id @default(cuid())
+  companyId     String
+  company       Company  @relation(fields: [companyId], references: [id])
+  vehicleId     String
+  vehicle       Vehicle  @relation(fields: [vehicleId], references: [id])
+  iturarTripId  String   @unique
+  startAt       DateTime
+  endAt         DateTime
+  distanceKm    Float?
+  maxSpeedKmh   Int?
+  idleMinutes   Int?
+  driverNameRaw String?
+  escalaId      String?
+  escala        Escala?  @relation(fields: [escalaId], references: [id])
+  createdAt     DateTime @default(now())
+
+  @@index([companyId, startAt])
 }
 
 // ---------- Combustivel (MOD.07) ----------
