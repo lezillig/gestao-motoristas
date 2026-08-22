@@ -142,6 +142,8 @@ export default async function TelemetriaPage({
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
                 <SortableTh label="Veículo" field="vehicle" basePath="/telemetria" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <SortableTh label="Velocidade" field="speedKmh" basePath="/telemetria" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <th className="px-4 py-3">Limite da via</th>
+                <th className="px-4 py-3">Odômetro</th>
                 <th className="px-4 py-3">Motorista</th>
                 <SortableTh label="Registrado em" field="recordedAt" basePath="/telemetria" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
               </tr>
@@ -149,7 +151,7 @@ export default async function TelemetriaPage({
             <tbody>
               {readings.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
                     Nenhuma leitura ainda. Clique em &quot;Gerar leituras simuladas&quot; para começar.
                   </td>
                 </tr>
@@ -171,6 +173,8 @@ export default async function TelemetriaPage({
                         )}
                       </span>
                     </td>
+                    <td className="px-4 py-3 text-slate-600">{r.speedLimitKmh != null ? `${r.speedLimitKmh} km/h` : "—"}</td>
+                    <td className="px-4 py-3 text-slate-600">{r.odometerKm != null ? `${r.odometerKm.toLocaleString("pt-BR")} km` : "—"}</td>
                     <td className="px-4 py-3 text-slate-600">{driver?.name ?? "—"}</td>
                     <td className="px-4 py-3 text-slate-600">{format(r.recordedAt, "dd/MM/yyyy HH:mm")}</td>
                   </tr>
