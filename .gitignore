@@ -36,6 +36,11 @@ yarn-error.log*
 /private-uploads/*
 !/private-uploads/.gitkeep
 
+# python (MVP MOBGOV em /mobgov)
+__pycache__/
+*.py[cod]
+.venv/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
