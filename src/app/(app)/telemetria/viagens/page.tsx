@@ -2,18 +2,66 @@ import { format } from "date-fns";
 import { AlertTriangle, Route } from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { cardClass, badgeClass } from "@/lib/ui";
+import { cardClass, badgeClass, inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
+import SortableTh from "@/components/ui/SortableTh";
+import { parseLocalDate } from "@/lib/date";
+import type { Prisma } from "@prisma/client";
 
-export default async function ViagensPage() {
+const SORT_FIELDS = ["vehicle", "startAt", "distanceKm", "maxSpeedKmh"] as const;
+type SortField = (typeof SORT_FIELDS)[number];
+
+export default async function ViagensPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    sort?: string;
+    dir?: string;
+    vehicleId?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    status?: string;
+  }>;
+}) {
   const session = await requireRole("ADMIN", "GESTOR");
+  const { sort, dir, vehicleId, dateFrom, dateTo, status } = await searchParams;
 
-  const trips = await prisma.vehicleTrip.findMany({
-    where: { companyId: session.companyId },
-    include: { vehicle: true },
-    orderBy: { startAt: "desc" },
-    take: 100,
-  });
+  const sortField: SortField = SORT_FIELDS.includes(sort as SortField) ? (sort as SortField) : "startAt";
+  const sortDir = dir === "asc" ? "asc" : "desc";
+  const orderBy: Prisma.VehicleTripOrderByWithRelationInput =
+    sortField === "vehicle"
+      ? { vehicle: { plate: sortDir } }
+      : sortField === "distanceKm"
+        ? { distanceKm: sortDir }
+        : sortField === "maxSpeedKmh"
+          ? { maxSpeedKmh: sortDir }
+          : { startAt: sortDir };
+
+  const where: Prisma.VehicleTripWhereInput = { companyId: session.companyId };
+  if (vehicleId) where.vehicleId = vehicleId;
+  if (status === "sem_escala") where.escalaId = null;
+  if (dateFrom || dateTo) {
+    where.startAt = {
+      ...(dateFrom ? { gte: parseLocalDate(dateFrom) } : {}),
+      ...(dateTo ? { lte: new Date(parseLocalDate(dateTo).getTime() + 24 * 60 * 60 * 1000 - 1) } : {}),
+    };
+  }
+  const filtered = Boolean(vehicleId || dateFrom || dateTo || status);
+  const sortLinkParams = { vehicleId, dateFrom, dateTo, status };
+
+  const [trips, vehicles] = await Promise.all([
+    prisma.vehicleTrip.findMany({
+      where,
+      include: { vehicle: true },
+      orderBy,
+      take: filtered ? 2000 : 100,
+    }),
+    prisma.vehicle.findMany({
+      where: { companyId: session.companyId, status: { not: "INATIVO" } },
+      select: { id: true, plate: true },
+      orderBy: { plate: "asc" },
+    }),
+  ]);
 
   const semEscala = trips.filter((t) => !t.escalaId);
 
@@ -24,13 +72,52 @@ export default async function ViagensPage() {
         subtitle="Deslocamentos reais captados pela Ituran, cruzados com a escala planejada do veículo."
       />
 
+      <form className={`${cardClass} mb-6 flex flex-wrap items-end gap-3`} method="get">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">Veículo</label>
+          <select name="vehicleId" defaultValue={vehicleId ?? ""} className={inputClass}>
+            <option value="">Todos</option>
+            {vehicles.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.plate}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">De</label>
+          <input type="date" name="dateFrom" defaultValue={dateFrom} className={inputClass} />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">Até</label>
+          <input type="date" name="dateTo" defaultValue={dateTo} className={inputClass} />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">Status</label>
+          <select name="status" defaultValue={status ?? ""} className={inputClass}>
+            <option value="">Todos</option>
+            <option value="sem_escala">Sem escala</option>
+          </select>
+        </div>
+        <button type="submit" className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+          Filtrar
+        </button>
+        {filtered && (
+          <a href="/telemetria/viagens" className="text-xs font-medium text-slate-500 hover:text-slate-700 hover:underline">
+            Limpar filtro
+          </a>
+        )}
+      </form>
+
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className={cardClass}>
           <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
             <Route className="h-4 w-4" />
           </div>
           <p className="text-2xl font-semibold text-slate-900">{trips.length}</p>
-          <p className="mt-0.5 text-xs text-slate-500">Viagens registradas (últimas 100)</p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {filtered ? "Viagens no filtro" : "Viagens registradas (últimas 100)"}
+          </p>
         </div>
         <div className={cardClass}>
           <div
@@ -50,11 +137,11 @@ export default async function ViagensPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-3">Veículo</th>
-                <th className="px-4 py-3">Início</th>
+                <SortableTh label="Veículo" field="vehicle" basePath="/telemetria/viagens" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="Início" field="startAt" basePath="/telemetria/viagens" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <th className="px-4 py-3">Fim</th>
-                <th className="px-4 py-3">Distância</th>
-                <th className="px-4 py-3">Vel. máx.</th>
+                <SortableTh label="Distância" field="distanceKm" basePath="/telemetria/viagens" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="Vel. máx." field="maxSpeedKmh" basePath="/telemetria/viagens" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <th className="px-4 py-3">Motorista (Ituran)</th>
                 <th className="px-4 py-3">Status</th>
               </tr>
@@ -63,7 +150,7 @@ export default async function ViagensPage() {
               {trips.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
-                    Nenhuma viagem registrada ainda.
+                    {filtered ? "Nenhuma viagem encontrada com os filtros aplicados." : "Nenhuma viagem registrada ainda."}
                   </td>
                 </tr>
               )}
