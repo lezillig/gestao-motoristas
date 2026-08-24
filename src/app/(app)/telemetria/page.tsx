@@ -59,8 +59,10 @@ export default async function TelemetriaPage({
       where: { companyId: session.companyId },
       include: { driver: true },
     }),
+    // So ativos na lista de filtro — veiculo inativo/baixado nao deveria
+    // poluir a busca, mesmo espirito do filtro "Ativos" em /cadastros/veiculos.
     prisma.vehicle.findMany({
-      where: { companyId: session.companyId },
+      where: { companyId: session.companyId, status: { not: "INATIVO" } },
       select: { id: true, plate: true },
       orderBy: { plate: "asc" },
     }),
