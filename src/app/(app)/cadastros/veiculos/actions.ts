@@ -11,7 +11,10 @@ const schema = z.object({
   plate: z.string().min(6, "Placa inválida").toUpperCase(),
   brand: z.string().min(1, "Informe a marca"),
   model: z.string().min(1, "Informe o modelo"),
-  year: z.coerce.number().int().min(1980).max(2100),
+  year: z.preprocess(
+    (v) => (v === "" || v == null ? undefined : v),
+    z.coerce.number().int().min(1980).max(2100).optional()
+  ),
   type: z.string().min(1, "Informe o tipo"),
   status: z.enum(["ATIVO", "MANUTENCAO", "INATIVO"]),
 });

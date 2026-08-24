@@ -81,8 +81,8 @@ export async function syncFromSiat(dateFrom: string, dateTo: string): Promise<Si
       vehicleBySiatId.set(sv.id, updated);
       vehicleByPlate.set(sv.plate, updated);
     } else {
-      if (!sv.brand || !sv.model || sv.year == null || !sv.type) {
-        result.errors.push({ context: `veículo ${sv.plate}`, message: "Veículo novo no SIAT sem marca/modelo/ano/tipo completos — não criado, cadastre manualmente." });
+      if (!sv.brand || !sv.model || !sv.type) {
+        result.errors.push({ context: `veículo ${sv.plate}`, message: "Veículo novo no SIAT sem marca/modelo/tipo completos — não criado, cadastre manualmente." });
         continue;
       }
       const created = await prisma.vehicle.create({

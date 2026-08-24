@@ -79,7 +79,7 @@ export default async function VeiculosPage({
                     {v.brand} {v.model}
                   </td>
                   <td className="px-4 py-3 text-slate-600">{v.type}</td>
-                  <td className="px-4 py-3 text-slate-600">{v.year}</td>
+                  <td className="px-4 py-3 text-slate-600">{v.year ?? "—"}</td>
                   <td className="px-4 py-3 text-slate-600">{v.currentMileage.toLocaleString("pt-BR")} km</td>
                   <td className="px-4 py-3">
                     <span className={`${badgeClass} ${STATUS_TONE[v.status]}`}>

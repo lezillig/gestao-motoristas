@@ -12,7 +12,7 @@ export default function VehicleForm({
     plate: string;
     brand: string;
     model: string;
-    year: number;
+    year: number | null;
     type: string;
     status: string;
   };
@@ -31,14 +31,13 @@ export default function VehicleForm({
           />
         </div>
         <div>
-          <label className={labelClass}>Ano *</label>
+          <label className={labelClass}>Ano</label>
           <input
             type="number"
             name="year"
-            required
             min={1980}
             max={2100}
-            defaultValue={defaultValues?.year}
+            defaultValue={defaultValues?.year ?? undefined}
             className={inputClass}
           />
         </div>

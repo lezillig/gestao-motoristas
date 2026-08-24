@@ -279,7 +279,7 @@ model Vehicle {
   plate     String        @unique
   brand     String
   model     String
-  year      Int
+  year      Int?
   type      String
   status    VehicleStatus @default(ATIVO)
   // Atualizado a cada encerramento de VehicleUsageLog (checkout com km final).
