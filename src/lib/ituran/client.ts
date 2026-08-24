@@ -1,4 +1,5 @@
 import { extractPlate } from "@/lib/plate";
+import { correctIturarPlate } from "./plateAliases";
 import type {
   IturanTokenResponse,
   IturanTrip,
@@ -76,8 +77,9 @@ async function iturarFetch<T>(path: string, params: Record<string, string>, atte
 // texto, pra nao arriscar casar algo parecido com placa no meio da
 // descricao livre.
 function mapVehicleSnapshot(v: IturanVehicleRaw): IturanVehicleSnapshot | null {
-  const plate = v.license_plate?.trim().toUpperCase() || extractPlate(v.nickname?.split(" - ")[0]);
-  if (!plate) return null;
+  const rawPlate = v.license_plate?.trim().toUpperCase() || extractPlate(v.nickname?.split(" - ")[0]);
+  if (!rawPlate) return null;
+  const plate = correctIturarPlate(rawPlate);
   const loc = v.last_location;
   return {
     plate,
@@ -115,10 +117,11 @@ export async function fetchVehiclesRealtime(): Promise<IturanVehicleSnapshot[]> 
 }
 
 function mapTrip(t: IturanTripRaw): IturanTrip | null {
-  const plate = t.license_plate?.trim().toUpperCase();
+  const rawPlate = t.license_plate?.trim().toUpperCase();
   const startAtRaw = t.start_location?.timestamp;
   const endAtRaw = t.end_location?.timestamp;
-  if (!plate || !startAtRaw || !endAtRaw) return null;
+  if (!rawPlate || !startAtRaw || !endAtRaw) return null;
+  const plate = correctIturarPlate(rawPlate);
   return {
     iturarTripId: String(t.trip_id),
     plate,
