@@ -240,17 +240,17 @@ export default async function MotoristasPage({
 
       <div className={`${cardClass} p-0 overflow-hidden`}>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-xs">
             <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
-                <SortableTh label="Cliente" field="cliente" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
-                <SortableTh label="Unidade de alocação" field="departamento" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
-                <SortableTh label="Cargo" field="funcao" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
-                <SortableTh label="Nome" field="name" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
-                <SortableTh label="CPF" field="cpf" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
-                <SortableTh label="CNH" field="cnhExpiration" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3" />
+              <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                <SortableTh label="Cliente" field="cliente" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="whitespace-nowrap px-3 py-2" />
+                <SortableTh label="Unidade de alocação" field="departamento" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="whitespace-nowrap px-3 py-2" />
+                <SortableTh label="Cargo" field="funcao" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="whitespace-nowrap px-3 py-2" />
+                <SortableTh label="Nome" field="name" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="whitespace-nowrap px-3 py-2" />
+                <SortableTh label="CPF" field="cpf" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="whitespace-nowrap px-3 py-2" />
+                <SortableTh label="CNH" field="cnhExpiration" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="whitespace-nowrap px-3 py-2" />
+                <th className="whitespace-nowrap px-3 py-2">Status</th>
+                <th className="px-3 py-2" />
               </tr>
             </thead>
             <tbody>
@@ -266,12 +266,12 @@ export default async function MotoristasPage({
                 const days = d.cnhExpiration ? daysUntil(d.cnhExpiration) : null;
                 return (
                   <tr key={d.id} className="border-b border-slate-100 last:border-0">
-                    <td className="px-4 py-3 text-slate-600">{d.cliente?.nome ?? "—"}</td>
-                    <td className="px-4 py-3 text-slate-600">{d.departamento ?? "—"}</td>
-                    <td className="px-4 py-3 text-slate-600">{d.funcao ?? "—"}</td>
-                    <td className="px-4 py-3 font-medium text-slate-800">{d.name}</td>
-                    <td className="px-4 py-3 text-slate-600">{d.cpf}</td>
-                    <td className="px-4 py-3">
+                    <td className="whitespace-nowrap px-3 py-2 text-slate-600">{d.cliente?.nome ?? "—"}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-slate-600">{d.departamento ?? "—"}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-slate-600">{d.funcao ?? "—"}</td>
+                    <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-800">{d.name}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-slate-600">{d.cpf}</td>
+                    <td className="whitespace-nowrap px-3 py-2">
                       <div className="flex items-center gap-2">
                         {level === "nao_aplicavel" ? (
                           <span className="text-slate-400" title="Cargo não exige CNH">
@@ -299,7 +299,7 @@ export default async function MotoristasPage({
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="whitespace-nowrap px-3 py-2">
                       <form action={toggleDriverActive.bind(null, d.id, !d.active)}>
                         <button
                           type="submit"
@@ -313,7 +313,7 @@ export default async function MotoristasPage({
                         </button>
                       </form>
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="whitespace-nowrap px-3 py-2 text-right">
                       <Link
                         href={`/cadastros/motoristas/${d.id}`}
                         prefetch={false}
