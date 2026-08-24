@@ -3,8 +3,16 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Conexao sem pooler, so pra `prisma migrate deploy` — o advisory lock
+  // que a migracao usa (pg_advisory_lock) e por sessao Postgres; atraves
+  // do pooler do Neon a sessao pode ficar presa/reaproveitada e o lock
+  // nunca solta, travando deploys seguintes (aconteceu 2x em 24/08/2026,
+  // precisou matar a conexao manualmente as duas vezes). Precisa da var
+  // DIRECT_DATABASE_URL configurada na Vercel (mesma string do Neon, sem
+  // o sufixo "-pooler" no host).
+  directUrl = env("DIRECT_DATABASE_URL")
 }
 
 // ---------- Enums ----------
