@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass, inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import SortableTh from "@/components/ui/SortableTh";
+import DeleteVehicleButton from "./DeleteVehicleButton";
+import { deleteVehicle } from "./actions";
 import type { Prisma } from "@prisma/client";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -127,12 +129,13 @@ export default async function VeiculosPage({
                 <SortableTh label="Km atual" field="currentMileage" basePath="/cadastros/veiculos" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <SortableTh label="Status" field="status" basePath="/cadastros/veiculos" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <th className="px-4 py-3" />
+                <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody>
               {vehicles.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
                     {q || type || status === "todos" ? "Nenhum veículo encontrado com os filtros aplicados." : "Nenhum veículo ativo cadastrado ainda."}
                   </td>
                 </tr>
@@ -159,6 +162,9 @@ export default async function VeiculosPage({
                     >
                       <Pencil className="h-3.5 w-3.5" /> Editar
                     </Link>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <DeleteVehicleButton action={deleteVehicle.bind(null, v.id)} plate={v.plate} />
                   </td>
                 </tr>
               ))}

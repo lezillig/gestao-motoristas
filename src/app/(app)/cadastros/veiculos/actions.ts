@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { readWorkbookRows, normalizeText } from "@/lib/spreadsheet";
 
 export type VehicleFormState = { error?: string };
+export type DeleteVehicleState = { error?: string };
 
 const schema = z.object({
   plate: z.string().min(6, "Placa inválida").toUpperCase(),
@@ -77,6 +78,50 @@ export async function updateVehicle(
 
   revalidatePath("/cadastros/veiculos");
   redirect("/cadastros/veiculos");
+}
+
+export async function deleteVehicle(
+  id: string,
+  _prevState: DeleteVehicleState,
+  _formData: FormData
+): Promise<DeleteVehicleState> {
+  const session = await requireRole("ADMIN", "GESTOR");
+  const vehicle = await prisma.vehicle.findUnique({ where: { id, companyId: session.companyId } });
+  if (!vehicle) return {};
+
+  // Escala/VehicleUsageLog/TelemetryReading/VehicleTrip tem vehicleId
+  // obrigatorio — sao historico operacional real, nunca apagados em
+  // cascata so por causa do cadastro do veiculo. Bloqueia com mensagem
+  // clara em vez disso (mesmo espirito do deleteUser em usuarios/actions.ts).
+  const [escalas, usageLogs, telemetry, trips] = await Promise.all([
+    prisma.escala.count({ where: { vehicleId: id } }),
+    prisma.vehicleUsageLog.count({ where: { vehicleId: id } }),
+    prisma.telemetryReading.count({ where: { vehicleId: id } }),
+    prisma.vehicleTrip.count({ where: { vehicleId: id } }),
+  ]);
+  if (escalas + usageLogs + telemetry + trips > 0) {
+    const partes = [
+      escalas > 0 ? `${escalas} escala(s)` : null,
+      usageLogs > 0 ? `${usageLogs} utilização(ões)` : null,
+      telemetry > 0 ? `${telemetry} leitura(s) de telemetria` : null,
+      trips > 0 ? `${trips} viagem(ns)` : null,
+    ].filter(Boolean);
+    return {
+      error: `Não é possível excluir ${vehicle.plate}: tem histórico vinculado (${partes.join(", ")}). Marque como "Inativo" em vez de excluir.`,
+    };
+  }
+
+  // FuelTransaction/FuelConsumptionSummary tem vehicleId opcional
+  // (placaOriginal preserva o texto pra auditoria mesmo sem vinculo) —
+  // desvincula em vez de bloquear.
+  await prisma.$transaction([
+    prisma.fuelTransaction.updateMany({ where: { vehicleId: id }, data: { vehicleId: null } }),
+    prisma.fuelConsumptionSummary.updateMany({ where: { vehicleId: id }, data: { vehicleId: null } }),
+    prisma.vehicle.delete({ where: { id } }),
+  ]);
+
+  revalidatePath("/cadastros/veiculos");
+  return {};
 }
 
 export type ImportRowError = { row: number; message: string };
