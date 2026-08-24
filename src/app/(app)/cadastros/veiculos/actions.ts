@@ -3,9 +3,12 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { readWorkbookRows, normalizeText } from "@/lib/spreadsheet";
+
+export type VehicleFormState = { error?: string };
 
 const schema = z.object({
   plate: z.string().min(6, "Placa inválida").toUpperCase(),
@@ -30,26 +33,47 @@ function parseForm(formData: FormData) {
   });
 }
 
-export async function createVehicle(formData: FormData) {
-  const session = await requireRole("ADMIN", "GESTOR");
-  const parsed = parseForm(formData);
+function vehicleErrorMessage(e: unknown): string {
+  if (e instanceof z.ZodError) return e.issues[0]?.message ?? "Dados inválidos.";
+  if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+    return "Já existe outro veículo cadastrado com essa placa.";
+  }
+  return "Falha ao salvar veículo.";
+}
 
-  await prisma.vehicle.create({
-    data: { ...parsed, companyId: session.companyId },
-  });
+export async function createVehicle(
+  _prevState: VehicleFormState,
+  formData: FormData
+): Promise<VehicleFormState> {
+  const session = await requireRole("ADMIN", "GESTOR");
+  try {
+    const parsed = parseForm(formData);
+    await prisma.vehicle.create({
+      data: { ...parsed, companyId: session.companyId },
+    });
+  } catch (e) {
+    return { error: vehicleErrorMessage(e) };
+  }
 
   revalidatePath("/cadastros/veiculos");
   redirect("/cadastros/veiculos");
 }
 
-export async function updateVehicle(id: string, formData: FormData) {
+export async function updateVehicle(
+  id: string,
+  _prevState: VehicleFormState,
+  formData: FormData
+): Promise<VehicleFormState> {
   const session = await requireRole("ADMIN", "GESTOR");
-  const parsed = parseForm(formData);
-
-  await prisma.vehicle.update({
-    where: { id, companyId: session.companyId },
-    data: parsed,
-  });
+  try {
+    const parsed = parseForm(formData);
+    await prisma.vehicle.update({
+      where: { id, companyId: session.companyId },
+      data: parsed,
+    });
+  } catch (e) {
+    return { error: vehicleErrorMessage(e) };
+  }
 
   revalidatePath("/cadastros/veiculos");
   redirect("/cadastros/veiculos");

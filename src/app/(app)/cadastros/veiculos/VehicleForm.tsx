@@ -1,13 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import { useActionState } from "react";
+import { AlertTriangle } from "lucide-react";
 import { inputClass, labelClass, primaryButtonClass, secondaryButtonClass } from "@/lib/ui";
+import type { VehicleFormState } from "./actions";
 
 export default function VehicleForm({
   action,
   defaultValues,
 }: {
-  action: (formData: FormData) => void;
+  action: (state: VehicleFormState, formData: FormData) => Promise<VehicleFormState>;
   defaultValues?: {
     plate: string;
     brand: string;
@@ -17,8 +20,16 @@ export default function VehicleForm({
     status: string;
   };
 }) {
+  const [state, formAction, pending] = useActionState<VehicleFormState, FormData>(action, {});
+
   return (
-    <form action={action} className="flex flex-col gap-4">
+    <form action={formAction} className="flex flex-col gap-4">
+      {state.error && (
+        <div className="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-700">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{state.error}</span>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className={labelClass}>Placa *</label>
@@ -73,8 +84,8 @@ export default function VehicleForm({
         </div>
       </div>
       <div className="mt-2 flex gap-3">
-        <button type="submit" className={primaryButtonClass}>
-          Salvar
+        <button type="submit" disabled={pending} className={`${primaryButtonClass} disabled:opacity-60`}>
+          {pending ? "Salvando..." : "Salvar"}
         </button>
         <Link href="/cadastros/veiculos" className={secondaryButtonClass}>
           Cancelar
