@@ -2,24 +2,30 @@ import { format } from "date-fns";
 import { AlertTriangle, Gauge, Satellite, Trophy } from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { cardClass, badgeClass, primaryButtonClass } from "@/lib/ui";
+import { cardClass, badgeClass, primaryButtonClass, inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import SortableTh from "@/components/ui/SortableTh";
 import { getActiveTelemetryProvider } from "@/lib/telemetry";
 import { findSpeedAlerts, isSpeeding, SPEED_LIMIT_KMH } from "@/lib/speedCompliance";
 import { generateReadings } from "./actions";
+import { parseLocalDate } from "@/lib/date";
 import type { Prisma } from "@prisma/client";
 
 const SORT_FIELDS = ["vehicle", "speedKmh", "recordedAt"] as const;
 type SortField = (typeof SORT_FIELDS)[number];
+// Sem filtro (visao "agora"): so as 100 mais recentes, ja que 1 dia de cron
+// sozinho supera isso (ver comentario abaixo). Filtrando por veiculo, o
+// interesse e o historico dele no periodo inteiro, entao sobe bastante.
+const DEFAULT_TAKE = 100;
+const FILTERED_TAKE = 2000;
 
 export default async function TelemetriaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ sort?: string; dir?: string }>;
+  searchParams: Promise<{ sort?: string; dir?: string; vehicleId?: string; dateFrom?: string; dateTo?: string }>;
 }) {
   const session = await requireRole("ADMIN", "GESTOR");
-  const { sort, dir } = await searchParams;
+  const { sort, dir, vehicleId, dateFrom, dateTo } = await searchParams;
   const provider = getActiveTelemetryProvider();
 
   const sortField: SortField = SORT_FIELDS.includes(sort as SortField) ? (sort as SortField) : "recordedAt";
@@ -31,16 +37,32 @@ export default async function TelemetriaPage({
         ? { speedKmh: sortDir }
         : { recordedAt: sortDir };
 
-  const [readings, usageLogs] = await Promise.all([
+  const where: Prisma.TelemetryReadingWhereInput = { companyId: session.companyId };
+  if (vehicleId) where.vehicleId = vehicleId;
+  if (dateFrom || dateTo) {
+    where.recordedAt = {
+      ...(dateFrom ? { gte: parseLocalDate(dateFrom) } : {}),
+      ...(dateTo ? { lte: new Date(parseLocalDate(dateTo).getTime() + 24 * 60 * 60 * 1000 - 1) } : {}),
+    };
+  }
+  const filtered = Boolean(vehicleId || dateFrom || dateTo);
+  const sortLinkParams = { vehicleId, dateFrom, dateTo };
+
+  const [readings, usageLogs, vehicles] = await Promise.all([
     prisma.telemetryReading.findMany({
-      where: { companyId: session.companyId },
+      where,
       include: { vehicle: true },
       orderBy,
-      take: 100,
+      take: filtered ? FILTERED_TAKE : DEFAULT_TAKE,
     }),
     prisma.vehicleUsageLog.findMany({
       where: { companyId: session.companyId },
       include: { driver: true },
+    }),
+    prisma.vehicle.findMany({
+      where: { companyId: session.companyId },
+      select: { id: true, plate: true },
+      orderBy: { plate: "asc" },
     }),
   ]);
 
@@ -95,6 +117,36 @@ export default async function TelemetriaPage({
         </form>
       </div>
 
+      <form className={`${cardClass} mb-6 flex flex-wrap items-end gap-3`} method="get">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">Veículo</label>
+          <select name="vehicleId" defaultValue={vehicleId ?? ""} className={inputClass}>
+            <option value="">Últimas leituras (todos)</option>
+            {vehicles.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.plate}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">De</label>
+          <input type="date" name="dateFrom" defaultValue={dateFrom} className={inputClass} />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">Até</label>
+          <input type="date" name="dateTo" defaultValue={dateTo} className={inputClass} />
+        </div>
+        <button type="submit" className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+          Filtrar
+        </button>
+        {filtered && (
+          <a href="/telemetria" className="text-xs font-medium text-slate-500 hover:text-slate-700 hover:underline">
+            Limpar filtro
+          </a>
+        )}
+      </form>
+
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className={cardClass}>
           <div
@@ -107,7 +159,7 @@ export default async function TelemetriaPage({
           <p className="text-2xl font-semibold text-slate-900">{alerts.length}</p>
           <p className="mt-0.5 text-xs text-slate-500">
             Leituras com excesso de velocidade (limite real da via quando disponível, senão{" "}
-            {SPEED_LIMIT_KMH} km/h — últimas {readings.length} leituras)
+            {SPEED_LIMIT_KMH} km/h — {filtered ? `${readings.length} leituras no filtro` : `últimas ${readings.length} leituras`})
           </p>
         </div>
         <div className={cardClass}>
@@ -140,12 +192,12 @@ export default async function TelemetriaPage({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
-                <SortableTh label="Veículo" field="vehicle" basePath="/telemetria" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
-                <SortableTh label="Velocidade" field="speedKmh" basePath="/telemetria" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="Veículo" field="vehicle" basePath="/telemetria" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="Velocidade" field="speedKmh" basePath="/telemetria" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <th className="px-4 py-3">Limite da via</th>
                 <th className="px-4 py-3">Odômetro</th>
                 <th className="px-4 py-3">Motorista</th>
-                <SortableTh label="Registrado em" field="recordedAt" basePath="/telemetria" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="Registrado em" field="recordedAt" basePath="/telemetria" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
               </tr>
             </thead>
             <tbody>
