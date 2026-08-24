@@ -45,9 +45,9 @@ function findDriverByName(rawName: string, driverByName: Map<string, { id: strin
 // do SIAT, nessa ordem: Reservation resolve driverId/vehicleId locais via
 // siatId preenchido nos 2 primeiros passos (com fallback por nome/placa
 // quando o SIAT nao manda o id, o que acontece em boa parte dos registros
-// reais).
-export async function syncFromSiat(dateFrom: string, dateTo: string): Promise<SiatSyncResult> {
-  const session = await requireRole("ADMIN", "GESTOR");
+// reais). Nucleo sem sessao — usado tanto pela server action (usuario
+// logado) quanto pelo cron diario (sem sessao, ver cron/siat-import).
+export async function syncFromSiatCore(companyId: string, dateFrom: string, dateTo: string): Promise<SiatSyncResult> {
   const result: SiatSyncResult = {
     vehicles: { created: 0, updated: 0 },
     drivers: { created: 0, updated: 0, unmatched: 0 },
@@ -68,7 +68,7 @@ export async function syncFromSiat(dateFrom: string, dateTo: string): Promise<Si
     result.errors.push({ context: "veículos", message: e instanceof Error ? e.message : "Falha ao buscar veículos do SIAT." });
     siatVehicles = [];
   }
-  const existingVehicles = await prisma.vehicle.findMany({ where: { companyId: session.companyId } });
+  const existingVehicles = await prisma.vehicle.findMany({ where: { companyId } });
   const vehicleByPlate = new Map(existingVehicles.map((v) => [v.plate.trim().toUpperCase(), v]));
   const vehicleBySiatId = new Map(existingVehicles.filter((v) => v.siatId).map((v) => [v.siatId as string, v]));
 
@@ -86,7 +86,7 @@ export async function syncFromSiat(dateFrom: string, dateTo: string): Promise<Si
         continue;
       }
       const created = await prisma.vehicle.create({
-        data: { companyId: session.companyId, plate: sv.plate, brand: sv.brand, model: sv.model, year: sv.year, type: sv.type, ...enrichment },
+        data: { companyId, plate: sv.plate, brand: sv.brand, model: sv.model, year: sv.year, type: sv.type, ...enrichment },
       });
       result.vehicles.created++;
       vehicleBySiatId.set(sv.id, created);
@@ -105,7 +105,7 @@ export async function syncFromSiat(dateFrom: string, dateTo: string): Promise<Si
     result.errors.push({ context: "motoristas", message: e instanceof Error ? e.message : "Falha ao buscar motoristas do SIAT." });
     siatDrivers = [];
   }
-  const existingDrivers = await prisma.driver.findMany({ where: { companyId: session.companyId } });
+  const existingDrivers = await prisma.driver.findMany({ where: { companyId } });
   const driverByName = new Map(existingDrivers.map((d) => [normName(d.name), d]));
   const driverByCpf = new Map(existingDrivers.map((d) => [d.cpf.replace(/\D/g, ""), d]));
   const driverBySiatId = new Map(existingDrivers.filter((d) => d.siatId).map((d) => [d.siatId as string, d]));
@@ -125,7 +125,7 @@ export async function syncFromSiat(dateFrom: string, dateTo: string): Promise<Si
     } else if (sd.cpf) {
       const created = await prisma.driver.create({
         data: {
-          companyId: session.companyId,
+          companyId,
           name: sd.name,
           cpf: sd.cpf,
           phone: sd.phone,
@@ -155,7 +155,7 @@ export async function syncFromSiat(dateFrom: string, dateTo: string): Promise<Si
     result.errors.push({ context: "escalas", message: e instanceof Error ? e.message : "Falha ao buscar reservas do SIAT." });
     siatReservations = [];
   }
-  const existingEscalas = await prisma.escala.findMany({ where: { companyId: session.companyId, siatId: { not: null } } });
+  const existingEscalas = await prisma.escala.findMany({ where: { companyId, siatId: { not: null } } });
   const escalaBySiatId = new Map(existingEscalas.map((e) => [e.siatId as string, e]));
   const allDriversArray = [...driverByName.values()];
 
@@ -202,11 +202,11 @@ export async function syncFromSiat(dateFrom: string, dateTo: string): Promise<Si
     // turno especifico (ver guards em escalaConflicts.ts pro lado inverso —
     // essa escala tambem nao entra na checagem de outras).
     if (data.endTime) {
-      const conflicts = await findEscalaConflicts({ companyId: session.companyId, driverId: data.driverId, vehicleId: data.vehicleId, date: data.date, startTime: data.startTime, endTime: data.endTime, excludeId: existing?.id });
+      const conflicts = await findEscalaConflicts({ companyId, driverId: data.driverId, vehicleId: data.vehicleId, date: data.date, startTime: data.startTime, endTime: data.endTime, excludeId: existing?.id });
       if (conflicts.length > 0) {
         result.errors.push({ context: `reserva ${sr.reservationNumber ?? sr.id} (${sr.date})`, message: `Aviso: conflito de horário — ${conflicts.map((c) => `${c.type} (${c.startTime}–${c.endTime})`).join(", ")}.` });
       }
-      const interjornada = await findInterjornadaWarnings({ companyId: session.companyId, driverId: data.driverId, date: data.date, startTime: data.startTime, endTime: data.endTime, excludeId: existing?.id });
+      const interjornada = await findInterjornadaWarnings({ companyId, driverId: data.driverId, date: data.date, startTime: data.startTime, endTime: data.endTime, excludeId: existing?.id });
       if (interjornada.length > 0) {
         result.errors.push({ context: `reserva ${sr.reservationNumber ?? sr.id} (${sr.date})`, message: "Aviso: descanso insuficiente entre turnos do motorista." });
       }
@@ -222,12 +222,19 @@ export async function syncFromSiat(dateFrom: string, dateTo: string): Promise<Si
       // em mais de um dia) tenta criar de novo na segunda vez e quebra por
       // siatId duplicado (mesmo padrao ja usado pra vehicleBySiatId/
       // driverBySiatId acima).
-      const created = await prisma.escala.create({ data: { ...data, companyId: session.companyId } });
+      const created = await prisma.escala.create({ data: { ...data, companyId } });
       result.escalas.created++;
       escalaBySiatId.set(sr.id, created);
     }
   }
 
+  return result;
+}
+
+// Wrapper com sessao — usado pelo botao "Sincronizar" em /escalas.
+export async function syncFromSiat(dateFrom: string, dateTo: string): Promise<SiatSyncResult> {
+  const session = await requireRole("ADMIN", "GESTOR");
+  const result = await syncFromSiatCore(session.companyId, dateFrom, dateTo);
   revalidatePath("/escalas");
   return result;
 }

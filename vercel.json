@@ -6,6 +6,10 @@
       "schedule": "0 5 * * *"
     },
     {
+      "path": "/api/cron/siat-import",
+      "schedule": "30 5 * * *"
+    },
+    {
       "path": "/api/cron/ituran-import",
       "schedule": "0 6 * * *"
     }
