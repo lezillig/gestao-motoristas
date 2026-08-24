@@ -10,7 +10,13 @@ import { syncFromSiat, type SiatSyncResult } from "./siatActions";
 // pode levar minutos e nao tem nenhum feedback visual continuo alem do
 // texto do botao, o que pareceu "travado" pra quem tava usando (relato
 // real). O cronometro abaixo so existe pra provar que ainda esta vivo.
-export default function SiatSyncForm() {
+export default function SiatSyncForm({
+  defaultDateFrom,
+  defaultDateTo,
+}: {
+  defaultDateFrom?: string;
+  defaultDateTo?: string;
+}) {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<SiatSyncResult | null>(null);
@@ -46,13 +52,35 @@ export default function SiatSyncForm() {
       <form action={handleSubmit} className="flex flex-wrap items-end gap-4">
         <div>
           <label className={labelClass}>Data inicial *</label>
-          <input type="date" name="dateFrom" required disabled={running} className={inputClass} />
+          <input
+            type="date"
+            name="dateFrom"
+            required
+            disabled={running}
+            defaultValue={defaultDateFrom}
+            className={inputClass}
+          />
         </div>
         <div>
           <label className={labelClass}>Data final *</label>
-          <input type="date" name="dateTo" required disabled={running} className={inputClass} />
+          <input
+            type="date"
+            name="dateTo"
+            required
+            disabled={running}
+            defaultValue={defaultDateTo}
+            className={inputClass}
+          />
         </div>
-        <button type="submit" disabled={running} className={`${primaryButtonClass} flex items-center gap-2`}>
+        <button
+          type="submit"
+          disabled={running}
+          className={
+            running
+              ? "flex items-center gap-2 rounded-lg bg-slate-500 px-4 py-2 text-sm font-semibold text-white"
+              : `${primaryButtonClass} flex items-center gap-2`
+          }
+        >
           {running && <Loader2 className="h-4 w-4 animate-spin" />}
           {running ? `Sincronizando... (${elapsedSeconds}s)` : "Sincronizar"}
         </button>
@@ -61,8 +89,18 @@ export default function SiatSyncForm() {
         Sincroniza veículos e motoristas (cria quando o SIAT traz CPF, senão só enriquece um cadastro já existente)
         e, no período escolhido, as reservas/viagens como escalas (fonte oficial — sincronizações seguintes
         atualizam livremente o que já veio de lá). Períodos longos (vários meses) buscam dia a dia no SIAT e podem
-        levar minutos — o contador acima confirma que ainda está rodando, mesmo sem outra mudança na tela.
+        levar minutos.
       </p>
+
+      {running && (
+        <div className="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+          <Loader2 className="h-5 w-5 shrink-0 animate-spin" />
+          <span>
+            <strong>Sincronizando com o SIAT...</strong> Não feche esta página. Tempo decorrido:{" "}
+            {elapsedSeconds}s.
+          </span>
+        </div>
+      )}
 
       {error && (
         <div className="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-700">

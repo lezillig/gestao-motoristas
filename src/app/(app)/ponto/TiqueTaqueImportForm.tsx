@@ -12,7 +12,13 @@ import { sleep, TIQUETAQUE_IMPORT_PACE_MS } from "@/lib/tiquetaque/pace";
 
 type Progress = { done: number; total: number; currentDriverName?: string };
 
-export default function TiqueTaqueImportForm() {
+export default function TiqueTaqueImportForm({
+  defaultStartDate,
+  defaultEndDate,
+}: {
+  defaultStartDate?: string;
+  defaultEndDate?: string;
+}) {
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -80,11 +86,25 @@ export default function TiqueTaqueImportForm() {
       <form action={handleSubmit} className="flex flex-wrap items-end gap-4">
         <div>
           <label className={labelClass}>Data inicial *</label>
-          <input type="date" name="startDate" required disabled={running} className={inputClass} />
+          <input
+            type="date"
+            name="startDate"
+            required
+            disabled={running}
+            defaultValue={defaultStartDate}
+            className={inputClass}
+          />
         </div>
         <div>
           <label className={labelClass}>Data final *</label>
-          <input type="date" name="endDate" required disabled={running} className={inputClass} />
+          <input
+            type="date"
+            name="endDate"
+            required
+            disabled={running}
+            defaultValue={defaultEndDate}
+            className={inputClass}
+          />
         </div>
         <button type="submit" disabled={running} className={primaryButtonClass}>
           {running ? "Importando..." : "Importar"}
