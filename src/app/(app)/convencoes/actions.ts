@@ -2,8 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { writeFile, mkdir, unlink } from "fs/promises";
-import path from "path";
+import { put, del, get } from "@vercel/blob";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -28,11 +27,14 @@ const convencaoSchema = z.object({
     .optional(),
 });
 
-// Diretorio de armazenamento fora de public/: arquivos em public/ sao
-// servidos estaticamente pelo Next sem passar por requireSession(), o que
-// tornaria a CCT acessivel a qualquer pessoa com a URL, sem login. O acesso
-// passa a ser mediado pela rota /api/convencoes/[id]/arquivo (ve route.ts).
-const CCT_STORAGE_ROOT = path.join(process.cwd(), "private-uploads", "convencoes");
+// Vercel Blob com access "private": arquivo nao fica acessivel so pela URL,
+// precisa do token do servidor (BLOB_READ_WRITE_TOKEN) pra ler — o download
+// passa pela rota autenticada /api/convencoes/[id]/arquivo (ve route.ts), que
+// busca do blob com esse token. Filesystem local nao serve aqui: a Vercel
+// roda cada funcao serverless com filesystem read-only (so /tmp e gravavel,
+// e nao persiste entre invocacoes/instancias) — confirmado real, 0
+// convencoes existiam em producao ate 2026-08-24 porque o writeFile
+// original nunca funcionava la.
 
 export async function createConvencao(
   _prevState: ConvencaoFormState,
@@ -78,9 +80,7 @@ export async function createConvencao(
   const safeName = arquivo.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
   const fileName = `${Date.now()}-${safeName || "convencao.pdf"}`;
   const relativePath = `${sindicato.id}/${fileName}`;
-  const uploadDir = path.join(CCT_STORAGE_ROOT, sindicato.id);
-  await mkdir(uploadDir, { recursive: true });
-  await writeFile(path.join(uploadDir, fileName), buffer);
+  await put(relativePath, buffer, { access: "private", contentType: "application/pdf" });
 
   await prisma.convencaoColetiva.create({
     data: {
@@ -140,7 +140,7 @@ export async function deleteConvencao(id: string) {
 
   await prisma.convencaoColetiva.delete({ where: { id, companyId: session.companyId } });
   try {
-    await unlink(path.join(CCT_STORAGE_ROOT, convencao.fileUrl));
+    await del(convencao.fileUrl);
   } catch {
     // arquivo ja pode ter sido removido manualmente; nao bloqueia a exclusao do registro
   }
@@ -219,8 +219,10 @@ export async function suggestRegrasFromCct(
   if (!convencao) return { error: "Convenção não encontrada." };
 
   try {
-    const filePath = path.join(CCT_STORAGE_ROOT, convencao.fileUrl);
-    const suggestions = await extractRegrasFromPdf(filePath);
+    const blob = await get(convencao.fileUrl, { access: "private" });
+    if (!blob || blob.statusCode !== 200) return { error: "Arquivo da convenção não encontrado." };
+    const buffer = Buffer.from(await new Response(blob.stream).arrayBuffer());
+    const suggestions = await extractRegrasFromPdf(buffer);
     return { suggestions };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Falha ao processar o PDF com IA." };

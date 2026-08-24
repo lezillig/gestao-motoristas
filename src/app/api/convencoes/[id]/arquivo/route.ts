@@ -1,9 +1,6 @@
-import path from "path";
-import { readFile } from "fs/promises";
+import { get } from "@vercel/blob";
 import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-
-const CCT_STORAGE_ROOT = path.join(process.cwd(), "private-uploads", "convencoes");
 
 export async function GET(
   _req: Request,
@@ -19,15 +16,13 @@ export async function GET(
     return new Response("Não encontrado", { status: 404 });
   }
 
-  let buffer: Buffer;
-  try {
-    buffer = await readFile(path.join(CCT_STORAGE_ROOT, convencao.fileUrl));
-  } catch {
+  const blob = await get(convencao.fileUrl, { access: "private" });
+  if (!blob || blob.statusCode !== 200) {
     return new Response("Arquivo não encontrado", { status: 404 });
   }
 
   const safeFileName = convencao.fileName.replace(/[^\w.\- ]/g, "_");
-  return new Response(new Uint8Array(buffer), {
+  return new Response(blob.stream, {
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": `inline; filename="${safeFileName}"`,

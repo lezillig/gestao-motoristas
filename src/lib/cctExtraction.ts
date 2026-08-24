@@ -1,6 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
-import { readFile } from "fs/promises";
 import { z } from "zod";
 
 // Extração assistida por IA das regras de uma CCT — Fase 3 do blueprint.
@@ -49,14 +48,14 @@ Extraia cláusulas que definem regras quantificáveis de jornada e remuneração
 
 Extraia apenas regras explícitas no texto, citando o número da cláusula/artigo na descrição quando possível. Não invente valores. Se uma cláusula for ambígua, inclua-a com a leitura mais literal e mencione a ambiguidade na descrição. Se nenhuma regra quantificável for encontrada, devolva uma lista vazia.`;
 
-export async function extractRegrasFromPdf(filePath: string): Promise<SuggestedRegra[]> {
+export async function extractRegrasFromPdf(pdfBuffer: Buffer): Promise<SuggestedRegra[]> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error("ANTHROPIC_API_KEY não configurada — extração por IA indisponível.");
   }
 
   const client = new Anthropic({ apiKey });
-  const pdfBase64 = (await readFile(filePath)).toString("base64");
+  const pdfBase64 = pdfBuffer.toString("base64");
 
   const message = await client.beta.messages.parse({
     model: "claude-opus-4-8",
