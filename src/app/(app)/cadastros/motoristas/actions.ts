@@ -101,7 +101,7 @@ export async function toggleDriverActive(id: string, active: boolean) {
 }
 
 export type ImportRowError = { row: number; message: string };
-export type ImportResult = { created: number; errors: ImportRowError[] };
+export type ImportResult = { created: number; updated?: number; errors: ImportRowError[] };
 export type ImportState = { error?: string; result?: ImportResult };
 
 function normalizeRegimeHoras(value: string): "PADRAO" | "DOZE_X_TRINTA_SEIS" | null {
@@ -143,22 +143,18 @@ export async function importDrivers(
     return { error: "A planilha está vazia." };
   }
 
-  const sindicatos = await prisma.sindicato.findMany({
-    where: { companyId: session.companyId },
-    select: { id: true, nome: true },
-  });
+  const [sindicatos, clientes, existingDrivers] = await Promise.all([
+    prisma.sindicato.findMany({ where: { companyId: session.companyId }, select: { id: true, nome: true } }),
+    prisma.cliente.findMany({ where: { companyId: session.companyId }, select: { id: true, nome: true } }),
+    prisma.driver.findMany({ where: { companyId: session.companyId }, select: { id: true, cpf: true } }),
+  ]);
   const sindicatoByName = new Map(sindicatos.map((s) => [s.nome.trim().toLowerCase(), s.id]));
-  const existingCpfs = new Set(
-    (
-      await prisma.driver.findMany({
-        where: { companyId: session.companyId },
-        select: { cpf: true },
-      })
-    ).map((d) => d.cpf)
-  );
+  const clienteByName = new Map(clientes.map((c) => [c.nome.trim().toLowerCase(), c.id]));
+  const existingDriverByCpf = new Map(existingDrivers.map((d) => [d.cpf, d.id]));
 
   const errors: ImportRowError[] = [];
   let created = 0;
+  let updated = 0;
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
@@ -174,6 +170,8 @@ export async function importDrivers(
     const admissao = cellToLocalDateString(row["Data de Admissão (AAAA-MM-DD)"]);
     const phone = normalizeText(row["Telefone"]) || undefined;
     const sindicatoNome = normalizeText(row["Sindicato"]);
+    const centroCustoNome = normalizeText(row["Centro de Custos"]);
+    const funcao = normalizeText(row["Função"]) || undefined;
     const ativoRaw = normalizeText(row["Ativo (SIM/NAO)"]).toLowerCase();
     const regimeHorasText = normalizeText(row["Regime de Horas"]);
     const escalaSemanalText = normalizeText(row["Escala"]);
@@ -187,6 +185,32 @@ export async function importDrivers(
         continue;
       }
       sindicatoId = match;
+    }
+
+    let clienteId: string | undefined;
+    if (centroCustoNome) {
+      const match = clienteByName.get(centroCustoNome.toLowerCase());
+      if (!match) {
+        errors.push({ row: rowNumber, message: `Centro de Custos "${centroCustoNome}" não encontrado` });
+        continue;
+      }
+      clienteId = match;
+    }
+
+    // CPF ja cadastrado: so atualiza Centro de Custos/Funcao (o resto do
+    // cadastro existente fica intocado, mesmo que a planilha traga outro
+    // valor pras demais colunas — decisao explicita do usuario, pra nao
+    // arriscar sobrescrever dado real dos 310 motoristas em produção com
+    // uma planilha que pode nao ser um espelho perfeito do cadastro atual).
+    const existingId = existingDriverByCpf.get(cpf);
+    if (existingId) {
+      if (clienteId === undefined && funcao === undefined) continue; // nada pra atualizar nessa linha
+      await prisma.driver.update({
+        where: { id: existingId },
+        data: { clienteId, funcao },
+      });
+      updated++;
+      continue;
     }
 
     const regimeHoras = regimeHorasText ? normalizeRegimeHoras(regimeHorasText) : undefined;
@@ -209,6 +233,7 @@ export async function importDrivers(
       admissao: admissao ?? undefined,
       phone,
       sindicatoId,
+      clienteId,
       regimeHoras: regimeHoras ?? undefined,
       escalaSemanal: escalaSemanal ?? undefined,
       valorHoraCents: valorHoraText,
@@ -217,20 +242,17 @@ export async function importDrivers(
       errors.push({ row: rowNumber, message: parsed.error.issues[0]?.message ?? "Dados inválidos" });
       continue;
     }
-    if (existingCpfs.has(parsed.data.cpf)) {
-      errors.push({ row: rowNumber, message: `CPF ${parsed.data.cpf} já cadastrado` });
-      continue;
-    }
 
     try {
-      await prisma.driver.create({
+      const createdDriver = await prisma.driver.create({
         data: {
           ...parsed.data,
+          funcao,
           active: ativoRaw !== "nao" && ativoRaw !== "não",
           companyId: session.companyId,
         },
       });
-      existingCpfs.add(parsed.data.cpf);
+      existingDriverByCpf.set(parsed.data.cpf, createdDriver.id);
       created++;
     } catch {
       errors.push({ row: rowNumber, message: "Erro ao salvar a linha (CPF duplicado?)" });
@@ -239,7 +261,7 @@ export async function importDrivers(
 
   revalidatePath("/cadastros/motoristas");
   revalidatePath("/dashboard");
-  return { result: { created, errors } };
+  return { result: { created, updated, errors } };
 }
 
 export type TiqueTaqueDriverImportRowError = { name: string; cpf: string; message: string };

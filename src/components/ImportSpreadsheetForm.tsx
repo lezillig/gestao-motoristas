@@ -5,7 +5,12 @@ import { Download, Upload } from "lucide-react";
 import { labelClass, primaryButtonClass, secondaryButtonClass } from "@/lib/ui";
 
 export type ImportRowError = { row: number; message: string };
-export type ImportResult = { created: number; errors: ImportRowError[]; naoAbastecimento?: number };
+export type ImportResult = {
+  created: number;
+  errors: ImportRowError[];
+  naoAbastecimento?: number;
+  updated?: number;
+};
 export type ImportState = { error?: string; result?: ImportResult };
 
 export default function ImportSpreadsheetForm({
@@ -56,6 +61,11 @@ export default function ImportSpreadsheetForm({
           {state.result.created > 0 && (
             <p className="text-sm font-medium text-emerald-700">
               {state.result.created} {entityLabel} importado(s) com sucesso.
+            </p>
+          )}
+          {!!state.result.updated && (
+            <p className="text-sm font-medium text-emerald-700">
+              {state.result.updated} {entityLabel} atualizado(s).
             </p>
           )}
           {!!state.result.naoAbastecimento && (
