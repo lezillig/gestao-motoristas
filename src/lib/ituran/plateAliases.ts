@@ -14,7 +14,12 @@ const ITURAN_PLATE_CORRECTIONS: Record<string, string> = {
   FYA6I84: "FYA6184",
   GBT9I12: "GBT9112",
   GHT7I48: "GHT7148",
-  QSV7I79: "QSV7179",
+  // QSV7179 nao e erro de digitacao da Ituran — o SIAT tem esse Ford Ranger
+  // cadastrado 2x, com siatId diferentes (QSV7I79, mais antigo/completo, e
+  // QSV7179, duplicata sem ano criada em 24/08/2026). Mesclamos tudo no
+  // QSV7I79 e apagamos o duplicado; a Ituran continua reportando "QSV7179"
+  // (sem I) nas viagens, entao precisa desviar pra onde o historico ficou.
+  QSV7179: "QSV7I79",
   SUC8I92: "SUC8192",
   SUH4I76: "SUH4176",
   SWA3I34: "SWA3134",
