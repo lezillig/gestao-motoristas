@@ -98,6 +98,10 @@ const NAV: NavItem[] = [
     label: "Telemetria",
     icon: Satellite,
     roles: ["ADMIN", "GESTOR"],
+    children: [
+      { href: "/telemetria", label: "Leituras", icon: Satellite },
+      { href: "/telemetria/viagens", label: "Viagens x escala", icon: Route },
+    ],
   },
   {
     href: "/combustivel",
@@ -153,6 +157,15 @@ export default function Sidebar({ role }: { role: Role }) {
         const selfMatches = hasChildren ? pathname === item.href : isActive(pathname, item.href);
         const selfActive = selfMatches && !childActive;
         const open = childActive || expanded.has(item.href);
+        // Entre os filhos, so o de href MAIS ESPECIFICO (mais longo) que bate
+        // com a rota atual fica marcado — senao um filho com o mesmo href do
+        // pai (ex.: "Leituras" -> "/telemetria") fica ativo junto com
+        // qualquer irmao mais especifico (ex.: "/telemetria/viagens"), ja que
+        // "/telemetria" e prefixo de "/telemetria/viagens".
+        const matchingChildren = item.children?.filter((c) => isActive(pathname, c.href)) ?? [];
+        const activeChildHref = matchingChildren.length
+          ? matchingChildren.reduce((a, b) => (b.href.length > a.href.length ? b : a)).href
+          : null;
 
         return (
           <div key={item.href}>
@@ -180,7 +193,7 @@ export default function Sidebar({ role }: { role: Role }) {
               <div className="ml-4 mt-1 flex flex-col gap-1 border-l border-slate-200 pl-3">
                 {item.children!.filter((child) => !child.roles || child.roles.includes(role)).map((child) => {
                   const ChildIcon = child.icon;
-                  const active = isActive(pathname, child.href);
+                  const active = child.href === activeChildHref;
                   return (
                     <Link
                       key={child.href}

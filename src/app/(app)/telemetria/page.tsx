@@ -91,12 +91,7 @@ export default async function TelemetriaPage({
 
   return (
     <div className="max-w-6xl">
-      <PageHeader
-        title="Telemetria"
-        subtitle="Velocidade e comportamento de direção por veículo."
-        secondaryActionHref="/telemetria/viagens"
-        secondaryActionLabel="Viagens x escala"
-      />
+      <PageHeader title="Telemetria" subtitle="Velocidade e comportamento de direção por veículo." />
 
       <div className={`${cardClass} mb-6 flex flex-wrap items-center justify-between gap-3`}>
         <div className="flex items-center gap-3">
