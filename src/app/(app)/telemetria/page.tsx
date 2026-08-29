@@ -68,12 +68,16 @@ export default async function TelemetriaPage({
     }),
   ]);
 
+  const usageLogsByVehicle = new Map<string, typeof usageLogs>();
+  for (const log of usageLogs) {
+    const list = usageLogsByVehicle.get(log.vehicleId) ?? [];
+    list.push(log);
+    usageLogsByVehicle.set(log.vehicleId, list);
+  }
+
   function driverAt(vehicleId: string, at: Date) {
-    return usageLogs.find(
-      (l) =>
-        l.vehicleId === vehicleId &&
-        l.checkInAt <= at &&
-        (!l.checkOutAt || l.checkOutAt >= at)
+    return (usageLogsByVehicle.get(vehicleId) ?? []).find(
+      (l) => l.checkInAt <= at && (!l.checkOutAt || l.checkOutAt >= at)
     )?.driver;
   }
 
