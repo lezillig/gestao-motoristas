@@ -1,69 +1,46 @@
-import { format, startOfMonth, subMonths, addMonths } from "date-fns";
-import { AlertTriangle } from "lucide-react";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import { requireRole } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
-import { cardClass, badgeClass } from "@/lib/ui";
+import { cardClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
+import SortableTh from "@/components/ui/SortableTh";
 import { formatHoursMinutes } from "@/lib/time";
-import { BANCO_HORAS_WINDOW_MONTHS, computeBancoHorasBalance } from "@/lib/bancoHoras";
-import type { TimeClockEntry, DriverLeave } from "@prisma/client";
+import { BANCO_HORAS_WINDOW_MONTHS, buildBancoHorasReport } from "@/lib/bancoHoras";
+import BancoHorasDriverRow from "./BancoHorasDriverRow";
+import BancoHorasExportBar from "./BancoHorasExportBar";
 
-export default async function BancoHorasPage() {
+const SORT_FIELDS = ["motorista", "credito", "debito", "saldo"] as const;
+type SortField = (typeof SORT_FIELDS)[number];
+
+function monthLabel(monthKey: string): string {
+  const [year, month] = monthKey.split("-").map(Number);
+  return format(new Date(year, month - 1, 1), "MMM/yyyy", { locale: ptBR });
+}
+
+export default async function BancoHorasPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ sort?: string; dir?: string }>;
+}) {
   const session = await requireRole("ADMIN", "GESTOR", "FOLHA");
+  const { sort, dir } = await searchParams;
 
-  const today = new Date();
-  const windowStart = startOfMonth(subMonths(today, BANCO_HORAS_WINDOW_MONTHS - 1));
-  const windowEndExclusive = startOfMonth(addMonths(today, 1));
+  const sortField: SortField = SORT_FIELDS.includes(sort as SortField) ? (sort as SortField) : "saldo";
+  const sortDir = dir === "asc" ? "asc" : "desc";
+  const sortLinkParams = {};
 
-  const monthKeysOldestFirst: string[] = [];
-  for (let i = BANCO_HORAS_WINDOW_MONTHS - 1; i >= 0; i--) {
-    monthKeysOldestFirst.push(format(subMonths(today, i), "yyyy-MM"));
-  }
+  const report = await buildBancoHorasReport(session.companyId);
 
-  const [drivers, entries, leaves] = await Promise.all([
-    prisma.driver.findMany({
-      where: { companyId: session.companyId, active: true },
-      orderBy: { name: "asc" },
-      include: { sindicato: { include: { convencoes: { include: { regras: true } } } } },
-    }),
-    prisma.timeClockEntry.findMany({
-      where: { companyId: session.companyId, date: { gte: windowStart, lt: windowEndExclusive } },
-    }),
-    prisma.driverLeave.findMany({
-      where: { companyId: session.companyId, startDate: { gte: windowStart, lt: windowEndExclusive } },
-    }),
-  ]);
-
-  const entriesByDriverMonth = new Map<string, TimeClockEntry[]>();
-  for (const e of entries) {
-    const key = `${e.driverId}_${format(e.date, "yyyy-MM")}`;
-    const list = entriesByDriverMonth.get(key) ?? [];
-    list.push(e);
-    entriesByDriverMonth.set(key, list);
-  }
-  const leavesByDriverMonth = new Map<string, DriverLeave[]>();
-  for (const l of leaves) {
-    const key = `${l.driverId}_${format(l.startDate, "yyyy-MM")}`;
-    const list = leavesByDriverMonth.get(key) ?? [];
-    list.push(l);
-    leavesByDriverMonth.set(key, list);
-  }
-
-  const balances = drivers
-    .map((driver) => {
-      const entriesByMonth = new Map(
-        monthKeysOldestFirst.map((m) => [m, entriesByDriverMonth.get(`${driver.id}_${m}`) ?? []])
-      );
-      const leavesByMonth = new Map(
-        monthKeysOldestFirst.map((m) => [m, leavesByDriverMonth.get(`${driver.id}_${m}`) ?? []])
-      );
-      return {
-        driver,
-        balance: computeBancoHorasBalance(driver, monthKeysOldestFirst, entriesByMonth, leavesByMonth),
-      };
-    })
-    .filter(({ balance }) => balance.creditMinutes > 0 || balance.debitMinutes > 0)
-    .sort((a, b) => b.balance.balanceMinutes - a.balance.balanceMinutes);
+  const compare: Record<SortField, (a: (typeof report)[number], b: (typeof report)[number]) => number> = {
+    motorista: (a, b) => a.driverName.localeCompare(b.driverName),
+    credito: (a, b) => a.balance.creditMinutes - b.balance.creditMinutes,
+    debito: (a, b) => a.balance.debitMinutes - b.balance.debitMinutes,
+    saldo: (a, b) => a.balance.balanceMinutes - b.balance.balanceMinutes,
+  };
+  const balances = [...report].sort((a, b) => {
+    const cmp = compare[sortField](a, b);
+    return sortDir === "desc" ? -cmp : cmp;
+  });
 
   return (
     <div className="max-w-5xl">
@@ -72,15 +49,19 @@ export default async function BancoHorasPage() {
         subtitle={`Saldo estimado de hora extra (crédito) menos folgas compensadas (débito) nos últimos ${BANCO_HORAS_WINDOW_MONTHS} meses.`}
       />
 
+      <div className="mb-6">
+        <BancoHorasExportBar />
+      </div>
+
       <div className={`${cardClass} p-0 overflow-hidden`}>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto scroll-visible">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-3">Motorista</th>
-                <th className="px-4 py-3 text-right">Crédito (hora extra)</th>
-                <th className="px-4 py-3 text-right">Débito (folgas)</th>
-                <th className="px-4 py-3 text-right">Saldo</th>
+                <SortableTh label="Motorista" field="motorista" basePath="/ponto/banco-horas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <SortableTh label="Crédito (hora extra)" field="credito" basePath="/ponto/banco-horas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3 text-right" />
+                <SortableTh label="Débito (folgas)" field="debito" basePath="/ponto/banco-horas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3 text-right" />
+                <SortableTh label="Saldo" field="saldo" basePath="/ponto/banco-horas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3 text-right" />
                 <th className="px-4 py-3">Alerta</th>
               </tr>
             </thead>
@@ -92,37 +73,33 @@ export default async function BancoHorasPage() {
                   </td>
                 </tr>
               )}
-              {balances.map(({ driver, balance }) => (
-                <tr key={driver.id} className="border-b border-slate-100 last:border-0">
-                  <td className={`px-4 py-3 font-medium ${balance.atRisk ? "text-red-600" : "text-slate-800"}`}>
-                    {driver.name}
-                  </td>
-                  <td className="px-4 py-3 text-right text-slate-600">{formatHoursMinutes(balance.creditMinutes)}</td>
-                  <td className="px-4 py-3 text-right text-slate-600">{formatHoursMinutes(balance.debitMinutes)}</td>
-                  <td
-                    className={`px-4 py-3 text-right font-medium ${
-                      balance.balanceMinutes > 0 ? "text-amber-700" : "text-slate-600"
-                    }`}
-                  >
-                    {formatHoursMinutes(Math.max(0, balance.balanceMinutes))}
-                  </td>
-                  <td className="px-4 py-3">
-                    {balance.atRisk && (
-                      <span
-                        className={`${badgeClass} inline-flex items-center gap-1 bg-red-100 text-red-700`}
-                        title={`Crédito de hora extra desde ${balance.oldestUnconsumedCreditMonth} ainda não compensado — perto do limite de ${BANCO_HORAS_WINDOW_MONTHS} meses (art. 59, §§5º-6º CLT). O excedente pode ter que ser pago em vez de compensado (Súmula 85, IV, TST).`}
-                      >
-                        <AlertTriangle className="h-3 w-3" /> Perto do limite
-                      </span>
-                    )}
-                  </td>
-                </tr>
+              {balances.map(({ driverId, driverName, balance }) => (
+                <BancoHorasDriverRow
+                  key={driverId}
+                  driverName={driverName}
+                  creditLabel={formatHoursMinutes(balance.creditMinutes)}
+                  debitLabel={formatHoursMinutes(balance.debitMinutes)}
+                  balanceLabel={formatHoursMinutes(Math.max(0, balance.balanceMinutes))}
+                  positiveBalance={balance.balanceMinutes > 0}
+                  atRisk={balance.atRisk}
+                  atRiskTitle={`Crédito de hora extra desde ${balance.oldestUnconsumedCreditMonth} ainda não compensado — perto do limite de ${BANCO_HORAS_WINDOW_MONTHS} meses (art. 59, §§5º-6º CLT). O excedente pode ter que ser pago em vez de compensado (Súmula 85, IV, TST).`}
+                  months={balance.monthly.map((m) => ({
+                    label: monthLabel(m.monthKey),
+                    creditLabel: formatHoursMinutes(m.creditMinutes),
+                    debitLabel: formatHoursMinutes(m.debitMinutes),
+                    balanceLabel: formatHoursMinutes(Math.max(0, m.balanceMinutes)),
+                  }))}
+                />
               ))}
             </tbody>
           </table>
         </div>
       </div>
-      <p className="mt-3 text-xs text-slate-400">
+      <p className="mt-3 text-xs text-slate-500">
+        Clique no nome do motorista para ver o detalhamento mês a mês. Ordenado por saldo (maior primeiro) por
+        padrão — clique numa coluna pra reordenar.
+      </p>
+      <p className="mt-1 text-xs text-slate-400">
         Débito aproximado pelo limite diário de cada motorista por folga tirada (não há registro de quantas horas
         cada folga efetivamente compensou) — é uma estimativa para acompanhamento, não um saldo contábil exato. Não
         é aconselhamento jurídico.
