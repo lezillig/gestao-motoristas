@@ -52,7 +52,7 @@ export default async function ViagensPage({
   const [trips, vehicles] = await Promise.all([
     prisma.vehicleTrip.findMany({
       where,
-      include: { vehicle: true },
+      include: { vehicle: true, escala: { include: { driver: true } } },
       orderBy,
       take: filtered ? 2000 : 100,
     }),
@@ -142,7 +142,7 @@ export default async function ViagensPage({
                 <th className="px-4 py-3">Fim</th>
                 <SortableTh label="Distância" field="distanceKm" basePath="/telemetria/viagens" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <SortableTh label="Vel. máx." field="maxSpeedKmh" basePath="/telemetria/viagens" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
-                <th className="px-4 py-3">Motorista (Ituran)</th>
+                <th className="px-4 py-3">Motorista</th>
                 <th className="px-4 py-3">Status</th>
               </tr>
             </thead>
@@ -163,7 +163,17 @@ export default async function ViagensPage({
                     {t.distanceKm != null ? `${t.distanceKm.toLocaleString("pt-BR")} km` : "—"}
                   </td>
                   <td className="px-4 py-3 text-slate-600">{t.maxSpeedKmh != null ? `${t.maxSpeedKmh} km/h` : "—"}</td>
-                  <td className="px-4 py-3 text-slate-600">{t.driverNameRaw ?? "—"}</td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {t.escala ? (
+                      t.escala.driver.name
+                    ) : t.driverNameRaw ? (
+                      <span title="Sem escala correspondente — motorista informado pela Ituran, não confirmado no SIAT.">
+                        {t.driverNameRaw} <span className="text-[10px] italic text-slate-400">(Ituran)</span>
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     {!t.escalaId && <span className={`${badgeClass} bg-amber-100 text-amber-700`}>Sem escala</span>}
                   </td>
