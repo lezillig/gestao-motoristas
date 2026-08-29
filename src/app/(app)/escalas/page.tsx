@@ -211,7 +211,9 @@ export default async function EscalasPage({
                                 {e.vehicle.plate}
                               </span>
                               {e.clientName && (
-                                <span className="block truncate text-[9px] text-blue-500">{e.clientName}</span>
+                                <span className="line-clamp-2 block text-[9px] leading-tight text-blue-500">
+                                  {e.clientName}
+                                </span>
                               )}
                               {e.fonte === "SIAT" && (
                                 <span className="block text-[9px] italic text-slate-500">SIAT</span>
