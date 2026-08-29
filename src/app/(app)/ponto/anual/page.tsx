@@ -112,7 +112,7 @@ export default async function PontoAnualPage({
       </div>
 
       <div className={`${cardClass} overflow-hidden p-0`}>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto scroll-visible">
           <div
             style={{ gridTemplateColumns }}
             className="grid gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-500"

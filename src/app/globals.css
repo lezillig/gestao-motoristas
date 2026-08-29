@@ -18,6 +18,25 @@ body {
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
 
+/* Barra de rolagem horizontal sempre visivel (nao so no hover/overlay do
+   navegador) — usado nas tabelas largas de ponto mensal/anual, onde o
+   usuario nao percebia que dava pra rolar pros lados pra ver mais colunas. */
+.scroll-visible {
+  scrollbar-width: auto;
+  scrollbar-color: #cbd5e1 #f1f5f9;
+}
+.scroll-visible::-webkit-scrollbar {
+  height: 12px;
+}
+.scroll-visible::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+.scroll-visible::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 9999px;
+  border: 2px solid #f1f5f9;
+}
+
 /* Paginas que precisam de impressao "limpa" (ex.: dossie de auditoria em
    /ponto/correcoes/dossie) marcam o conteudo com data-print-area — esconde
    a sidebar/topbar do AppShell e deixa a area imprimivel ocupar a pagina
