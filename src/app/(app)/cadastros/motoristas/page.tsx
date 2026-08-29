@@ -14,7 +14,6 @@ const SORT_FIELDS = [
   "name",
   "cpf",
   "sindicato",
-  "cliente",
   "cnhExpiration",
   "empregador",
   "departamento",
@@ -67,9 +66,7 @@ export default async function MotoristasPage({
   const orderBy: Prisma.DriverOrderByWithRelationInput =
     sortField === "sindicato"
       ? { sindicato: { nome: sortDir } }
-      : sortField === "cliente"
-        ? { cliente: { nome: sortDir } }
-        : sortField === "cnhExpiration"
+      : sortField === "cnhExpiration"
           ? { cnhExpiration: { sort: sortDir, nulls: "last" } }
           : sortField === "cpf"
             ? { cpf: sortDir }
@@ -90,7 +87,7 @@ export default async function MotoristasPage({
   const [drivers, sindicatos, clientes, empregadorRows, departamentoRows, cargoRows] = await Promise.all([
     prisma.driver.findMany({
       where,
-      include: { sindicato: true, cliente: true },
+      include: { sindicato: true },
       orderBy,
     }),
     prisma.sindicato.findMany({
@@ -243,7 +240,6 @@ export default async function MotoristasPage({
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-medium uppercase tracking-wide text-slate-500">
-                <SortableTh label="Cliente" field="cliente" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="whitespace-nowrap px-3 py-2" />
                 <SortableTh label="Unidade de alocação" field="departamento" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="whitespace-nowrap px-3 py-2" />
                 <SortableTh label="Cargo" field="funcao" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="whitespace-nowrap px-3 py-2" />
                 <SortableTh label="Nome" field="name" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="whitespace-nowrap px-3 py-2" />
@@ -256,7 +252,7 @@ export default async function MotoristasPage({
             <tbody>
               {drivers.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
                     Nenhum motorista encontrado.
                   </td>
                 </tr>
@@ -266,7 +262,6 @@ export default async function MotoristasPage({
                 const days = d.cnhExpiration ? daysUntil(d.cnhExpiration) : null;
                 return (
                   <tr key={d.id} className="border-b border-slate-100 last:border-0">
-                    <td className="whitespace-nowrap px-3 py-2 text-slate-600">{d.cliente?.nome ?? "—"}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-slate-600">{d.departamento ?? "—"}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-slate-600">{d.funcao ?? "—"}</td>
                     <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-800">{d.name}</td>
