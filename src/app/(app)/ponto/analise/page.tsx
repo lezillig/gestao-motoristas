@@ -122,49 +122,54 @@ export default async function AnaliseDeRiscosPage({
   const prevMonth = format(subMonths(monthStart, 1), "yyyy-MM");
   const nextMonth = format(addMonths(monthStart, 1), "yyyy-MM");
 
-  const drivers = await prisma.driver.findMany({
-    where: { companyId: session.companyId, active: true },
-    orderBy: { name: "asc" },
-    include: { sindicato: { include: { convencoes: { include: { regras: true } } } }, cliente: true },
-  });
-  const driverById = new Map(drivers.map((d) => [d.id, d]));
-  const driverName = (id: string) => driverById.get(id)?.name ?? "—";
-
   const entryWhere = {
     companyId: session.companyId,
     date: { gte: addDays(monthStart, -7), lt: monthEnd },
     ...(driverId ? { driverId } : {}),
   };
-  const entriesWithLookback = await prisma.timeClockEntry.findMany({ where: entryWhere });
-  const entriesInMonth = entriesWithLookback.filter(
-    (e) => e.date >= monthStart && e.date < monthEnd
-  );
-  const entryIdsInMonth = new Set(entriesInMonth.map((e) => e.id));
-
-  const escalasInMonth = await prisma.escala.findMany({
-    where: {
-      companyId: session.companyId,
-      date: { gte: monthStart, lt: monthEnd },
-      ...(driverId ? { driverId } : {}),
-    },
-    select: { driverId: true, date: true, startTime: true, endTime: true },
-  });
-
-  const dailyLimitByDriver = new Map(drivers.map((d) => [d.id, driverDailyLimitMinutes(d)]));
-  const regime12x36ByDriver = new Map(drivers.map((d) => [d.id, driverRegime12x36(d)]));
-
   // 3 meses anteriores ao selecionado, so pra alimentar o check de
   // supressao de hora extra habitual (Sumula 291, ver jurisprudencia.ts) —
   // consulta separada porque e uma janela bem maior que o lookback de 1 dia
   // ja usado pra interjornada.
   const priorMonthsStart = startOfMonth(subMonths(monthStart, 3));
-  const priorMonthsEntries = await prisma.timeClockEntry.findMany({
-    where: {
-      companyId: session.companyId,
-      date: { gte: priorMonthsStart, lt: monthStart },
-      ...(driverId ? { driverId } : {}),
-    },
-  });
+
+  // As 4 buscas abaixo sao independentes entre si (nenhuma usa o resultado
+  // de outra) — rodar em paralelo evita pagar 4 round-trips sequenciais ao
+  // Postgres nesta que e a pagina mais usada de analise de risco.
+  const [drivers, entriesWithLookback, escalasInMonth, priorMonthsEntries] = await Promise.all([
+    prisma.driver.findMany({
+      where: { companyId: session.companyId, active: true },
+      orderBy: { name: "asc" },
+      include: { sindicato: { include: { convencoes: { include: { regras: true } } } }, cliente: true },
+    }),
+    prisma.timeClockEntry.findMany({ where: entryWhere }),
+    prisma.escala.findMany({
+      where: {
+        companyId: session.companyId,
+        date: { gte: monthStart, lt: monthEnd },
+        ...(driverId ? { driverId } : {}),
+      },
+      select: { driverId: true, date: true, startTime: true, endTime: true },
+    }),
+    prisma.timeClockEntry.findMany({
+      where: {
+        companyId: session.companyId,
+        date: { gte: priorMonthsStart, lt: monthStart },
+        ...(driverId ? { driverId } : {}),
+      },
+    }),
+  ]);
+  const driverById = new Map(drivers.map((d) => [d.id, d]));
+  const driverName = (id: string) => driverById.get(id)?.name ?? "—";
+
+  const entriesInMonth = entriesWithLookback.filter(
+    (e) => e.date >= monthStart && e.date < monthEnd
+  );
+  const entryIdsInMonth = new Set(entriesInMonth.map((e) => e.id));
+  const entryById = new Map(entriesInMonth.map((e) => [e.id, e]));
+
+  const dailyLimitByDriver = new Map(drivers.map((d) => [d.id, driverDailyLimitMinutes(d)]));
+  const regime12x36ByDriver = new Map(drivers.map((d) => [d.id, driverRegime12x36(d)]));
   const priorOvertimeByDriverMonth = new Map<string, number>();
   for (const entry of priorMonthsEntries) {
     const regime = regime12x36ByDriver.get(entry.driverId);
@@ -299,7 +304,7 @@ export default async function AnaliseDeRiscosPage({
   ).filter((v) => entryIdsInMonth.has(v.nextEntryId));
   for (const v of interjornadaViolations) {
     getSummary(v.driverId).interjornadaCount++;
-    const entry = entriesInMonth.find((e) => e.id === v.nextEntryId);
+    const entry = entryById.get(v.nextEntryId);
     rows.push({
       key: `interjornada-${v.nextEntryId}`,
       driverId: v.driverId,
@@ -317,7 +322,7 @@ export default async function AnaliseDeRiscosPage({
   const missingIntervalViolations = findMissingIntervalViolations(entriesInMonth);
   for (const v of missingIntervalViolations) {
     getSummary(v.driverId).missingIntervalCount++;
-    const entry = entriesInMonth.find((e) => e.id === v.entryId);
+    const entry = entryById.get(v.entryId);
     rows.push({
       key: `intervalo-${v.entryId}`,
       driverId: v.driverId,
@@ -344,7 +349,7 @@ export default async function AnaliseDeRiscosPage({
     maxConsecutiveDaysFor
   ).filter((v) => entryIdsInMonth.has(v.entryId));
   for (const v of missingRestViolations) {
-    const entry = entriesInMonth.find((e) => e.id === v.entryId);
+    const entry = entryById.get(v.entryId);
     rows.push({
       key: `dsr-${v.entryId}`,
       driverId: v.driverId,

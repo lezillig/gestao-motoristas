@@ -138,6 +138,8 @@ model Sindicato {
 
   drivers    Driver[]
   convencoes ConvencaoColetiva[]
+
+  @@index([companyId])
 }
 
 // Cliente/centro de custo — de onde vem a demanda de horas de um contrato
@@ -247,6 +249,10 @@ model Driver {
   usageLogs        VehicleUsageLog[]
   fuelTransactions FuelTransaction[]
   leaves           DriverLeave[]
+
+  // Toda listagem de motorista filtra por empresa, e a maioria tambem por
+  // ativo — sem indice em FK o Postgres nao cria um automatico.
+  @@index([companyId, active])
 }
 
 // Folga/atestado/ferias/abono do motorista, importado do TiqueTaque
@@ -312,6 +318,8 @@ model Vehicle {
   fuelTransactions  FuelTransaction[]
   consumptionSummaries FuelConsumptionSummary[]
   vehicleTrips      VehicleTrip[]
+
+  @@index([companyId])
 }
 
 // ---------- Escala (MOD.02) ----------
