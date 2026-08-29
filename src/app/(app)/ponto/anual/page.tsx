@@ -7,6 +7,7 @@ import { buildAnnualReport } from "@/lib/pontoAnual";
 import { formatHoursMinutes } from "@/lib/time";
 import { buildSortHref, nextSortDir } from "@/lib/sort";
 import AnnualDriverTable, { type AnnualDriverRow } from "./AnnualDriverTable";
+import AnnualExportBar from "./AnnualExportBar";
 import ViewToggle, { type VisaoHoras } from "@/components/ui/ViewToggle";
 
 const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
@@ -104,7 +105,10 @@ export default async function PontoAnualPage({
             Próximo ano <ChevronRight className="h-4 w-4" />
           </Link>
         </div>
-        <ViewToggle basePath="/ponto/anual" params={{ ano: String(year) }} current={visao} />
+        <div className="flex items-center gap-3">
+          <AnnualExportBar ano={year} visao={visao} />
+          <ViewToggle basePath="/ponto/anual" params={{ ano: String(year) }} current={visao} />
+        </div>
       </div>
 
       <div className={`${cardClass} overflow-hidden p-0`}>
