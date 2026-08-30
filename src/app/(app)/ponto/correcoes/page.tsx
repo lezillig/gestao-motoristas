@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { format } from "date-fns";
+import { format, subMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { History, DollarSign, Users, Clock } from "lucide-react";
 import { requireRole } from "@/lib/auth";
@@ -44,19 +44,29 @@ const ORIGEM_TONE: Record<string, string> = {
 
 const currency = (cents: number) => (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
+// Sem filtro explicito, o historico de correcoes e append-only (nunca
+// atualizado/apagado — ver schema.prisma) e so cresce a cada
+// reimportacao/edicao/exclusao de ponto; sem limite, a pagina buscava TODAS
+// as correcoes ja existentes, com include profundo, a cada acesso. Padrao
+// de 3 meses — "Ver tudo" ainda abre mao do limite quando precisar.
+const DEFAULT_LOOKBACK_MONTHS = 3;
+
 export default async function PontoCorrecoesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ de?: string; ate?: string }>;
+  searchParams: Promise<{ de?: string; ate?: string; tudo?: string }>;
 }) {
   const session = await requireRole("ADMIN", "GESTOR", "FOLHA");
-  const { de, ate } = await searchParams;
+  const { de, ate, tudo } = await searchParams;
+  const semLimite = tudo === "1";
 
   const where: Prisma.TimeClockCorrectionWhereInput = { companyId: session.companyId };
   if (de || ate) {
     where.date = {};
     if (de) where.date.gte = parseLocalDate(de);
     if (ate) where.date.lte = parseLocalDate(ate);
+  } else if (!semLimite) {
+    where.date = { gte: subMonths(new Date(), DEFAULT_LOOKBACK_MONTHS) };
   }
 
   const [corrections, drivers, users] = await Promise.all([
@@ -132,7 +142,9 @@ export default async function PontoCorrecoesPage({
   const periodLabel =
     de || ate
       ? `${de ? format(parseLocalDate(de), "dd/MM/yyyy") : "início"} até ${ate ? format(parseLocalDate(ate), "dd/MM/yyyy") : "hoje"}`
-      : "todo o período";
+      : semLimite
+        ? "todo o período"
+        : `últimos ${DEFAULT_LOOKBACK_MONTHS} meses`;
 
   return (
     <div className="max-w-6xl">
@@ -155,7 +167,12 @@ export default async function PontoCorrecoesPage({
         </button>
         {(de || ate) && (
           <Link href="/ponto/correcoes" className="text-sm text-slate-500 hover:underline">
-            Ver tudo
+            Limpar filtro
+          </Link>
+        )}
+        {!de && !ate && !semLimite && (
+          <Link href="/ponto/correcoes?tudo=1" className="text-sm text-slate-500 hover:underline">
+            Ver todo o período
           </Link>
         )}
       </form>

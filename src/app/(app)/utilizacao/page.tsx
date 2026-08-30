@@ -31,7 +31,7 @@ export default async function UtilizacaoPage({
           ? { kmInicial: sortDir }
           : { checkInAt: sortDir };
 
-  const [logs, vehicles, escalas] = await Promise.all([
+  const [logs, vehicles] = await Promise.all([
     prisma.vehicleUsageLog.findMany({
       where: { companyId: session.companyId },
       include: { driver: true, vehicle: true },
@@ -39,8 +39,27 @@ export default async function UtilizacaoPage({
       take: 50,
     }),
     prisma.vehicle.findMany({ where: { companyId: session.companyId } }),
-    prisma.escala.findMany({ where: { companyId: session.companyId } }),
   ]);
+
+  // Escala da empresa inteira, sem filtro de data, so pra cruzar com os 50
+  // check-ins acima ja crescia sem limite (uma linha por dia por motorista
+  // desde sempre) — agora busca so o que pode realmente casar: janela de
+  // datas + motoristas/veiculos que aparecem nesses 50 check-ins.
+  const escalas =
+    logs.length === 0
+      ? []
+      : await prisma.escala.findMany({
+          where: {
+            companyId: session.companyId,
+            driverId: { in: [...new Set(logs.map((l) => l.driverId))] },
+            vehicleId: { in: [...new Set(logs.map((l) => l.vehicleId))] },
+            date: {
+              gte: logs.reduce((min, l) => (l.checkInAt < min ? l.checkInAt : min), logs[0].checkInAt),
+              lte: logs.reduce((max, l) => (l.checkInAt > max ? l.checkInAt : max), logs[0].checkInAt),
+            },
+          },
+          select: { driverId: true, vehicleId: true, date: true },
+        });
 
   const escalaKeys = new Set(
     escalas.map((e) => `${e.driverId}_${e.vehicleId}_${format(e.date, "yyyy-MM-dd")}`)

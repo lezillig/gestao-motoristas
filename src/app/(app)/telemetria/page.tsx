@@ -1,4 +1,4 @@
-import { format } from "date-fns";
+import { format, subDays } from "date-fns";
 import { AlertTriangle, Gauge, Satellite, Trophy } from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -48,6 +48,23 @@ export default async function TelemetriaPage({
   const filtered = Boolean(vehicleId || dateFrom || dateTo);
   const sortLinkParams = { vehicleId, dateFrom, dateTo };
 
+  // driverAt() so precisa de check-ins que se sobrepoem a janela das leituras
+  // exibidas — buscar TODO o historico de check-ins da empresa (crescente
+  // pra sempre) so pra essa checagem era o gargalo. Restringe por veiculo
+  // quando o filtro pede um so; restringe por data quando dateFrom/dateTo
+  // sao informados OU (sem filtro nenhum) pelas ultimas 14 dias, folga
+  // generosa dado que 1 dia de cron ja supera as 100 leituras exibidas
+  // nesse caso (comentario acima) — com so vehicleId e sem datas, o
+  // historico do veiculo pode ser mais antigo que isso, entao nao limita.
+  const usageLogWhere: Prisma.VehicleUsageLogWhereInput = { companyId: session.companyId };
+  if (vehicleId) usageLogWhere.vehicleId = vehicleId;
+  if (dateFrom || dateTo || !filtered) {
+    const usageWindowStart = dateFrom ? parseLocalDate(dateFrom) : subDays(new Date(), 14);
+    const usageWindowEnd = dateTo ? new Date(parseLocalDate(dateTo).getTime() + 24 * 60 * 60 * 1000 - 1) : new Date();
+    usageLogWhere.checkInAt = { lte: usageWindowEnd };
+    usageLogWhere.OR = [{ checkOutAt: null }, { checkOutAt: { gte: usageWindowStart } }];
+  }
+
   const [readings, usageLogs, vehicles] = await Promise.all([
     prisma.telemetryReading.findMany({
       where,
@@ -56,7 +73,7 @@ export default async function TelemetriaPage({
       take: filtered ? FILTERED_TAKE : DEFAULT_TAKE,
     }),
     prisma.vehicleUsageLog.findMany({
-      where: { companyId: session.companyId },
+      where: usageLogWhere,
       include: { driver: true },
     }),
     // So ativos na lista de filtro — veiculo inativo/baixado nao deveria
