@@ -1,11 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import { fetchVehiclesRealtime } from "@/lib/ituran/client";
-import type { ITelemetryProvider, TelemetryReadingInput } from "./types";
+import type { ITelemetryProvider, TelemetryFetchProgress, TelemetryReadingInput } from "./types";
 
 export class IturanProvider implements ITelemetryProvider {
   name = "Ituran";
 
-  async fetchReadings(vehicleIds: string[]): Promise<TelemetryReadingInput[]> {
+  async fetchReadings(
+    vehicleIds: string[],
+    onProgress?: (progress: TelemetryFetchProgress) => void
+  ): Promise<TelemetryReadingInput[]> {
     if (vehicleIds.length === 0) return [];
 
     const vehicles = await prisma.vehicle.findMany({
@@ -14,7 +17,7 @@ export class IturanProvider implements ITelemetryProvider {
     });
     const vehicleIdByPlate = new Map(vehicles.map((v) => [v.plate.trim().toUpperCase(), v.id]));
 
-    const snapshots = await fetchVehiclesRealtime();
+    const snapshots = await fetchVehiclesRealtime(onProgress);
 
     const readings: TelemetryReadingInput[] = [];
     for (const s of snapshots) {

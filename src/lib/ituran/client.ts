@@ -95,7 +95,12 @@ function mapVehicleSnapshot(v: IturanVehicleRaw): IturanVehicleSnapshot | null {
 // Frota inteira numa consulta paginada so (nao precisa de 1 chamada por
 // veiculo, ao contrario do TiqueTaque) — realtime_fields=LastLocation traz
 // posicao/velocidade/odometro/limite-de-via de cada veiculo de uma vez.
-export async function fetchVehiclesRealtime(): Promise<IturanVehicleSnapshot[]> {
+// onProgress e chamado apos cada pagina — usado pra dar feedback visual de
+// "pagina X de Y" no botao "Gerar leituras" (antes ficava sem nenhum
+// retorno visivel enquanto rodava).
+export async function fetchVehiclesRealtime(
+  onProgress?: (progress: { page: number; pageCount: number }) => void
+): Promise<IturanVehicleSnapshot[]> {
   const all: IturanVehicleSnapshot[] = [];
   let page = 1;
   for (;;) {
@@ -110,6 +115,7 @@ export async function fetchVehiclesRealtime(): Promise<IturanVehicleSnapshot[]> 
       if (snapshot) all.push(snapshot);
     }
     const pageCount = data.metadata?.pagination?.page_count ?? 1;
+    onProgress?.({ page, pageCount });
     if (page >= pageCount) break;
     page += 1;
   }

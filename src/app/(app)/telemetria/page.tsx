@@ -2,12 +2,12 @@ import { format, subDays } from "date-fns";
 import { AlertTriangle, Gauge, Satellite, Trophy } from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { cardClass, badgeClass, primaryButtonClass, inputClass } from "@/lib/ui";
+import { cardClass, badgeClass, inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import SortableTh from "@/components/ui/SortableTh";
 import { getActiveTelemetryProvider } from "@/lib/telemetry";
 import { findSpeedAlerts, isSpeeding, SPEED_LIMIT_KMH } from "@/lib/speedCompliance";
-import { generateReadings } from "./actions";
+import GerarLeiturasButton from "./GerarLeiturasButton";
 import { parseLocalDate } from "@/lib/date";
 import type { Prisma } from "@prisma/client";
 
@@ -128,11 +128,7 @@ export default async function TelemetriaPage({
             </p>
           </div>
         </div>
-        <form action={generateReadings}>
-          <button type="submit" className={primaryButtonClass}>
-            {provider.name === "Ituran" ? "Gerar leituras" : "Gerar leituras simuladas"}
-          </button>
-        </form>
+        <GerarLeiturasButton label={provider.name === "Ituran" ? "Gerar leituras" : "Gerar leituras simuladas"} />
       </div>
 
       <form className={`${cardClass} mb-6 flex flex-wrap items-end gap-3`} method="get">

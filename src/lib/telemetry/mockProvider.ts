@@ -1,4 +1,4 @@
-import type { ITelemetryProvider, TelemetryReadingInput } from "./types";
+import type { ITelemetryProvider, TelemetryFetchProgress, TelemetryReadingInput } from "./types";
 
 // Sem credenciais da Ituran ainda (ver blueprint Fase 1). Gera uma leitura
 // "agora" por veiculo, com uma chance de simular excesso de velocidade para
@@ -10,7 +10,11 @@ const BASE_LNG = -49.2733;
 export class MockTelemetryProvider implements ITelemetryProvider {
   name = "Simulado (mock)";
 
-  async fetchReadings(vehicleIds: string[]): Promise<TelemetryReadingInput[]> {
+  async fetchReadings(
+    vehicleIds: string[],
+    onProgress?: (progress: TelemetryFetchProgress) => void
+  ): Promise<TelemetryReadingInput[]> {
+    onProgress?.({ page: 1, pageCount: 1 });
     const now = new Date();
     return vehicleIds.map((vehicleId) => {
       const speeding = Math.random() < 0.3;
