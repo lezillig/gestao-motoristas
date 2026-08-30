@@ -101,6 +101,7 @@ const NAV: NavItem[] = [
     children: [
       { href: "/telemetria", label: "Leituras", icon: Satellite },
       { href: "/telemetria/viagens", label: "Viagens x escala", icon: Route },
+      { href: "/telemetria/auditoria", label: "Auditoria ponto x viagem", icon: ShieldAlert },
     ],
   },
   {
