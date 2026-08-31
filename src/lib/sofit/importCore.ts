@@ -122,8 +122,11 @@ export async function syncVehiclesIntoDb(
     }
 
     // Update parcial: so entra no `data` o campo que o Sofit realmente
-    // mandou E que mudou (principio 2). Placeholder local ("Não informado")
-    // conta como vazio — pode ser sobrescrito quando o dado chegar depois.
+    // mandou E que mudou. Ou seja, o Sofit VENCE quando manda um valor (ele
+    // e o sistema de gestao da frota — se marca/modelo/situacao divergem, o
+    // certo e o lado dele), e o valor local so e preservado quando o campo
+    // nao veio (principio 2). A excecao e o hodometro, que nunca retrocede
+    // (principio 3), porque ali "mais recente" e sempre "maior".
     const data: {
       brand?: string;
       model?: string;
@@ -445,24 +448,28 @@ export async function runSofitSync(
         case "VEICULOS": {
           const fetched = await fetchSofitVehicles(options.deadline);
           result = await syncVehiclesIntoDb(companyId, fetched.items);
+          result.lidos = fetched.lidosBrutos;
           result.erros.push(...fetched.erros);
           break;
         }
         case "ABASTECIMENTOS": {
           const fetched = await fetchSofitFuelSupplies(options.period, options.deadline);
           result = await syncFuelSuppliesIntoDb(companyId, fetched.items);
+          result.lidos = fetched.lidosBrutos;
           result.erros.push(...fetched.erros);
           break;
         }
         case "MANUTENCOES": {
           const fetched = await fetchSofitMaintenances(options.period, options.deadline);
           result = await syncMaintenancesIntoDb(companyId, fetched.items);
+          result.lidos = fetched.lidosBrutos;
           result.erros.push(...fetched.erros);
           break;
         }
         case "ODOMETRO": {
           const fetched = await fetchSofitOdometerReadings(options.period, options.deadline);
           result = await syncOdometerIntoDb(companyId, fetched.items);
+          result.lidos = fetched.lidosBrutos;
           result.erros.push(...fetched.erros);
           break;
         }

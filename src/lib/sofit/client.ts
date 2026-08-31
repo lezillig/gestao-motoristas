@@ -24,7 +24,13 @@ import type {
 // Um item invalido NUNCA aborta a sincronizacao inteira (o mesmo criterio de
 // "melhor esforco" ja usado nas importacoes de planilha): ele vira uma linha
 // de erro reportada ao usuario no fim.
-export type SofitFetchResult<T> = { items: T[]; erros: string[] };
+//
+// `lidosBrutos` conta tudo que veio da API, inclusive o que nao passou pelo
+// normalizador — e o numero que o historico mostra como "lidos". Contar so
+// os validos faria um lote todo invalido (caminho ou mapeamento errado na
+// implantacao) aparecer como "0 lidos", que parece "o Sofit nao mandou
+// nada" quando na verdade mandou e nos e que nao entendemos.
+export type SofitFetchResult<T> = { items: T[]; erros: string[]; lidosBrutos: number };
 
 export type SofitPeriod = { start: Date; end: Date };
 
@@ -232,7 +238,7 @@ async function fetchAllPages<T>(
     if (total !== null && collected >= total) break;
   }
 
-  return { items, erros };
+  return { items, erros, lidosBrutos: collected };
 }
 
 export async function fetchSofitVehicles(deadline?: number): Promise<SofitFetchResult<SofitVehicle>> {
