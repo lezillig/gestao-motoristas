@@ -300,16 +300,19 @@ export async function importFuelTransactions(
   };
 }
 
+export type AnpSyncState = { result?: { created: number; weeksSynced: number } };
+
 // Busca sob demanda (nunca automatico a cada render de pagina, ver comentario
 // no schema de AnpPrecoReferencia) o preco medio de revenda da ANP pra cada
 // semana (domingo-a-sabado) que toca o mes informado. Best-effort: uma
 // semana ainda nao publicada (ex. mes corrente) so conta como
 // "indisponivel", nao trava as demais. Pula semana que ja tem registro —
-// nunca refaz um fetch externo desnecessario. Sem valor de retorno (usado
-// direto como `<form action={...}>`, sem useActionState) — o resultado
-// aparece na proxima renderizacao via revalidatePath, os cards e o aviso de
-// semanas faltantes ja recalculam a partir do banco.
-export async function syncAnpPrices(mes: string): Promise<void> {
+// nunca refaz um fetch externo desnecessario. Usa useActionState (ver
+// AnpSyncButton.tsx) pra mostrar "Buscando..." enquanto roda — antes era
+// form action simples sem nenhum feedback visivel, parecia nao fazer nada
+// mesmo funcionando (mesmo problema ja corrigido no "Gerar leituras" de
+// /telemetria e no "Sincronizar com Sofit").
+export async function syncAnpPrices(mes: string, _prevState: AnpSyncState): Promise<AnpSyncState> {
   await requireRole("ADMIN", "GESTOR");
 
   const monthStart = new Date(`${mes}-01T00:00:00`);
@@ -322,6 +325,8 @@ export async function syncAnpPrices(mes: string): Promise<void> {
     cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 7);
   }
 
+  let created = 0;
+  let weeksSynced = 0;
   for (const weekStart of weekStarts) {
     const { start, end } = anpWeekRange(weekStart);
     const already = await prisma.anpPrecoReferencia.findFirst({ where: { semanaInicio: start } });
@@ -330,7 +335,7 @@ export async function syncAnpPrices(mes: string): Promise<void> {
     const rows = await fetchAnpWeek(start, end);
     if (!rows) continue; // semana ainda nao publicada — segue pras demais
 
-    await prisma.anpPrecoReferencia.createMany({
+    const result = await prisma.anpPrecoReferencia.createMany({
       data: rows.map((r) => ({
         uf: r.uf,
         produto: r.produto,
@@ -340,7 +345,10 @@ export async function syncAnpPrices(mes: string): Promise<void> {
       })),
       skipDuplicates: true,
     });
+    created += result.count;
+    weeksSynced++;
   }
 
   revalidatePath("/combustivel");
+  return { result: { created, weeksSynced } };
 }

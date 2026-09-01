@@ -25,7 +25,7 @@ import {
 } from "@/lib/fuelCompliance";
 import { anpWeekRange } from "@/lib/anp/client";
 import { isSofitAvailable } from "@/lib/sofit/client";
-import { syncAnpPrices } from "./actions";
+import AnpSyncButton from "./AnpSyncButton";
 import SofitSyncButton from "./SofitSyncButton";
 
 const SORT_FIELDS = [
@@ -84,7 +84,7 @@ export default async function CombustivelPage({
   const sortField: SortField = SORT_FIELDS.includes(sort as SortField) ? (sort as SortField) : "dataHora";
   const sortDir = dir === "asc" ? "asc" : "desc";
 
-  const [txs, vehicles, drivers, refPrices] = await Promise.all([
+  const [txs, vehicles, drivers, refPrices, escalasNoMes] = await Promise.all([
     prisma.fuelTransaction.findMany({
       where: { companyId: session.companyId, dataHora: { gte: monthStart, lt: monthEnd } },
       include: { vehicle: true, driver: true },
@@ -95,7 +95,25 @@ export default async function CombustivelPage({
     prisma.anpPrecoReferencia.findMany({
       where: { semanaInicio: { lt: monthEnd }, semanaFim: { gte: monthStart } },
     }),
+    // Motorista escalado no SIAT pro veiculo naquele dia — a Sofit quase
+    // nunca traz o motorista no cartao (e vinculado ao veiculo, nao a
+    // pessoa), entao a escala e a fonte mais confiavel pra saber quem
+    // provavelmente abasteceu.
+    prisma.escala.findMany({
+      where: { companyId: session.companyId, date: { gte: monthStart, lt: monthEnd } },
+      include: { driver: true },
+    }),
   ]);
+  const motoristaSiatByVehicleDate = new Map<string, string>();
+  for (const e of escalasNoMes) {
+    const key = `${e.vehicleId}_${format(e.date, "yyyy-MM-dd")}`;
+    // Mais de um motorista escalado no mesmo veiculo/dia (troca de turno):
+    // guarda todos, separados por "/", em vez de sobrescrever.
+    const existing = motoristaSiatByVehicleDate.get(key);
+    motoristaSiatByVehicleDate.set(key, existing ? `${existing} / ${e.driver.name}` : e.driver.name);
+  }
+  const motoristaSiat = (t: (typeof txs)[number]) =>
+    t.vehicleId ? (motoristaSiatByVehicleDate.get(`${t.vehicleId}_${format(t.dataHora, "yyyy-MM-dd")}`) ?? null) : null;
 
   // Semanas ANP (domingo-a-sabado) que tocam o mes exibido, pra saber se
   // falta sincronizar alguma antes de mostrar o card de comparacao de preco.
@@ -163,7 +181,10 @@ export default async function CombustivelPage({
   const postoFiltro = posto?.trim().toLowerCase();
   const filteredTxs = txs.filter((t) => {
     if (placaFiltro && !(t.vehicle?.plate ?? t.placaOriginal).toUpperCase().includes(placaFiltro)) return false;
-    if (motoristaFiltro && !(t.driver?.name ?? t.motoristaOriginal ?? "").toLowerCase().includes(motoristaFiltro))
+    if (
+      motoristaFiltro &&
+      !`${t.driver?.name ?? t.motoristaOriginal ?? ""} ${motoristaSiat(t) ?? ""}`.toLowerCase().includes(motoristaFiltro)
+    )
       return false;
     if (modeloFiltro && !(t.vehicle?.model ?? t.modeloOriginal ?? "").toLowerCase().includes(modeloFiltro))
       return false;
@@ -318,14 +339,12 @@ export default async function CombustivelPage({
           <p className="text-xs text-slate-500">acima da média da região (+10%)</p>
           <div className="mt-3 border-t border-slate-100 pt-3 text-sm">
             {weeksMissing > 0 ? (
-              <form action={syncAnpPrices.bind(null, format(monthStart, "yyyy-MM"))}>
+              <div>
                 <p className="mb-2 text-xs text-slate-500">
                   {weeksMissing} de {weekStartsInMonth.length} semana(s) ainda não sincronizada(s)
                 </p>
-                <button type="submit" className={`${primaryButtonClass} w-full py-1.5 text-xs`}>
-                  Buscar preços ANP
-                </button>
-              </form>
+                <AnpSyncButton mes={format(monthStart, "yyyy-MM")} />
+              </div>
             ) : (
               <p className="text-xs text-slate-500">Preços da ANP sincronizados para o período.</p>
             )}
@@ -449,6 +468,7 @@ export default async function CombustivelPage({
                 <SortableTh label="Data/Hora" field="dataHora" basePath="/combustivel" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <SortableTh label="Placa" field="placa" basePath="/combustivel" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <SortableTh label="Motorista" field="motorista" basePath="/combustivel" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <th className="px-4 py-3">Motorista SIAT</th>
                 <SortableTh label="Modelo" field="modelo" basePath="/combustivel" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <SortableTh label="Valor" field="valor" basePath="/combustivel" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <SortableTh label="Litros" field="litros" basePath="/combustivel" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
@@ -462,7 +482,7 @@ export default async function CombustivelPage({
             <tbody>
               {filteredTxs.length === 0 && (
                 <tr>
-                  <td colSpan={11} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={12} className="px-4 py-8 text-center text-slate-500">
                     Nenhuma transação de combustível encontrada.
                   </td>
                 </tr>
@@ -474,6 +494,9 @@ export default async function CombustivelPage({
                     {t.vehicle?.plate ?? t.placaOriginal}
                   </td>
                   <td className="px-4 py-3 text-slate-600">{t.driver?.name ?? t.motoristaOriginal ?? "—"}</td>
+                  <td className="px-4 py-3 text-slate-600" title="Motorista escalado no SIAT para este veículo nesta data">
+                    {motoristaSiat(t) ?? "—"}
+                  </td>
                   <td className="px-4 py-3 text-slate-600">{t.vehicle?.model ?? t.modeloOriginal ?? "—"}</td>
                   <td className="px-4 py-3 font-medium text-slate-800">{formatBRL(t.valorCents)}</td>
                   <td className="px-4 py-3 text-slate-600">{t.volumeLitros.toLocaleString("pt-BR")} L</td>
