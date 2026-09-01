@@ -89,11 +89,19 @@ export async function syncSofitFuelCore(companyId: string): Promise<{ created: n
   return { created: toCreate.length, skipped };
 }
 
-// Botao manual "Sincronizar com Sofit" — sem args, mesmo padrao ja usado
-// por syncAnpPrices nesta mesma pasta (form action simples, sem
-// useActionState; resultado aparece via revalidatePath).
-export async function syncSofitFuel(): Promise<void> {
+export type SofitSyncState = { error?: string; result?: { created: number; skipped: number } };
+
+// Botao manual "Sincronizar com Sofit" — usa useActionState (ver
+// SofitSyncButton.tsx) pra mostrar "Sincronizando..." enquanto roda, em vez
+// de ficar sem nenhum feedback visivel (mesmo problema ja corrigido no
+// "Gerar leituras" de /telemetria).
+export async function syncSofitFuel(_prevState: SofitSyncState): Promise<SofitSyncState> {
   const session = await requireRole("ADMIN", "GESTOR");
-  await syncSofitFuelCore(session.companyId);
-  revalidatePath("/combustivel");
+  try {
+    const result = await syncSofitFuelCore(session.companyId);
+    revalidatePath("/combustivel");
+    return { result };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Falha ao sincronizar com a Sofit." };
+  }
 }

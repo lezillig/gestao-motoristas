@@ -10,7 +10,7 @@ import {
 import { ChevronLeft, ChevronRight, Fuel, Gauge, Link2Off, TriangleAlert, Trophy } from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { cardClass, badgeClass, primaryButtonClass, secondaryButtonClass, inputClass } from "@/lib/ui";
+import { cardClass, badgeClass, primaryButtonClass, inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import SortableTh from "@/components/ui/SortableTh";
 import {
@@ -26,7 +26,7 @@ import {
 import { anpWeekRange } from "@/lib/anp/client";
 import { isSofitAvailable } from "@/lib/sofit/client";
 import { syncAnpPrices } from "./actions";
-import { syncSofitFuel } from "./sofitActions";
+import SofitSyncButton from "./SofitSyncButton";
 
 const SORT_FIELDS = [
   "dataHora",
@@ -246,13 +246,7 @@ export default async function CombustivelPage({
         <Link href="/combustivel/resumo" className="text-xs text-blue-700 hover:underline">
           Ver resumo de consumo por contrato →
         </Link>
-        {isSofitAvailable() && (
-          <form action={syncSofitFuel}>
-            <button type="submit" className={`${secondaryButtonClass} text-sm`}>
-              Sincronizar com Sofit
-            </button>
-          </form>
-        )}
+        {isSofitAvailable() && <SofitSyncButton />}
       </div>
 
       <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-4">
