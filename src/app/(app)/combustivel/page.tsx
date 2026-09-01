@@ -10,7 +10,7 @@ import {
 import { ChevronLeft, ChevronRight, Fuel, Gauge, Link2Off, TriangleAlert, Trophy } from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { cardClass, badgeClass, primaryButtonClass, inputClass } from "@/lib/ui";
+import { cardClass, badgeClass, primaryButtonClass, secondaryButtonClass, inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import SortableTh from "@/components/ui/SortableTh";
 import {
@@ -24,7 +24,9 @@ import {
   spentByVehicle,
 } from "@/lib/fuelCompliance";
 import { anpWeekRange } from "@/lib/anp/client";
+import { isSofitAvailable } from "@/lib/sofit/client";
 import { syncAnpPrices } from "./actions";
+import { syncSofitFuel } from "./sofitActions";
 
 const SORT_FIELDS = [
   "dataHora",
@@ -236,15 +238,22 @@ export default async function CombustivelPage({
     <div className="max-w-6xl">
       <PageHeader
         title="Combustível"
-        subtitle="Extrato do cartão Ticket Log, cruzado com o cadastro de motoristas e veículos."
+        subtitle="Abastecimentos do cartão Ticket Log (via Sofit ou extrato manual), cruzados com o cadastro de motoristas e veículos."
         secondaryActionHref="/combustivel/importar"
         secondaryActionLabel="Importar extrato"
       />
-      <p className="mb-4 text-xs text-slate-400">
-        <Link href="/combustivel/resumo" className="text-blue-700 hover:underline">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <Link href="/combustivel/resumo" className="text-xs text-blue-700 hover:underline">
           Ver resumo de consumo por contrato →
         </Link>
-      </p>
+        {isSofitAvailable() && (
+          <form action={syncSofitFuel}>
+            <button type="submit" className={`${secondaryButtonClass} text-sm`}>
+              Sincronizar com Sofit
+            </button>
+          </form>
+        )}
+      </div>
 
       <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-4">
         <div className={cardClass}>

@@ -657,6 +657,15 @@ model FuelTransaction {
   // nao tem vehicleId vinculado ainda (cadastro de veiculos local incompleto
   // frente a frota real), entao a UI usa vehicle?.model ?? modeloOriginal.
   modeloOriginal    String?
+  // Fonte do registro: "SOFIT" quando veio da sincronizacao automatica via
+  // API (ver src/lib/sofit/client.ts); null pra tudo importado por planilha
+  // manual ou extrato RFCV — mesma convencao de Escala.fonte.
+  fonte             String?
+  // So a Sofit preenche (ja vem calculado por ela, com base no odometro real
+  // do cartao): km/l real do abastecimento e desvio percentual sobre o
+  // consumo padrao do veiculo — util pra detectar abastecimento suspeito.
+  realConsumoKmL         Float?
+  desvioConsumoPercentual Float?
   createdAt         DateTime @default(now())
 
   @@index([companyId, dataHora])

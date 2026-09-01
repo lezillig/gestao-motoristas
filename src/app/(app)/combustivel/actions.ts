@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { combineLocalDateTime } from "@/lib/date";
 import { readWorkbookRows, normalizeText } from "@/lib/spreadsheet";
 import { anpWeekRange, fetchAnpWeek } from "@/lib/anp/client";
+import { matchVehicleAndDriver } from "@/lib/fuelMatching";
 
 export type ImportRowError = { row: number; message: string };
 // naoAbastecimento e opcional (so o extrato real RFCV preenche) — o
@@ -83,27 +84,6 @@ type FuelTxDraft = {
   motoristaOriginal: string | null;
   modeloOriginal: string | null;
 };
-
-function matchVehicleAndDriver(
-  placaText: string,
-  motoristaText: string,
-  vehicleByPlate: Map<string, string>,
-  driverByCpf: Map<string, string>,
-  driverByName: Map<string, string>
-): { vehicleId: string | undefined; driverId: string | undefined } {
-  const placaNormalizada = placaText.toUpperCase().replace(/[\s-]/g, "");
-  const vehicleId = placaNormalizada ? vehicleByPlate.get(placaNormalizada) : undefined;
-
-  const cpfDigits = motoristaText.replace(/\D/g, "");
-  const driverId =
-    cpfDigits.length === 11
-      ? driverByCpf.get(cpfDigits)
-      : motoristaText
-        ? driverByName.get(motoristaText.trim().toLowerCase())
-        : undefined;
-
-  return { vehicleId, driverId };
-}
 
 // Mesmo padrao de importDrivers/importVehicles: melhor esforco linha a
 // linha, reaproveitando readWorkbookRows/normalizeText. Diferenca proposital:

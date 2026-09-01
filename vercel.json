@@ -12,6 +12,10 @@
     {
       "path": "/api/cron/ituran-import",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/sofit-import",
+      "schedule": "0 7 * * *"
     }
   ]
 }
