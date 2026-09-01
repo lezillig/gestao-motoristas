@@ -82,18 +82,37 @@ function mapTransaction(t: SofitTransactionRaw): SofitFuelTransaction {
   };
 }
 
+export type FetchFuelTransactionsResult = {
+  transactions: SofitFuelTransaction[];
+  // true quando parou por causa do orcamento de tempo, nao porque acabaram
+  // as paginas — quem chama deve tentar de novo (o proximo `since` avanca
+  // sozinho, ja que e derivado da ultima transacao efetivamente importada).
+  hasMore: boolean;
+};
+
 // A Sofit nao filtra "expenses" por tipo de item no servidor (so por data,
 // via lastIntegrationDate — confirmado real que isso reduz o volume) —
 // entao pagina por TODAS as despesas da empresa (manutencao, pedagio,
 // pneu, combustivel...) desde `since` e filtra client-side pelas que tem
 // algum item com item.type === "fuel". perPage maximo confirmado real e 20
 // (acima disso a API rejeita com 422).
-export async function fetchFuelTransactionsSince(since: Date): Promise<SofitFuelTransaction[]> {
+//
+// `deadline` (Date.now() + orcamento) para um backfill grande (ex.: desde
+// 2026-01-01) nao estourar o teto de 60s da funcao serverless — para de
+// pedir novas paginas antes do limite e devolve hasMore=true pra quem
+// chamou decidir se continua (outro clique, ou o cron se auto-encadeando).
+export async function fetchFuelTransactionsSince(
+  since: Date,
+  deadline: number = Date.now() + 45_000
+): Promise<FetchFuelTransactionsResult> {
   const result: SofitFuelTransaction[] = [];
   let page = 1;
   let total = Infinity;
 
   while ((page - 1) * SOFIT_MAX_PAGE_SIZE < total && page <= MAX_PAGES) {
+    if (Date.now() > deadline) {
+      return { transactions: result, hasMore: true };
+    }
     const data = await sofitFetch<SofitExpensesResponse>(EXPENSES_QUERY, {
       page,
       perPage: SOFIT_MAX_PAGE_SIZE,
@@ -109,5 +128,5 @@ export async function fetchFuelTransactionsSince(since: Date): Promise<SofitFuel
     page += 1;
   }
 
-  return result;
+  return { transactions: result, hasMore: false };
 }

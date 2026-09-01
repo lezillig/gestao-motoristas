@@ -21,6 +21,13 @@ export default function SofitSyncButton() {
         <p className="text-xs text-slate-500">
           {state.result.created} novo(s) importado(s)
           {state.result.skipped > 0 ? `, ${state.result.skipped} ignorado(s) (sem placa ou valor)` : ""}.
+          {state.result.hasMore && (
+            <>
+              {" "}
+              Ainda tem período mais antigo pra trazer —{" "}
+              <span className="font-medium text-amber-700">clique em Sincronizar de novo pra continuar</span>.
+            </>
+          )}
         </p>
       )}
     </div>

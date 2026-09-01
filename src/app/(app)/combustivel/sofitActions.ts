@@ -1,6 +1,5 @@
 "use server";
 
-import { subDays } from "date-fns";
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -8,14 +7,19 @@ import { matchVehicleAndDriver } from "@/lib/fuelMatching";
 import { fetchFuelTransactionsSince } from "@/lib/sofit/client";
 import type { Prisma } from "@prisma/client";
 
-// Sem sincronizacao anterior (1a vez): busca so os ultimos 30 dias, nao o
-// historico inteiro (~14 mil despesas de todo tipo na conta real, muito
-// acima do teto de 60s do cron/acao) — o restante do historico fica so na
-// planilha ja importada manualmente. Da em diante, cada sincronizacao
-// retoma exatamente de onde a anterior parou (ver `since` abaixo).
-const INITIAL_BACKFILL_DAYS = 30;
+// Sem sincronizacao anterior (1a vez): comeca em 2026-01-01 (pedido
+// explicito do usuario) em vez do historico inteiro da conta (desde 2021,
+// ~14 mil despesas de todo tipo). Da em diante, cada sincronizacao retoma
+// de onde a anterior parou (ver `since` abaixo) — como o fetch e limitado
+// por orcamento de tempo (ver fetchFuelTransactionsSince), um backfill
+// grande pode levar varias chamadas pra completar; isso e esperado e seguro
+// (nunca reprocessa nem duplica, so demora mais de uma vez).
+const INITIAL_BACKFILL_SINCE = new Date("2026-01-01T00:00:00.000Z");
 
-export async function syncSofitFuelCore(companyId: string): Promise<{ created: number; skipped: number }> {
+export async function syncSofitFuelCore(
+  companyId: string,
+  deadline?: number
+): Promise<{ created: number; skipped: number; hasMore: boolean }> {
   const [lastSync, vehicles, drivers, existingCodigos] = await Promise.all([
     prisma.fuelTransaction.findFirst({
       where: { companyId, fonte: "SOFIT" },
@@ -30,13 +34,13 @@ export async function syncSofitFuelCore(companyId: string): Promise<{ created: n
     }),
   ]);
 
-  const since = lastSync?.dataHora ?? subDays(new Date(), INITIAL_BACKFILL_DAYS);
+  const since = lastSync?.dataHora ?? INITIAL_BACKFILL_SINCE;
   const vehicleByPlate = new Map(vehicles.map((v) => [v.plate, v.id]));
   const driverByCpf = new Map(drivers.map((d) => [d.cpf.replace(/\D/g, ""), d.id]));
   const driverByName = new Map(drivers.map((d) => [d.name.trim().toLowerCase(), d.id]));
   const codigosVistos = new Set(existingCodigos.map((t) => t.codigoTransacao as string));
 
-  const transactions = await fetchFuelTransactionsSince(since);
+  const { transactions, hasMore } = await fetchFuelTransactionsSince(since, deadline);
 
   let skipped = 0;
   const toCreate: Prisma.FuelTransactionCreateManyInput[] = [];
@@ -86,10 +90,10 @@ export async function syncSofitFuelCore(companyId: string): Promise<{ created: n
     await prisma.fuelTransaction.createMany({ data: toCreate });
   }
 
-  return { created: toCreate.length, skipped };
+  return { created: toCreate.length, skipped, hasMore };
 }
 
-export type SofitSyncState = { error?: string; result?: { created: number; skipped: number } };
+export type SofitSyncState = { error?: string; result?: { created: number; skipped: number; hasMore: boolean } };
 
 // Botao manual "Sincronizar com Sofit" — usa useActionState (ver
 // SofitSyncButton.tsx) pra mostrar "Sincronizando..." enquanto roda, em vez
@@ -98,7 +102,9 @@ export type SofitSyncState = { error?: string; result?: { created: number; skipp
 export async function syncSofitFuel(_prevState: SofitSyncState): Promise<SofitSyncState> {
   const session = await requireRole("ADMIN", "GESTOR");
   try {
-    const result = await syncSofitFuelCore(session.companyId);
+    // 45s de orcamento pro fetch em si, deixando folga pro resto da acao
+    // (queries, createMany) dentro do teto real da funcao serverless.
+    const result = await syncSofitFuelCore(session.companyId, Date.now() + 45_000);
     revalidatePath("/combustivel");
     return { result };
   } catch (e) {
