@@ -49,7 +49,7 @@ export default async function CartoesCombustivelPage() {
 
       {!isTicketLogAvailable() ? (
         <p className={`${cardClass} text-sm text-slate-500`}>
-          Credenciais da Ticket Log não configuradas (TICKETLOG_API_BASE_URL/TICKETLOG_BASIC_AUTH/TICKETLOG_CODIGO_CLIENTE/TICKETLOG_CODIGO_PRODUTO).
+          Credenciais da Ticket Log não configuradas (TICKETLOG_API_BASE_URL/TICKETLOG_BASIC_AUTH/TICKETLOG_CODIGOS_CLIENTE/TICKETLOG_CODIGO_PRODUTO).
         </p>
       ) : (
         <>
