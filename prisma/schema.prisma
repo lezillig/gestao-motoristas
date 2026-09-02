@@ -98,6 +98,7 @@ model Company {
   telemetryReadings TelemetryReading[]
   vehicleTrips      VehicleTrip[]
   fuelTransactions  FuelTransaction[]
+  fuelCardStatuses  FuelCardStatus[]
   consumptionSummaries FuelConsumptionSummary[]
   timeClockCorrections TimeClockCorrection[]
   driverLeaves      DriverLeave[]
@@ -316,6 +317,7 @@ model Vehicle {
   usageLogs         VehicleUsageLog[]
   telemetryReadings TelemetryReading[]
   fuelTransactions  FuelTransaction[]
+  fuelCardStatuses  FuelCardStatus[]
   consumptionSummaries FuelConsumptionSummary[]
   vehicleTrips      VehicleTrip[]
 
@@ -670,6 +672,46 @@ model FuelTransaction {
 
   @@index([companyId, dataHora])
   @@index([vehicleId, dataHora])
+}
+
+// Status atual do cartao combustivel Ticket Log por veiculo — vem da API
+// direta da Ticket Log (src/lib/ticketlog/client.ts), NAO da Sofit. E um
+// SNAPSHOT (upsert por numeroCartao a cada sincronizacao), diferente de
+// FuelTransaction que e append-only: aqui so importa o saldo/limite ATUAL,
+// nao faz sentido guardar historico linha a linha. Complementa
+// FuelTransaction (extrato de abastecimentos) com visibilidade de limite —
+// o endpoint de extrato transacao-a-transacao da Ticket Log ainda esta
+// bloqueado (ver comentario em TICKETLOG_* no .env), entao por enquanto so
+// este status agregado esta disponivel via API direta.
+model FuelCardStatus {
+  id                    String    @id @default(cuid())
+  companyId             String
+  company               Company   @relation(fields: [companyId], references: [id])
+  vehicleId             String?
+  vehicle               Vehicle?  @relation(fields: [vehicleId], references: [id])
+  numeroCartao          String
+  placaOriginal         String
+  situacaoCartao        String?
+  situacaoVeiculo       String?
+  saldoCents            Int?
+  limiteCents           Int?
+  saldoLitros           Float?
+  limiteLitros          Float?
+  comprasPeriodoCents   Int?
+  comprasPeriodoLitros  Float?
+  tipoCombustivelPadrao String?
+  tipoFrota             String?
+  modeloVeiculo         String?
+  fabricanteVeiculo     String?
+  cidade                String?
+  uf                    String?
+  nomeResponsavel       String?
+  dataAtivacao          DateTime?
+  syncedAt              DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@unique([companyId, numeroCartao])
+  @@index([companyId, vehicleId])
 }
 
 // Preco medio de revenda por UF/produto, direto do "Levantamento Semanal

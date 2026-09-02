@@ -264,9 +264,14 @@ export default async function CombustivelPage({
         secondaryActionLabel="Importar extrato"
       />
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <Link href="/combustivel/resumo" className="text-xs text-blue-700 hover:underline">
-          Ver resumo de consumo por contrato →
-        </Link>
+        <div className="flex flex-wrap gap-3">
+          <Link href="/combustivel/resumo" className="text-xs text-blue-700 hover:underline">
+            Ver resumo de consumo por contrato →
+          </Link>
+          <Link href="/combustivel/cartoes" className="text-xs text-blue-700 hover:underline">
+            Ver saldo/limite dos cartões (Ticket Log) →
+          </Link>
+        </div>
         {isSofitAvailable() && <SofitSyncButton />}
       </div>
 

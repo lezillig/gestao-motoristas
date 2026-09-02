@@ -16,6 +16,10 @@
     {
       "path": "/api/cron/sofit-import",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/ticketlog-import",
+      "schedule": "30 7 * * *"
     }
   ]
 }
