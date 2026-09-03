@@ -53,7 +53,7 @@ export default function TiqueTaqueDriverImportButton() {
         <div className="space-y-3 border-t border-slate-200 pt-4">
           <div className="flex items-start gap-2 rounded-lg bg-emerald-50 px-3 py-2.5 text-sm text-emerald-700">
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{state.result.created} motorista(s) importado(s) com sucesso.</span>
+            <span>{state.result.created} colaborador(es) importado(s) com sucesso.</span>
           </div>
           {state.result.errors.length > 0 && (
             <div>
