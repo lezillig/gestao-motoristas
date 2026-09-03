@@ -334,8 +334,13 @@ model Escala {
   company   Company  @relation(fields: [companyId], references: [id])
   driverId  String
   driver    Driver   @relation(fields: [driverId], references: [id])
-  vehicleId String
-  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id])
+  // Opcional (2026-09-04): Plantao sincronizado do SIAT (ScaleAssignment
+  // com driver_id preenchido, ver siatActions.ts) e um turno de
+  // disponibilidade sem viagem especifica — frequentemente SEM veiculo
+  // ainda definido. Cadastro manual continua exigindo veiculo (EscalaForm),
+  // so a sincronizacao automatica pode criar Escala sem ele.
+  vehicleId String?
+  vehicle   Vehicle? @relation(fields: [vehicleId], references: [id])
   date      DateTime
   startTime String // HH:mm
   // Nulo quando a reserva do SIAT nao informa trip_end_time (confirmado
@@ -345,12 +350,15 @@ model Escala {
   endTime   String? // HH:mm
   notes     String?
   // Integracao SIAT (fonte oficial das escalas, 2026-08-19): siatId e a
-  // chave de sincronizacao idempotente (ID do ScaleAssignment no SIAT).
-  // fonte nulo = lancamento manual (protegido, sincronizacao nunca
-  // sobrescreve); "SIAT" = veio de la, sincronizacoes seguintes atualizam
-  // livremente. Sem historico de correcao tipo TimeClockCorrection de
-  // proposito — escala e dado operacional de despacho, nao prova de
-  // jornada, nao tem a mesma exigencia de auditoria do ponto.
+  // chave de sincronizacao idempotente — ID da Reservation (viagem com
+  // origem/destino) OU do ScaleAssignment (Plantao, turno sem viagem
+  // especifica, sincronizado desde 2026-09-04); os dois namespaces de id
+  // do SIAT nunca colidem entre si. fonte nulo = lancamento manual
+  // (protegido, sincronizacao nunca sobrescreve); "SIAT" = veio de la,
+  // sincronizacoes seguintes atualizam livremente. Sem historico de
+  // correcao tipo TimeClockCorrection de proposito — escala e dado
+  // operacional de despacho, nao prova de jornada, nao tem a mesma
+  // exigencia de auditoria do ponto.
   siatId          String?   @unique
   fonte           String?
   scaleName       String?

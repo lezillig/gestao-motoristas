@@ -78,7 +78,9 @@ export async function buildViagemPontoAudit(
     include: { driver: true, vehicle: true },
   });
 
-  const scheduledVehicleIds = [...new Set(escalas.map((e) => e.vehicleId))];
+  // Plantao sincronizado do SIAT pode nao ter veiculo definido ainda
+  // (Escala.vehicleId null) — filtra antes do `in`, que so aceita string.
+  const scheduledVehicleIds = [...new Set(escalas.map((e) => e.vehicleId).filter((id): id is string => id != null))];
   const driverIds = [...new Set(escalas.map((e) => e.driverId))];
 
   const [entries, trips] = await Promise.all([
@@ -130,7 +132,7 @@ export async function buildViagemPontoAudit(
       pontoSemViagem.push({
         driverId: escala.driverId,
         driverName: escala.driver.name,
-        vehiclePlate: escala.vehicle.plate,
+        vehiclePlate: escala.vehicle?.plate ?? "—",
         date: escala.date,
         pontoStart: window.start,
         pontoEnd: window.end,

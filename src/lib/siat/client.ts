@@ -3,6 +3,8 @@ import type {
   SiatDriverRaw,
   SiatReservation,
   SiatReservationRaw,
+  SiatScaleAssignment,
+  SiatScaleAssignmentRaw,
   SiatVehicle,
   SiatVehicleRaw,
 } from "./types";
@@ -34,7 +36,7 @@ type SiatResponse<T> = { entity: string; company: string; count: number; data: T
 // rede de seguranca — o volume esperado (poucas paginas por entidade) fica
 // bem abaixo do limite mesmo sem pacing.
 async function siatFetch<T>(
-  entity: "Vehicle" | "Driver" | "Reservation",
+  entity: "Vehicle" | "Driver" | "Reservation" | "ScaleAssignment",
   filter: Record<string, unknown>,
   opts: { limit: number; skip: number },
   attempt = 0
@@ -63,7 +65,7 @@ async function siatFetch<T>(
 
 // A resposta nao traz total geral — pagina ate a pagina voltar com menos
 // que `limit` itens.
-async function fetchAllPages<T>(entity: "Vehicle" | "Driver" | "Reservation", filter: Record<string, unknown>): Promise<T[]> {
+async function fetchAllPages<T>(entity: "Vehicle" | "Driver" | "Reservation" | "ScaleAssignment", filter: Record<string, unknown>): Promise<T[]> {
   const all: T[] = [];
   let skip = 0;
   for (;;) {
@@ -142,4 +144,34 @@ export async function fetchReservations(dateFrom: string, dateTo: string): Promi
     }
   }
   return all;
+}
+
+// Plantao (turno de disponibilidade do motorista, sem viagem especifica) —
+// ver comentario em types.ts sobre os 2 padroes de ScaleAssignment. So
+// entram aqui os registros com driver_id E start_datetime preenchidos; os
+// demais sao modelo de rota ainda sem motorista atribuido, irrelevantes
+// pra escala real. Nao da pra filtrar por data no servidor (o campo `date`
+// fica nulo justamente nos registros de Plantao) — busca tudo (volume
+// baixo, ~200 registros/empresa) e quem chama filtra pelo periodo
+// desejado usando a data local derivada de start_datetime.
+export async function fetchScaleAssignments(): Promise<SiatScaleAssignment[]> {
+  const raw = await fetchAllPages<SiatScaleAssignmentRaw>("ScaleAssignment", {});
+  const result: SiatScaleAssignment[] = [];
+  for (const r of raw) {
+    if (!r.driver_id || !r.start_datetime) continue;
+    result.push({
+      id: r.id,
+      scaleName: r.scale_name?.trim() || null,
+      driverId: r.driver_id,
+      driverName: r.driver_name?.trim() || null,
+      vehicleId: r.vehicle_id || null,
+      vehicleInfo: r.vehicle_info?.trim() || null,
+      startDatetime: r.start_datetime,
+      endDatetime: r.end_datetime || null,
+      routeName: r.route_name?.trim() || null,
+      clientName: r.client_name?.trim() || null,
+      status: r.status?.trim() || null,
+    });
+  }
+  return result;
 }

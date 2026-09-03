@@ -208,7 +208,7 @@ export default async function EscalasPage({
                               {e.startTime}
                               {e.endTime && `–${e.endTime}`}
                               <span className="block font-mono text-[10px] text-blue-600">
-                                {e.vehicle.plate}
+                                {e.vehicle?.plate ?? "Sem veículo"}
                               </span>
                               {e.clientName && (
                                 <span className="line-clamp-2 block text-[9px] leading-tight text-blue-500">

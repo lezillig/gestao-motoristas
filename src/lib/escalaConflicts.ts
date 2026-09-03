@@ -14,7 +14,10 @@ export type EscalaConflict = {
 export async function findEscalaConflicts(params: {
   companyId: string;
   driverId: string;
-  vehicleId: string;
+  // Null/undefined pro Plantao sincronizado do SIAT, que pode ainda nao ter
+  // veiculo definido — nesse caso so a checagem por motorista roda (sem
+  // veiculo real, nao ha veiculo em duplo-uso pra checar).
+  vehicleId?: string | null;
   date: Date;
   startTime: string;
   endTime: string;
@@ -30,7 +33,7 @@ export async function findEscalaConflicts(params: {
       companyId: params.companyId,
       date: { gte: dayStart, lt: dayEnd },
       id: params.excludeId ? { not: params.excludeId } : undefined,
-      OR: [{ driverId: params.driverId }, { vehicleId: params.vehicleId }],
+      OR: [{ driverId: params.driverId }, ...(params.vehicleId ? [{ vehicleId: params.vehicleId }] : [])],
     },
     include: { driver: true, vehicle: true },
   });
@@ -47,16 +50,16 @@ export async function findEscalaConflicts(params: {
       conflicts.push({
         type: "motorista",
         driverName: escala.driver.name,
-        vehiclePlate: escala.vehicle.plate,
+        vehiclePlate: escala.vehicle?.plate ?? "—",
         startTime: escala.startTime,
         endTime: escala.endTime,
       });
     }
-    if (escala.vehicleId === params.vehicleId) {
+    if (params.vehicleId && escala.vehicleId === params.vehicleId) {
       conflicts.push({
         type: "veiculo",
         driverName: escala.driver.name,
-        vehiclePlate: escala.vehicle.plate,
+        vehiclePlate: escala.vehicle?.plate ?? "—",
         startTime: escala.startTime,
         endTime: escala.endTime,
       });

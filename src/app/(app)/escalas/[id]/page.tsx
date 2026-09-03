@@ -41,7 +41,7 @@ export default async function EditarEscalaPage({
           vehicles={vehicles}
           defaultValues={{
             driverId: escala.driverId,
-            vehicleId: escala.vehicleId,
+            vehicleId: escala.vehicleId ?? "",
             date: format(escala.date, "yyyy-MM-dd"),
             startTime: escala.startTime,
             endTime: escala.endTime ?? "",

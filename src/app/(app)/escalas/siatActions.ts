@@ -3,9 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { parseLocalDate } from "@/lib/date";
-import { fetchDrivers, fetchReservations, fetchVehicles, isSiatAvailable } from "@/lib/siat/client";
-import type { SiatDriver, SiatReservation, SiatVehicle } from "@/lib/siat/types";
+import { parseLocalDate, utcInstantToLocalParts } from "@/lib/date";
+import { fetchDrivers, fetchReservations, fetchScaleAssignments, fetchVehicles, isSiatAvailable } from "@/lib/siat/client";
+import type { SiatDriver, SiatReservation, SiatScaleAssignment, SiatVehicle } from "@/lib/siat/types";
 import { findEscalaConflicts, findInterjornadaWarnings } from "@/lib/escalaConflicts";
 import { extractPlate } from "@/lib/plate";
 
@@ -225,6 +225,87 @@ export async function syncFromSiatCore(companyId: string, dateFrom: string, date
       const created = await prisma.escala.create({ data: { ...data, companyId } });
       result.escalas.created++;
       escalaBySiatId.set(sr.id, created);
+    }
+  }
+
+  // 4) Plantao — turno de disponibilidade do motorista, sem viagem
+  // especifica (ver comentario em types.ts). Complementa Reservation: cobre
+  // motorista com horario definido no SIAT mas ainda sem corrida despachada
+  // no periodo (senao ele simplesmente nao aparece em escala nenhuma).
+  // Frequentemente sem veiculo atribuido ainda — cria a Escala mesmo assim
+  // (vehicleId opcional), diferente do bloco de Reservation acima que
+  // continua exigindo veiculo resolvido.
+  let siatScaleAssignments: SiatScaleAssignment[];
+  try {
+    siatScaleAssignments = await fetchScaleAssignments();
+  } catch (e) {
+    result.errors.push({ context: "plantões", message: e instanceof Error ? e.message : "Falha ao buscar plantões do SIAT." });
+    siatScaleAssignments = [];
+  }
+
+  const rangeStart = parseLocalDate(dateFrom);
+  const rangeEnd = parseLocalDate(dateTo);
+
+  for (const sa of siatScaleAssignments) {
+    const startParts = utcInstantToLocalParts(sa.startDatetime);
+    if (!startParts) continue;
+    const localDate = parseLocalDate(startParts.dateISO);
+    if (localDate < rangeStart || localDate > rangeEnd) continue; // fora do periodo pedido
+
+    const driverLocal = driverBySiatId.get(sa.driverId) ?? (sa.driverName ? findDriverByName(sa.driverName, driverByName, allDriversArray) : undefined);
+    if (!driverLocal) {
+      result.errors.push({ context: `plantão ${sa.id} (${startParts.dateISO})`, message: sa.driverName ? `Motorista "${sa.driverName}" não encontrado no cadastro.` : "Sem motorista atribuído no SIAT ainda." });
+      continue;
+    }
+
+    const plate = extractPlate(sa.vehicleInfo);
+    const vehicleLocal = (sa.vehicleId ? vehicleBySiatId.get(sa.vehicleId) : undefined) ?? (plate ? vehicleByPlate.get(plate) : undefined);
+    // Sem veiculo local: fica null mesmo (plantao pode legitimamente nao ter
+    // veiculo definido ainda) — nao gera erro, diferente do bloco acima.
+
+    const endParts = sa.endDatetime ? utcInstantToLocalParts(sa.endDatetime) : null;
+
+    const data = {
+      driverId: driverLocal.id,
+      vehicleId: vehicleLocal?.id ?? null,
+      date: localDate,
+      startTime: startParts.time,
+      endTime: endParts?.time ?? null,
+      siatId: sa.id,
+      fonte: "SIAT",
+      scaleName: sa.scaleName,
+      routeName: sa.routeName,
+      clientName: sa.clientName,
+      status: sa.status,
+      startDatetime: new Date(sa.startDatetime),
+      endDatetime: sa.endDatetime ? new Date(sa.endDatetime) : null,
+    };
+
+    const existing = escalaBySiatId.get(sa.id);
+    if (existing && existing.fonte !== "SIAT") {
+      result.errors.push({ context: `plantão ${sa.id} (${startParts.dateISO})`, message: "Já existe registro local não sincronizado com este mesmo siatId — não sobrescrito." });
+      continue;
+    }
+
+    if (data.endTime) {
+      const conflicts = await findEscalaConflicts({ companyId, driverId: data.driverId, vehicleId: data.vehicleId, date: data.date, startTime: data.startTime, endTime: data.endTime, excludeId: existing?.id });
+      if (conflicts.length > 0) {
+        result.errors.push({ context: `plantão ${sa.id} (${startParts.dateISO})`, message: `Aviso: conflito de horário — ${conflicts.map((c) => `${c.type} (${c.startTime}–${c.endTime})`).join(", ")}.` });
+      }
+      const interjornada = await findInterjornadaWarnings({ companyId, driverId: data.driverId, date: data.date, startTime: data.startTime, endTime: data.endTime, excludeId: existing?.id });
+      if (interjornada.length > 0) {
+        result.errors.push({ context: `plantão ${sa.id} (${startParts.dateISO})`, message: "Aviso: descanso insuficiente entre turnos do motorista." });
+      }
+    }
+
+    if (existing) {
+      const updated = await prisma.escala.update({ where: { id: existing.id }, data });
+      result.escalas.updated++;
+      escalaBySiatId.set(sa.id, updated);
+    } else {
+      const created = await prisma.escala.create({ data: { ...data, companyId } });
+      result.escalas.created++;
+      escalaBySiatId.set(sa.id, created);
     }
   }
 

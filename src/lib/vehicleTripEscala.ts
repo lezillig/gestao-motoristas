@@ -6,7 +6,10 @@ import { format } from "date-fns";
 // Escala sincronizadas do SIAT agora tem endTime nulo (reserva sem
 // trip_end_time), o que tornaria um overlap de DateTime pouco confiavel e
 // geraria falsos "sem escala".
-export type EscalaKeyLike = { id: string; vehicleId: string; date: Date };
+// vehicleId null = Plantao sincronizado do SIAT sem veiculo definido ainda —
+// nunca casa com uma VehicleTrip real (que sempre tem vehicleId), entao fica
+// de fora do indice em vez de virar uma chave "null_..." sem sentido.
+export type EscalaKeyLike = { id: string; vehicleId: string | null; date: Date };
 export type VehicleTripLike = { vehicleId: string; startAt: Date };
 
 export function matchEscalaForVehicleTrips<E extends EscalaKeyLike>(
@@ -15,6 +18,7 @@ export function matchEscalaForVehicleTrips<E extends EscalaKeyLike>(
 ): Map<number, string | null> {
   const escalaByKey = new Map<string, E>();
   for (const e of escalas) {
+    if (!e.vehicleId) continue;
     escalaByKey.set(`${e.vehicleId}_${format(e.date, "yyyy-MM-dd")}`, e);
   }
 
