@@ -1,4 +1,4 @@
-export type EscalaDetail = { id: string; startTime: string; endTime: string | null };
+export type EscalaDetail = { id: string; startTime: string; endTime: string | null; requestType: string | null };
 
 // Linha do relatorio e um "outer join": aparece se HOUVER escala OU ponto
 // batido naquele dia (nao exige os dois) — startScheduled/startActual (e os
@@ -7,13 +7,19 @@ export type EscalaDetail = { id: string; startTime: string; endTime: string | nu
 export type PontoEscalaRow = {
   driverId: string;
   driverName: string;
+  unidade: string | null; // Driver.departamento ("Unidade de alocação")
   dateISO: string; // yyyy-MM-dd
   startScheduled: string | null;
   startActual: string | null;
   startDiff: number | null;
+  // Reserva "fixa" (rota recorrente) do SIAT: o horario informado NAO
+  // reflete o horario real da rota (limitacao confirmada da API do SIAT,
+  // ver comentario em lib/siat/types.ts) — avisa em vez de esconder.
+  startUnreliable: boolean;
   endScheduled: string | null;
   endActual: string | null;
   endDiff: number | null;
+  endUnreliable: boolean;
   entryId: string | null;
   intervaloInicio: string | null;
   intervaloFim: string | null;
@@ -22,6 +28,7 @@ export type PontoEscalaRow = {
 
 export type ColumnKey =
   | "motorista"
+  | "unidade"
   | "data"
   | "inicioSiat"
   | "inicioPonto"
@@ -32,6 +39,7 @@ export type ColumnKey =
 
 export const COLUMN_LABELS: Record<ColumnKey, string> = {
   motorista: "Motorista",
+  unidade: "Unidade alocada",
   data: "Data",
   inicioSiat: "Início — SIAT",
   inicioPonto: "Início — Ponto",
@@ -43,6 +51,7 @@ export const COLUMN_LABELS: Record<ColumnKey, string> = {
 
 export const DEFAULT_COLUMN_ORDER: ColumnKey[] = [
   "motorista",
+  "unidade",
   "data",
   "inicioSiat",
   "inicioPonto",

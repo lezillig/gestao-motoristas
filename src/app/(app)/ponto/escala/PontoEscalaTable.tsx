@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { format, parseISO } from "date-fns";
-import { ChevronDown, ChevronRight, GripVertical, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, GripVertical, X } from "lucide-react";
 import { badgeClass } from "@/lib/ui";
 import { COLUMN_LABELS, DEFAULT_COLUMN_ORDER, type ColumnKey, type PontoEscalaRow } from "./types";
 
@@ -23,6 +23,8 @@ function cellValue(row: PontoEscalaRow, col: ColumnKey): string | number {
   switch (col) {
     case "motorista":
       return row.driverName;
+    case "unidade":
+      return row.unidade ?? "";
     case "data":
       return row.dateISO;
     case "inicioSiat":
@@ -40,6 +42,48 @@ function cellValue(row: PontoEscalaRow, col: ColumnKey): string | number {
   }
 }
 
+// Versao texto puro (pra exportar) das mesmas colunas de renderCell — evita
+// duplicar a logica de formatacao (formatDiff, data BR) numa segunda funcao
+// desalinhada da tela.
+function cellText(row: PontoEscalaRow, col: ColumnKey): string {
+  switch (col) {
+    case "motorista":
+      return row.driverName;
+    case "unidade":
+      return row.unidade ?? "—";
+    case "data":
+      return format(parseISO(row.dateISO), "dd/MM/yyyy");
+    case "inicioSiat":
+      return (row.startScheduled ?? "—") + (row.startUnreliable ? " (rota fixa, horário não confiável)" : "");
+    case "inicioPonto":
+      return row.startActual ?? "—";
+    case "diffInicio":
+      return formatDiff(row.startDiff);
+    case "fimSiat":
+      return (row.endScheduled ?? "—") + (row.endUnreliable ? " (rota fixa, horário não confiável)" : "");
+    case "fimPonto":
+      return row.endActual ?? "—";
+    case "diffFim":
+      return formatDiff(row.endDiff);
+  }
+}
+
+function csvEscape(value: string): string {
+  if (/[",\n;]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export default function PontoEscalaTable({ rows, tolerancia }: { rows: PontoEscalaRow[]; tolerancia: number }) {
   const [columns, setColumns] = useState<ColumnKey[]>(DEFAULT_COLUMN_ORDER);
   const [groupBy, setGroupBy] = useState<ColumnKey | null>(null);
@@ -49,6 +93,7 @@ export default function PontoEscalaTable({ rows, tolerancia }: { rows: PontoEsca
   const [dragOverTarget, setDragOverTarget] = useState<ColumnKey | "grupo" | null>(null);
   const [openRows, setOpenRows] = useState<Set<string>>(new Set());
   const [hydrated, setHydrated] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // Layout (ordem das colunas + agrupamento) e conveniencia por navegador,
   // nao dado de negocio — persistido so localmente, cada usuario mantem o
@@ -108,6 +153,58 @@ export default function PontoEscalaTable({ rows, tolerancia }: { rows: PontoEsca
     return [...map.entries()];
   }, [sortedRows, groupBy]);
 
+  // Linha a linha, na mesma ordem/agrupamento que a tela mostra — usado
+  // pelas 2 exportacoes (CSV e Excel) pra nao duplicar a logica de
+  // "respeita ordenacao e agrupamento atuais" em cada uma.
+  function linearizedForExport(): { groupLabel: string | null; row: PontoEscalaRow }[] {
+    if (!groupBy) return sortedRows.map((row) => ({ groupLabel: null, row }));
+    const out: { groupLabel: string | null; row: PontoEscalaRow }[] = [];
+    for (const [key, groupRows] of groups ?? []) {
+      for (const row of groupRows) out.push({ groupLabel: key, row });
+    }
+    return out;
+  }
+
+  function exportHeaderAndRows(): { header: string[]; body: string[][] } {
+    const header = groupBy ? [`${COLUMN_LABELS[groupBy]} (grupo)`, ...columns.map((c) => COLUMN_LABELS[c])] : columns.map((c) => COLUMN_LABELS[c]);
+    const body = linearizedForExport().map(({ groupLabel, row }) =>
+      groupBy ? [groupLabel ?? "", ...columns.map((c) => cellText(row, c))] : columns.map((c) => cellText(row, c))
+    );
+    return { header, body };
+  }
+
+  function exportCsv() {
+    const { header, body } = exportHeaderAndRows();
+    // ; como separador (nao ,) — Excel em pt-BR espera isso por padrao,
+    // senao abre tudo numa coluna so.
+    const lines = [header, ...body].map((cols) => cols.map(csvEscape).join(";"));
+    const csv = "﻿" + lines.join("\r\n"); // BOM: Excel reconhece UTF-8 com acento certo
+    downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8;" }), `ponto-x-escala-${format(new Date(), "yyyy-MM-dd")}.csv`);
+  }
+
+  async function exportXlsx() {
+    setExporting(true);
+    try {
+      const ExcelJS = (await import("exceljs")).default;
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet("Ponto x Escala");
+      const { header, body } = exportHeaderAndRows();
+      sheet.addRow(header);
+      sheet.getRow(1).font = { bold: true };
+      for (const row of body) sheet.addRow(row);
+      sheet.columns.forEach((col) => {
+        col.width = 20;
+      });
+      const buffer = await workbook.xlsx.writeBuffer();
+      downloadBlob(
+        new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+        `ponto-x-escala-${format(new Date(), "yyyy-MM-dd")}.xlsx`
+      );
+    } finally {
+      setExporting(false);
+    }
+  }
+
   function handleHeaderClick(col: ColumnKey) {
     if (sortField === col) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else {
@@ -154,10 +251,25 @@ export default function PontoEscalaTable({ rows, tolerancia }: { rows: PontoEsca
             {row.driverName}
           </span>
         );
+      case "unidade":
+        return (
+          <span className="line-clamp-2 max-w-[140px] text-slate-600" title={row.unidade ?? "—"}>
+            {row.unidade ?? "—"}
+          </span>
+        );
       case "data":
         return <span className="whitespace-nowrap text-slate-600">{format(parseISO(row.dateISO), "dd/MM/yyyy")}</span>;
       case "inicioSiat":
-        return <span className="whitespace-nowrap text-slate-600">{row.startScheduled ?? "—"}</span>;
+        return (
+          <span className="inline-flex items-center gap-1 whitespace-nowrap text-slate-600">
+            {row.startScheduled ?? "—"}
+            {row.startUnreliable && (
+              <span title='Reserva "fixa" (rota recorrente) — a API do SIAT não traz o horário real dessa rota, só um valor de referência. Não dá pra confiar nessa diferença.'>
+                <AlertTriangle className="h-3 w-3 shrink-0 text-amber-500" />
+              </span>
+            )}
+          </span>
+        );
       case "inicioPonto":
         return <span className="whitespace-nowrap text-slate-800">{row.startActual ?? "—"}</span>;
       case "diffInicio":
@@ -169,7 +281,16 @@ export default function PontoEscalaTable({ rows, tolerancia }: { rows: PontoEsca
           </span>
         );
       case "fimSiat":
-        return <span className="whitespace-nowrap text-slate-600">{row.endScheduled ?? "—"}</span>;
+        return (
+          <span className="inline-flex items-center gap-1 whitespace-nowrap text-slate-600">
+            {row.endScheduled ?? "—"}
+            {row.endUnreliable && (
+              <span title='Reserva "fixa" (rota recorrente) — a API do SIAT não traz o horário real dessa rota, só um valor de referência. Não dá pra confiar nessa diferença.'>
+                <AlertTriangle className="h-3 w-3 shrink-0 text-amber-500" />
+              </span>
+            )}
+          </span>
+        );
       case "fimPonto":
         return <span className="whitespace-nowrap text-slate-800">{row.endActual ?? "—"}</span>;
       case "diffFim":
@@ -215,6 +336,9 @@ export default function PontoEscalaTable({ rows, tolerancia }: { rows: PontoEsca
                       {row.escalas.map((e) => (
                         <li key={e.id}>
                           {e.startTime || "(sem horário de início)"} – {e.endTime ?? "sem horário de fim"}
+                          {e.requestType === "fixa" && (
+                            <span className="ml-1 text-amber-600">(rota fixa — horário não confiável)</span>
+                          )}
                         </li>
                       ))}
                     </ul>
@@ -247,6 +371,31 @@ export default function PontoEscalaTable({ rows, tolerancia }: { rows: PontoEsca
 
   return (
     <div className="flex flex-col gap-3">
+      <div data-print-hide className="flex items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={exportCsv}
+          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+        >
+          Exportar CSV
+        </button>
+        <button
+          type="button"
+          onClick={exportXlsx}
+          disabled={exporting}
+          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+        >
+          {exporting ? "Gerando Excel…" : "Exportar Excel"}
+        </button>
+        <button
+          type="button"
+          onClick={() => window.print()}
+          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+        >
+          Imprimir / salvar PDF
+        </button>
+      </div>
+
       <div
         onDragOver={(e) => {
           e.preventDefault();
