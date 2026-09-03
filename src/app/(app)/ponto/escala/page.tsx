@@ -3,10 +3,12 @@ import { addDays, addMonths, endOfMonth, format, startOfMonth, subMonths } from 
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { cardClass, badgeClass, inputClass } from "@/lib/ui";
+import { inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import { PONTUALIDADE_TOLERANCIA_MINUTOS } from "@/lib/pontoCompliance";
 import { toMinutes } from "@/lib/time";
+import PontoEscalaTable from "./PontoEscalaTable";
+import type { PontoEscalaRow } from "./types";
 
 // Diferenca entrada/saida vs escala, normalizada pro intervalo [-12h, 12h) —
 // mesmo teto de plausibilidade ja usado em pontoCompliance.ts
@@ -20,34 +22,24 @@ function signedDiffMinutes(scheduled: string, actual: string): number {
   return diff;
 }
 
-function formatDiff(diff: number): string {
-  if (diff === 0) return "no horário";
-  return diff > 0 ? `+${diff}min` : `${diff}min`;
-}
-
 function localDayKey(driverId: string, date: Date): string {
   return `${driverId}_${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 }
 
-type Row = {
-  driverId: string;
-  driverName: string;
-  date: Date;
-  startScheduled: string;
-  startActual: string;
-  startDiff: number;
-  endScheduled: string | null;
-  endActual: string | null;
-  endDiff: number | null;
-};
+const STATUS_OPTIONS = [
+  { value: "", label: "Todos" },
+  { value: "atraso", label: "Com atraso" },
+  { value: "saida-antecipada", label: "Com saída antecipada" },
+  { value: "sem-fim", label: "Sem horário de fim no SIAT" },
+] as const;
 
 export default async function PontoEscalaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string; driverId?: string }>;
+  searchParams: Promise<{ mes?: string; driverId?: string; status?: string }>;
 }) {
   const session = await requireRole("ADMIN", "GESTOR");
-  const { mes, driverId } = await searchParams;
+  const { mes, driverId, status } = await searchParams;
 
   const anchor = mes ? new Date(`${mes}-01T00:00:00`) : new Date();
   const monthStart = startOfMonth(anchor);
@@ -67,7 +59,7 @@ export default async function PontoEscalaPage({
         date: { gte: monthStart, lt: monthEnd },
         ...(driverId ? { driverId } : {}),
       },
-      select: { driverId: true, date: true, startTime: true, endTime: true },
+      select: { id: true, driverId: true, date: true, startTime: true, endTime: true },
     }),
     prisma.timeClockEntry.findMany({
       where: {
@@ -75,31 +67,73 @@ export default async function PontoEscalaPage({
         date: { gte: monthStart, lt: monthEnd },
         ...(driverId ? { driverId } : {}),
       },
-      select: { driverId: true, date: true, clockIn: true, clockOut: true },
+      select: {
+        id: true,
+        driverId: true,
+        date: true,
+        clockIn: true,
+        clockOut: true,
+        intervaloInicio: true,
+        intervaloFim: true,
+      },
     }),
   ]);
 
   const driverById = new Map(drivers.map((d) => [d.id, d]));
   const entryByKey = new Map(entries.map((e) => [localDayKey(e.driverId, e.date), e]));
 
-  const rows: Row[] = [];
+  // Um motorista pode ter mais de 1 reserva no SIAT no mesmo dia (mais de 1
+  // corrida) — agrupa por dia ANTES de comparar, senao cada reserva vira uma
+  // linha comparada contra a MESMA (unica) batida de ponto do dia, gerando
+  // diferenca sem sentido (bug real encontrado em produção: reserva das
+  // 14h comparada contra entrada batida às 04h de uma reserva diferente do
+  // mesmo dia). Início do dia = a reserva mais cedo; fim = a mais tarde
+  // entre as que têm horário de término.
+  const escalasByDay = new Map<string, typeof escalas>();
   for (const escala of escalas) {
-    const entry = entryByKey.get(localDayKey(escala.driverId, escala.date));
+    const key = localDayKey(escala.driverId, escala.date);
+    const list = escalasByDay.get(key) ?? [];
+    list.push(escala);
+    escalasByDay.set(key, list);
+  }
+
+  const rows: PontoEscalaRow[] = [];
+  for (const [key, dayEscalas] of escalasByDay) {
+    const entry = entryByKey.get(key);
     if (!entry) continue; // sem batida correspondente — ver "dias sem registro" em Análise de riscos
-    const endDiff = escala.endTime && entry.clockOut ? signedDiffMinutes(escala.endTime, entry.clockOut) : null;
+
+    const sorted = [...dayEscalas].sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime));
+    const startScheduled = sorted[0].startTime;
+    const withEnd = dayEscalas.filter((e) => e.endTime);
+    const endScheduled =
+      withEnd.length > 0
+        ? withEnd.reduce((latest, e) => (toMinutes(e.endTime!) > toMinutes(latest) ? e.endTime! : latest), withEnd[0].endTime!)
+        : null;
+
+    const first = sorted[0];
     rows.push({
-      driverId: escala.driverId,
-      driverName: driverById.get(escala.driverId)?.name ?? "—",
-      date: escala.date,
-      startScheduled: escala.startTime,
+      driverId: first.driverId,
+      driverName: driverById.get(first.driverId)?.name ?? "—",
+      dateISO: format(first.date, "yyyy-MM-dd"),
+      startScheduled,
       startActual: entry.clockIn,
-      startDiff: signedDiffMinutes(escala.startTime, entry.clockIn),
-      endScheduled: escala.endTime,
+      startDiff: signedDiffMinutes(startScheduled, entry.clockIn),
+      endScheduled,
       endActual: entry.clockOut,
-      endDiff,
+      endDiff: endScheduled && entry.clockOut ? signedDiffMinutes(endScheduled, entry.clockOut) : null,
+      entryId: entry.id,
+      intervaloInicio: entry.intervaloInicio,
+      intervaloFim: entry.intervaloFim,
+      escalas: dayEscalas.map((e) => ({ id: e.id, startTime: e.startTime, endTime: e.endTime })),
     });
   }
-  rows.sort((a, b) => b.date.getTime() - a.date.getTime() || a.driverName.localeCompare(b.driverName));
+
+  const filteredRows = rows.filter((r) => {
+    if (status === "atraso") return r.startDiff > PONTUALIDADE_TOLERANCIA_MINUTOS;
+    if (status === "saida-antecipada") return r.endDiff !== null && r.endDiff < -PONTUALIDADE_TOLERANCIA_MINUTOS;
+    if (status === "sem-fim") return r.endScheduled === null;
+    return true;
+  });
 
   const atrasoCount = rows.filter((r) => r.startDiff > PONTUALIDADE_TOLERANCIA_MINUTOS).length;
   const saidaAntecipadaCount = rows.filter((r) => r.endDiff !== null && r.endDiff < -PONTUALIDADE_TOLERANCIA_MINUTOS).length;
@@ -114,14 +148,14 @@ export default async function PontoEscalaPage({
 
       <div className="mb-6 flex items-center justify-between">
         <Link
-          href={`/ponto/escala?mes=${prevMonth}${driverId ? `&driverId=${driverId}` : ""}`}
+          href={`/ponto/escala?mes=${prevMonth}${driverId ? `&driverId=${driverId}` : ""}${status ? `&status=${status}` : ""}`}
           className="flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
         >
           <ChevronLeft className="h-4 w-4" /> Mês anterior
         </Link>
         <p className="text-sm font-medium text-slate-700">{format(monthStart, "MMMM/yyyy")}</p>
         <Link
-          href={`/ponto/escala?mes=${nextMonth}${driverId ? `&driverId=${driverId}` : ""}`}
+          href={`/ponto/escala?mes=${nextMonth}${driverId ? `&driverId=${driverId}` : ""}${status ? `&status=${status}` : ""}`}
           className="flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
         >
           Próximo mês <ChevronRight className="h-4 w-4" />
@@ -140,6 +174,16 @@ export default async function PontoEscalaPage({
             ))}
           </select>
         </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">Status</label>
+          <select name="status" defaultValue={status ?? ""} className={inputClass}>
+            {STATUS_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
         <input type="hidden" name="mes" value={format(monthStart, "yyyy-MM")} />
         <button type="submit" className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
           Filtrar
@@ -149,72 +193,17 @@ export default async function PontoEscalaPage({
       <p className="mb-3 text-sm text-slate-500">
         {rows.length} dia(s) com escala e ponto batido no mês · {atrasoCount} atraso(s) · {saidaAntecipadaCount}{" "}
         saída(s) antecipada(s)
-        {semFimNoSiatCount > 0 && ` · ${semFimNoSiatCount} dia(s) sem horário de fim programado no SIAT (saída não avaliada)`}.
+        {semFimNoSiatCount > 0 && ` · ${semFimNoSiatCount} dia(s) sem horário de fim programado no SIAT (saída não avaliada)`}
+        {status && ` · mostrando ${filteredRows.length} com o filtro aplicado`}.
       </p>
 
-      <div className={`${cardClass} p-0 overflow-hidden`}>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-3">Motorista</th>
-                <th className="px-4 py-3">Data</th>
-                <th className="px-4 py-3">Início — SIAT</th>
-                <th className="px-4 py-3">Início — Ponto</th>
-                <th className="px-4 py-3">Diferença</th>
-                <th className="px-4 py-3">Fim — SIAT</th>
-                <th className="px-4 py-3">Fim — Ponto</th>
-                <th className="px-4 py-3">Diferença</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
-                    Nenhum dia com escala e ponto batido neste período.
-                  </td>
-                </tr>
-              )}
-              {rows.map((r, i) => {
-                const atrasado = r.startDiff > PONTUALIDADE_TOLERANCIA_MINUTOS;
-                const saidaCedo = r.endDiff !== null && r.endDiff < -PONTUALIDADE_TOLERANCIA_MINUTOS;
-                return (
-                  <tr key={`${r.driverId}-${i}`} className="border-b border-slate-100 last:border-0">
-                    <td className="max-w-[160px] px-4 py-3 text-xs font-medium leading-tight text-slate-800 line-clamp-2" title={r.driverName}>
-                      {r.driverName}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-600">{format(r.date, "dd/MM/yyyy")}</td>
-                    <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-600">{r.startScheduled}</td>
-                    <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-800">{r.startActual}</td>
-                    <td className="whitespace-nowrap px-4 py-3">
-                      <span className={`${badgeClass} ${atrasado ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-600"}`}>
-                        {formatDiff(r.startDiff)}
-                      </span>
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-600">{r.endScheduled ?? "—"}</td>
-                    <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-800">{r.endActual ?? "—"}</td>
-                    <td className="whitespace-nowrap px-4 py-3">
-                      {r.endDiff === null ? (
-                        <span className="text-xs text-slate-400">—</span>
-                      ) : (
-                        <span className={`${badgeClass} ${saidaCedo ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600"}`}>
-                          {formatDiff(r.endDiff)}
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <PontoEscalaTable rows={filteredRows} tolerancia={PONTUALIDADE_TOLERANCIA_MINUTOS} />
 
       <p className="mt-3 text-xs text-slate-400">
-        Diferença calculada com tolerância de {PONTUALIDADE_TOLERANCIA_MINUTOS}min (variações menores não são
-        destacadas). &quot;Fim — SIAT&quot; fica vazio quando a reserva do SIAT não trouxe horário de término
-        (acontece em parte real das reservas) — nesses dias a saída não é avaliada. Dias com escala mas sem batida
-        de ponto (ausência) não aparecem aqui — ver{" "}
+        Clique numa linha pra ver as reservas do dia no SIAT e o registro de ponto. Arraste o cabeçalho de uma
+        coluna pra reordenar, ou solte em &quot;Agrupar por&quot; pra agrupar (layout fica salvo só no seu
+        navegador). Diferença calculada com tolerância de {PONTUALIDADE_TOLERANCIA_MINUTOS}min. Dias com escala
+        mas sem batida de ponto (ausência) não aparecem aqui — ver{" "}
         <Link href="/ponto/analise" className="text-blue-700 hover:underline">
           Análise de riscos
         </Link>
