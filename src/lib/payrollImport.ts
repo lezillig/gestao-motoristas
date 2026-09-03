@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import { normalizeText, cellToLocalDateString } from "./spreadsheet";
+import { normalizeCpf } from "./cpf";
 
 // Le a exportacao "Empregados em Excel" do sistema de folha de pagamento
 // (formato .xls legado ou .xlsx, com dezenas de colunas do eSocial). Usa
@@ -91,8 +92,11 @@ export function parsePayrollWorkbook(buffer: Buffer): PayrollRow[] {
   for (let i = 1; i < matrix.length; i++) {
     const r = matrix[i];
     const nome = normalizeText(r[col.nome]);
-    const cpf = normalizeText(r[col.cpf]).replace(/\D/g, "");
-    if (!nome && !cpf) continue; // linha em branco
+    const cpfRaw = normalizeText(r[col.cpf]);
+    if (!nome && !cpfRaw) continue; // linha em branco
+    // Planilha pode trazer o CPF como celula numerica (perde zero(s) a
+    // esquerda) — normaliza pra 11 digitos ANTES de qualquer validacao.
+    const cpf = normalizeCpf(cpfRaw);
 
     const telefone = normalizeText(r[col.telefone]) || normalizeText(r[col.celular]);
     rows.push({

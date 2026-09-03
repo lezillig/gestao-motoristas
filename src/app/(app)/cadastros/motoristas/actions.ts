@@ -9,6 +9,7 @@ import { parseLocalDate } from "@/lib/date";
 import { readWorkbookRows, normalizeText, cellToLocalDateString } from "@/lib/spreadsheet";
 import { fetchAllEmployees, fetchPaymentSources } from "@/lib/tiquetaque/client";
 import { parsePayrollWorkbook, type PayrollRow } from "@/lib/payrollImport";
+import { isValidCPF, normalizeCpf } from "@/lib/cpf";
 
 const schema = z.object({
   name: z.string().min(2, "Informe o nome do motorista"),
@@ -390,7 +391,10 @@ export async function importDriversFromPayrollFile(
     prisma.driver.findMany({ where: { companyId: session.companyId }, select: { id: true, cpf: true } }),
   ]);
   const sindicatoByName = new Map(sindicatos.map((s) => [s.nome.trim().toLowerCase(), s.id]));
-  const existingDriverByCpf = new Map(existingDrivers.map((d) => [d.cpf, d.id]));
+  // CPF ja cadastrado pode ou nao ter pontuacao, dependendo de como foi
+  // criado — normaliza os dois lados antes de comparar (mesmo cuidado do
+  // bug real ja corrigido em cadastros/clientes/actions.ts).
+  const existingDriverByCpf = new Map(existingDrivers.map((d) => [normalizeCpf(d.cpf), d.id]));
 
   const errors: PayrollImportRowError[] = [];
   let created = 0;
@@ -406,8 +410,8 @@ export async function importDriversFromPayrollFile(
       errors.push({ row: rowNumber, message: "Nome em branco" });
       continue;
     }
-    if (row.cpf.length !== 11) {
-      errors.push({ row: rowNumber, message: `CPF inválido para "${row.nome}"` });
+    if (!isValidCPF(row.cpf)) {
+      errors.push({ row: rowNumber, message: `CPF inválido para "${row.nome}" (${row.cpf})` });
       continue;
     }
 
