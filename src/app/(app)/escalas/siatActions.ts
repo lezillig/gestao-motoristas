@@ -190,6 +190,7 @@ export async function syncFromSiatCore(companyId: string, dateFrom: string, date
       boardingAddress: sr.boardingAddress,
       dropoffAddress: sr.dropoffAddress,
       status: sr.status,
+      requestType: sr.requestType,
     };
 
     const existing = escalaBySiatId.get(sr.id);

@@ -133,6 +133,7 @@ export async function fetchReservations(dateFrom: string, dateTo: string): Promi
         clientName: r.client_name?.trim() || null,
         routeName: r.route_name?.trim() || null,
         status: r.status?.trim() || null,
+        requestType: r.request_type?.trim().toLowerCase() || null,
         driverId: r.assigned_driver_id ?? null,
         driverName: r.driver_name?.trim() || null,
         vehicleId: r.assigned_vehicle_id ?? null,

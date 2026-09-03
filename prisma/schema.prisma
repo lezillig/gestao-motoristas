@@ -371,6 +371,13 @@ model Escala {
   endDatetime     DateTime?
   status          String?
   isAutoRelease   Boolean?
+  // "fixa" (rota recorrente) | "extra" — so vem de Reservation (null pra
+  // Plantao/ScaleAssignment). Confirmado real (2026-09-04): em reserva
+  // "fixa" o startTime/endTime NAO refletem o horario real da rota (a API
+  // publica do SIAT so expoe 4 entidades, nao da pra buscar o horario
+  // verdadeiro da rota fixa por aqui) — usado pra avisar na UI (ver
+  // /ponto/escala), nunca pra esconder a linha.
+  requestType     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

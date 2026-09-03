@@ -122,6 +122,19 @@ export type SiatReservationRaw = {
   route_name?: string | null;
   status?: string | null;
   trip_type?: string | null;
+  // "fixa" (rota recorrente/fixa) | "extra" — confirmado real (2026-09-04):
+  // em reserva "fixa" ligada a fixed_route_id, `time`/`trip_end_time` NAO
+  // refletem o horario real da rota (mostrado na tela do SIAT, ex. 14:00 ou
+  // 06:10) — vem sempre com `time` fixo (visto "08:00" pra 2 rotas
+  // diferentes do mesmo motorista) e `trip_end_time` = time + duration,
+  // so consistente ARITMETICAMENTE entre si, nao com o horario real. A API
+  // publica so expoe 4 entidades (Vehicle/Driver/Reservation/
+  // ScaleAssignment — confirmado tentando "FixedRoute" e variantes, HTTP
+  // 400 "Entity not available") — o horario real da rota fixa nao tem
+  // como ser buscado por aqui. Ver Escala.requestType/isValidTime na
+  // pagina /ponto/escala, que usa esse campo pra avisar (nao esconder) o
+  // dado nao confiavel.
+  request_type?: string | null;
   assigned_driver_id?: string | null;
   driver_name?: string | null;
   assigned_vehicle_id?: string | null;
@@ -141,6 +154,7 @@ export type SiatReservation = {
   clientName: string | null;
   routeName: string | null;
   status: string | null;
+  requestType: string | null;
   driverId: string | null;
   driverName: string | null;
   vehicleId: string | null;
