@@ -31,7 +31,6 @@ export default async function MotoristasPage({
   searchParams: Promise<{
     q?: string;
     sindicatoId?: string;
-    clienteId?: string;
     status?: string;
     empregador?: string;
     departamento?: string;
@@ -43,7 +42,7 @@ export default async function MotoristasPage({
   }>;
 }) {
   const session = await requireRole("ADMIN", "GESTOR");
-  const { q, sindicatoId, clienteId, status, empregador, departamento, cargo, regime, escala, sort, dir } =
+  const { q, sindicatoId, status, empregador, departamento, cargo, regime, escala, sort, dir } =
     await searchParams;
 
   const where: Prisma.DriverWhereInput = { companyId: session.companyId };
@@ -54,7 +53,6 @@ export default async function MotoristasPage({
     ];
   }
   if (sindicatoId) where.sindicatoId = sindicatoId;
-  if (clienteId) where.clienteId = clienteId;
   if (status === "ativo") where.active = true;
   if (status === "inativo") where.active = false;
   if (empregador) where.empregador = empregador;
@@ -84,19 +82,15 @@ export default async function MotoristasPage({
                       ? { escalaSemanal: { sort: sortDir, nulls: "last" } }
                       : { name: sortDir };
 
-  const sortLinkParams = { q, sindicatoId, clienteId, status, empregador, departamento, cargo, regime, escala };
+  const sortLinkParams = { q, sindicatoId, status, empregador, departamento, cargo, regime, escala };
 
-  const [drivers, sindicatos, clientes, empregadorRows, departamentoRows, cargoRows] = await Promise.all([
+  const [drivers, sindicatos, empregadorRows, departamentoRows, cargoRows] = await Promise.all([
     prisma.driver.findMany({
       where,
       include: { sindicato: true },
       orderBy,
     }),
     prisma.sindicato.findMany({
-      where: { companyId: session.companyId, active: true },
-      orderBy: { nome: "asc" },
-    }),
-    prisma.cliente.findMany({
       where: { companyId: session.companyId, active: true },
       orderBy: { nome: "asc" },
     }),
@@ -158,14 +152,6 @@ export default async function MotoristasPage({
             options={sindicatos.map((s) => ({ value: s.id, label: s.nome }))}
           />
         </div>
-        <div className="w-48">
-          <ComboboxFilter
-            name="clienteId"
-            label="Cliente"
-            defaultValue={clienteId}
-            options={clientes.map((c) => ({ value: c.id, label: c.nome }))}
-          />
-        </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-slate-600">Status</label>
           <select name="status" defaultValue={status ?? ""} className={inputClass}>
@@ -221,7 +207,7 @@ export default async function MotoristasPage({
 
       <p className="mb-3 text-sm text-slate-500">
         {drivers.length} motorista{drivers.length === 1 ? "" : "s"} encontrado{drivers.length === 1 ? "" : "s"}
-        {q || sindicatoId || clienteId || status || empregador || departamento || cargo || regime || escala ? " com os filtros aplicados" : ""}.
+        {q || sindicatoId || status || empregador || departamento || cargo || regime || escala ? " com os filtros aplicados" : ""}.
       </p>
 
       <div className={`${cardClass} p-0 overflow-hidden`}>
@@ -232,6 +218,7 @@ export default async function MotoristasPage({
                 <SortableTh label="Unidade de alocação" field="departamento" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="whitespace-nowrap px-3 py-2" />
                 <SortableTh label="Cargo" field="funcao" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="whitespace-nowrap px-3 py-2" />
                 <SortableTh label="Nome" field="name" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="whitespace-nowrap px-3 py-2" />
+                <SortableTh label="Sindicato" field="sindicato" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="whitespace-nowrap px-3 py-2" />
                 <SortableTh label="CPF" field="cpf" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="whitespace-nowrap px-3 py-2" />
                 <SortableTh label="CNH" field="cnhExpiration" basePath="/cadastros/motoristas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="whitespace-nowrap px-3 py-2" />
                 <th className="whitespace-nowrap px-3 py-2">Status</th>
@@ -241,7 +228,7 @@ export default async function MotoristasPage({
             <tbody>
               {drivers.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
                     Nenhum motorista encontrado.
                   </td>
                 </tr>
@@ -254,6 +241,7 @@ export default async function MotoristasPage({
                     <td className="whitespace-nowrap px-3 py-2 text-slate-600">{d.departamento ?? "—"}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-slate-600">{d.funcao ?? "—"}</td>
                     <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-800">{d.name}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-slate-600">{d.sindicato?.nome ?? "—"}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-slate-600">{d.cpf}</td>
                     <td className="whitespace-nowrap px-3 py-2">
                       <div className="flex items-center gap-2">

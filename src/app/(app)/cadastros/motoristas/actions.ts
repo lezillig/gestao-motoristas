@@ -389,12 +389,15 @@ export async function importDriversFromPayrollFile(
 
   const [sindicatos, existingDrivers] = await Promise.all([
     prisma.sindicato.findMany({ where: { companyId: session.companyId }, select: { id: true, nome: true } }),
-    prisma.driver.findMany({ where: { companyId: session.companyId }, select: { id: true, cpf: true } }),
+    prisma.driver.findMany({
+      where: { companyId: session.companyId },
+      select: { id: true, cpf: true, sindicatoId: true },
+    }),
   ]);
   // CPF ja cadastrado pode ou nao ter pontuacao, dependendo de como foi
   // criado — normaliza os dois lados antes de comparar (mesmo cuidado do
   // bug real ja corrigido em cadastros/clientes/actions.ts).
-  const existingDriverByCpf = new Map(existingDrivers.map((d) => [normalizeCpf(d.cpf), d.id]));
+  const existingDriverByCpf = new Map(existingDrivers.map((d) => [normalizeCpf(d.cpf), d]));
 
   const errors: PayrollImportRowError[] = [];
   let created = 0;
@@ -419,11 +422,21 @@ export async function importDriversFromPayrollFile(
     const sindicatoId = sindicatoMatch?.id;
     if (row.sindicato && !sindicatoId) sindicatoNaoEncontrado++;
 
-    const existingId = existingDriverByCpf.get(row.cpf);
-    if (existingId) {
+    const existing = existingDriverByCpf.get(row.cpf);
+    if (existing) {
       await prisma.driver.update({
-        where: { id: existingId },
-        data: { empregador, departamento: row.departamento || undefined, funcao: row.funcao || undefined },
+        where: { id: existing.id },
+        data: {
+          empregador,
+          departamento: row.departamento || undefined,
+          funcao: row.funcao || undefined,
+          // So preenche sindicato de quem ainda nao tem (nunca sobrescreve
+          // um ja vinculado) — cobre o caso de reimportar a mesma planilha
+          // depois de cadastrar o sindicato que faltava (antes disso o
+          // motorista ficou sem sindicato porque o cadastro nao existia
+          // no momento da primeira importacao).
+          sindicatoId: existing.sindicatoId == null ? sindicatoId : undefined,
+        },
       });
       updated++;
       continue;
@@ -447,7 +460,7 @@ export async function importDriversFromPayrollFile(
           active: true,
         },
       });
-      existingDriverByCpf.set(row.cpf, createdDriver.id);
+      existingDriverByCpf.set(row.cpf, { id: createdDriver.id, cpf: row.cpf, sindicatoId: sindicatoId ?? null });
       created++;
     } catch {
       errors.push({ row: rowNumber, message: "Erro ao salvar a linha (CPF duplicado?)" });
