@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass, inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import SortableTh from "@/components/ui/SortableTh";
+import ComboboxFilter from "@/components/ui/ComboboxFilter";
 import { cnhAlertLevel, daysUntil } from "@/lib/driverAlerts";
 import { toggleDriverActive } from "./actions";
 import type { Prisma } from "@prisma/client";
@@ -146,27 +147,21 @@ export default async function MotoristasPage({
             />
           </div>
         </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600">Sindicato</label>
-          <select name="sindicatoId" defaultValue={sindicatoId ?? ""} className={inputClass}>
-            <option value="">Todos</option>
-            {sindicatos.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.nome}
-              </option>
-            ))}
-          </select>
+        <div className="w-48">
+          <ComboboxFilter
+            name="sindicatoId"
+            label="Sindicato"
+            defaultValue={sindicatoId}
+            options={sindicatos.map((s) => ({ value: s.id, label: s.nome }))}
+          />
         </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600">Cliente</label>
-          <select name="clienteId" defaultValue={clienteId ?? ""} className={inputClass}>
-            <option value="">Todos</option>
-            {clientes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.nome}
-              </option>
-            ))}
-          </select>
+        <div className="w-48">
+          <ComboboxFilter
+            name="clienteId"
+            label="Cliente"
+            defaultValue={clienteId}
+            options={clientes.map((c) => ({ value: c.id, label: c.nome }))}
+          />
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-slate-600">Status</label>
@@ -176,38 +171,29 @@ export default async function MotoristasPage({
             <option value="inativo">Inativo</option>
           </select>
         </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600">Empregador</label>
-          <select name="empregador" defaultValue={empregador ?? ""} className={inputClass}>
-            <option value="">Todos</option>
-            {empregadores.map((e) => (
-              <option key={e} value={e}>
-                {e}
-              </option>
-            ))}
-          </select>
+        <div className="w-56">
+          <ComboboxFilter
+            name="empregador"
+            label="Empregador"
+            defaultValue={empregador}
+            options={empregadores.map((e) => ({ value: e, label: e }))}
+          />
         </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600">Unidade de alocação</label>
-          <select name="departamento" defaultValue={departamento ?? ""} className={inputClass}>
-            <option value="">Todos</option>
-            {departamentos.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
+        <div className="w-56">
+          <ComboboxFilter
+            name="departamento"
+            label="Unidade de alocação"
+            defaultValue={departamento}
+            options={departamentos.map((d) => ({ value: d, label: d }))}
+          />
         </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600">Cargo</label>
-          <select name="cargo" defaultValue={cargo ?? ""} className={inputClass}>
-            <option value="">Todos</option>
-            {cargos.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
+        <div className="w-56">
+          <ComboboxFilter
+            name="cargo"
+            label="Cargo"
+            defaultValue={cargo}
+            options={cargos.map((c) => ({ value: c, label: c }))}
+          />
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-slate-600">Regime</label>
