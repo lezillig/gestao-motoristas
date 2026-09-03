@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import ComboboxFilter from "@/components/ui/ComboboxFilter";
+import { toArray } from "@/lib/searchParams";
 import { PONTUALIDADE_TOLERANCIA_MINUTOS } from "@/lib/pontoCompliance";
 import { toMinutes } from "@/lib/time";
 import PontoEscalaTable from "./PontoEscalaTable";
@@ -61,10 +62,19 @@ type DayBucket = { driverId: string; date: Date; escalas: EscalaRaw[]; entry?: E
 export default async function PontoEscalaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string; driverId?: string; status?: string; empregador?: string; cargo?: string }>;
+  searchParams: Promise<{
+    mes?: string;
+    driverId?: string | string[];
+    status?: string;
+    empregador?: string | string[];
+    cargo?: string | string[];
+  }>;
 }) {
   const session = await requireRole("ADMIN", "GESTOR");
-  const { mes, driverId, status, empregador, cargo } = await searchParams;
+  const { mes, status, ...rawFilters } = await searchParams;
+  const driverId = toArray(rawFilters.driverId);
+  const empregador = toArray(rawFilters.empregador);
+  const cargo = toArray(rawFilters.cargo);
 
   const anchor = mes ? new Date(`${mes}-01T00:00:00`) : new Date();
   const monthStart = startOfMonth(anchor);
@@ -76,9 +86,9 @@ export default async function PontoEscalaPage({
   // filtra via relacao aninhada (`driver: {...}`) em vez de precisar
   // resolver uma lista de ids primeiro.
   const driverFilter = {
-    ...(driverId ? { id: driverId } : {}),
-    ...(empregador ? { empregador } : {}),
-    ...(cargo ? { funcao: cargo } : {}),
+    ...(driverId.length > 0 ? { id: { in: driverId } } : {}),
+    ...(empregador.length > 0 ? { empregador: { in: empregador } } : {}),
+    ...(cargo.length > 0 ? { funcao: { in: cargo } } : {}),
   };
 
   const [drivers, empregadorRows, cargoRows, escalas, entries] = await Promise.all([
@@ -204,10 +214,10 @@ export default async function PontoEscalaPage({
   function monthNavParams(mesValue: string): URLSearchParams {
     const p = new URLSearchParams();
     p.set("mes", mesValue);
-    if (driverId) p.set("driverId", driverId);
+    for (const v of driverId) p.append("driverId", v);
     if (status) p.set("status", status);
-    if (empregador) p.set("empregador", empregador);
-    if (cargo) p.set("cargo", cargo);
+    for (const v of empregador) p.append("empregador", v);
+    for (const v of cargo) p.append("cargo", v);
     return p;
   }
 
@@ -237,6 +247,7 @@ export default async function PontoEscalaPage({
       <form className="mb-4 flex flex-wrap items-end gap-3" method="get">
         <div className="w-64">
           <ComboboxFilter
+            multiple
             name="driverId"
             label="Motorista"
             defaultValue={driverId}
@@ -245,6 +256,7 @@ export default async function PontoEscalaPage({
         </div>
         <div className="w-56">
           <ComboboxFilter
+            multiple
             name="empregador"
             label="Empregador"
             defaultValue={empregador}
@@ -253,6 +265,7 @@ export default async function PontoEscalaPage({
         </div>
         <div className="w-56">
           <ComboboxFilter
+            multiple
             name="cargo"
             label="Cargo"
             defaultValue={cargo}

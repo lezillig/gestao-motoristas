@@ -14,7 +14,7 @@ export default function SortableTh({
   label: string;
   field: string;
   basePath: string;
-  currentParams: Record<string, string | undefined>;
+  currentParams: Record<string, string | string[] | undefined>;
   currentSort?: string;
   currentDir?: SortDir;
   className?: string;

@@ -4,13 +4,17 @@ export type SortDir = "asc" | "desc";
 // presentes na pagina (filtros, semana/mes, etc.), so atualizando sort/dir.
 export function buildSortHref(
   basePath: string,
-  currentParams: Record<string, string | undefined>,
+  currentParams: Record<string, string | string[] | undefined>,
   field: string,
   dir: SortDir
 ): string {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(currentParams)) {
-    if (value) params.set(key, value);
+    if (Array.isArray(value)) {
+      for (const v of value) params.append(key, v);
+    } else if (value) {
+      params.set(key, value);
+    }
   }
   params.set("sort", field);
   params.set("dir", dir);

@@ -7,6 +7,7 @@ import { cardClass, badgeClass, inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import SortableTh from "@/components/ui/SortableTh";
 import ComboboxFilter from "@/components/ui/ComboboxFilter";
+import { toArray } from "@/lib/searchParams";
 import MergeFieldForm from "./MergeFieldForm";
 import { cnhAlertLevel, daysUntil } from "@/lib/driverAlerts";
 import { toggleDriverActive } from "./actions";
@@ -30,11 +31,11 @@ export default async function MotoristasPage({
 }: {
   searchParams: Promise<{
     q?: string;
-    sindicatoId?: string;
+    sindicatoId?: string | string[];
     status?: string;
-    empregador?: string;
-    departamento?: string;
-    cargo?: string;
+    empregador?: string | string[];
+    departamento?: string | string[];
+    cargo?: string | string[];
     regime?: string;
     escala?: string;
     sort?: string;
@@ -42,8 +43,11 @@ export default async function MotoristasPage({
   }>;
 }) {
   const session = await requireRole("ADMIN", "GESTOR");
-  const { q, sindicatoId, status, empregador, departamento, cargo, regime, escala, sort, dir } =
-    await searchParams;
+  const { q, status, regime, escala, sort, dir, ...rawFilters } = await searchParams;
+  const sindicatoId = toArray(rawFilters.sindicatoId);
+  const empregador = toArray(rawFilters.empregador);
+  const departamento = toArray(rawFilters.departamento);
+  const cargo = toArray(rawFilters.cargo);
 
   const where: Prisma.DriverWhereInput = { companyId: session.companyId };
   if (q) {
@@ -52,12 +56,12 @@ export default async function MotoristasPage({
       { cpf: { contains: q } },
     ];
   }
-  if (sindicatoId) where.sindicatoId = sindicatoId;
+  if (sindicatoId.length > 0) where.sindicatoId = { in: sindicatoId };
   if (status === "ativo") where.active = true;
   if (status === "inativo") where.active = false;
-  if (empregador) where.empregador = empregador;
-  if (departamento) where.departamento = departamento;
-  if (cargo) where.funcao = cargo;
+  if (empregador.length > 0) where.empregador = { in: empregador };
+  if (departamento.length > 0) where.departamento = { in: departamento };
+  if (cargo.length > 0) where.funcao = { in: cargo };
   if (regime === "PADRAO" || regime === "DOZE_X_TRINTA_SEIS") where.regimeHoras = regime;
   if (escala === "SEIS_UM" || escala === "CINCO_DOIS") where.escalaSemanal = escala;
 
@@ -146,6 +150,7 @@ export default async function MotoristasPage({
         </div>
         <div className="w-48">
           <ComboboxFilter
+            multiple
             name="sindicatoId"
             label="Sindicato"
             defaultValue={sindicatoId}
@@ -162,6 +167,7 @@ export default async function MotoristasPage({
         </div>
         <div className="w-56">
           <ComboboxFilter
+            multiple
             name="empregador"
             label="Empregador"
             defaultValue={empregador}
@@ -170,6 +176,7 @@ export default async function MotoristasPage({
         </div>
         <div className="w-56">
           <ComboboxFilter
+            multiple
             name="departamento"
             label="Unidade de alocação"
             defaultValue={departamento}
@@ -178,6 +185,7 @@ export default async function MotoristasPage({
         </div>
         <div className="w-56">
           <ComboboxFilter
+            multiple
             name="cargo"
             label="Cargo"
             defaultValue={cargo}
@@ -207,7 +215,10 @@ export default async function MotoristasPage({
 
       <p className="mb-3 text-sm text-slate-500">
         {drivers.length} motorista{drivers.length === 1 ? "" : "s"} encontrado{drivers.length === 1 ? "" : "s"}
-        {q || sindicatoId || status || empregador || departamento || cargo || regime || escala ? " com os filtros aplicados" : ""}.
+        {q || sindicatoId.length > 0 || status || empregador.length > 0 || departamento.length > 0 || cargo.length > 0 || regime || escala
+          ? " com os filtros aplicados"
+          : ""}
+        .
       </p>
 
       <div className={`${cardClass} p-0 overflow-hidden`}>
