@@ -222,7 +222,7 @@ export default async function MotoristasPage({
       </p>
 
       <div className={`${cardClass} p-0 overflow-hidden`}>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto scroll-visible">
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-medium uppercase tracking-wide text-slate-500">
