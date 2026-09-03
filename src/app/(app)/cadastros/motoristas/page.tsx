@@ -134,7 +134,7 @@ export default async function MotoristasPage({
         secondaryActionLabel="Importar planilha"
       />
 
-      <MergeFieldForm empregadores={empregadores} departamentos={departamentos} cargos={cargos} />
+      <MergeFieldForm empregadores={empregadores} departamentos={departamentos} cargos={cargos} sindicatos={sindicatos} />
 
       <form className="mb-4 flex flex-wrap items-end gap-3" method="get">
         <div className="min-w-[220px] flex-1">

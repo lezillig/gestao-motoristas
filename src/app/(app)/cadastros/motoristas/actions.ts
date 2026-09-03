@@ -525,7 +525,8 @@ export async function previewPayrollSindicatos(
   return { result: { divergencias } };
 }
 
-const MERGE_FIELDS = ["empregador", "departamento", "funcao"] as const;
+const MERGE_TEXT_FIELDS = ["empregador", "departamento", "funcao"] as const;
+const MERGE_FIELDS = [...MERGE_TEXT_FIELDS, "sindicato"] as const;
 export type MergeField = (typeof MERGE_FIELDS)[number];
 export type MergeFieldResult = { updated: number };
 export type MergeFieldState = { error?: string; result?: MergeFieldResult };
@@ -533,8 +534,12 @@ export type MergeFieldState = { error?: string; result?: MergeFieldResult };
 // Empregador/unidade de alocacao/cargo sao texto livre vindo de fontes
 // diferentes (TiqueTaque, folha de pagamento, cadastro manual) — a mesma
 // empresa/unidade pode acabar gravada com grafias diferentes (ex.: "AZUL"
-// vs "Azul Transportes e Turismo LTDA"). Unifica todo motorista que tem o
-// valor "de" pro valor "para", dentro da mesma empresa (companyId).
+// vs "Azul Transportes e Turismo LTDA"). Sindicato e diferente: e uma
+// relacao (sindicatoId), entao "de"/"para" aqui sao os ids de dois
+// Sindicato ja cadastrados (duplicados, ou um errado/um certo) — todo
+// motorista do "de" passa pro "para", e o sindicato "de" fica desativado
+// (nao apagado, so some das opcoes de filtro/cadastro) pra nao voltar a
+// ser escolhido por engano.
 export async function mergeDriverFieldValue(
   _prevState: MergeFieldState,
   formData: FormData
@@ -554,9 +559,30 @@ export async function mergeDriverFieldValue(
     return { error: "Os dois valores já são iguais." };
   }
 
+  if (field === "sindicato") {
+    const [fromSindicato, toSindicato] = await Promise.all([
+      prisma.sindicato.findFirst({ where: { id: from, companyId: session.companyId } }),
+      prisma.sindicato.findFirst({ where: { id: to, companyId: session.companyId } }),
+    ]);
+    if (!fromSindicato || !toSindicato) {
+      return { error: "Sindicato não encontrado." };
+    }
+    const [{ count }] = await prisma.$transaction([
+      prisma.driver.updateMany({
+        where: { companyId: session.companyId, sindicatoId: from },
+        data: { sindicatoId: to },
+      }),
+      prisma.sindicato.update({ where: { id: from }, data: { active: false } }),
+    ]);
+    revalidatePath("/cadastros/motoristas");
+    revalidatePath("/dashboard");
+    return { result: { updated: count } };
+  }
+
+  const textField = field as (typeof MERGE_TEXT_FIELDS)[number];
   const result = await prisma.driver.updateMany({
-    where: { companyId: session.companyId, [field]: from },
-    data: { [field]: to },
+    where: { companyId: session.companyId, [textField]: from },
+    data: { [textField]: to },
   });
 
   revalidatePath("/cadastros/motoristas");
