@@ -26,6 +26,7 @@ import {
   Scale,
   FlaskConical,
   Building2,
+  AlarmClockOff,
 } from "lucide-react";
 
 type NavItem = {
@@ -81,6 +82,7 @@ const NAV: NavItem[] = [
       { href: "/convencoes", label: "Convenção coletiva", icon: FileText, roles: ["ADMIN", "GESTOR"] },
       { href: "/ponto/correcoes", label: "Histórico de correções", icon: History },
       { href: "/ponto/passivo", label: "Passivo trabalhista", icon: Scale },
+      { href: "/ponto/escala", label: "Ponto x Escala", icon: AlarmClockOff, roles: ["ADMIN", "GESTOR"] },
       { href: "/ponto/anual", label: "Relatório anual", icon: CalendarRange },
       { href: "/ponto/mensal", label: "Relatório mensal", icon: FileSpreadsheet },
       { href: "/ponto/simulador", label: "Simulador de cenário", icon: FlaskConical },
