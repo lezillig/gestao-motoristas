@@ -118,7 +118,7 @@ export default async function MotoristasPage({
   const cargos = cargoRows.map((r) => r.funcao!).sort((a, b) => a.localeCompare(b));
 
   return (
-    <div className="max-w-6xl">
+    <div className="max-w-full">
       <PageHeader
         title="Motoristas"
         subtitle="Cadastro base do motorista, com vínculo sindical para o motor de conformidade."
