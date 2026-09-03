@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { parseLocalDate } from "@/lib/date";
 import { readWorkbookRows, normalizeText, cellToLocalDateString } from "@/lib/spreadsheet";
 import { fetchAllEmployees, fetchPaymentSources } from "@/lib/tiquetaque/client";
+import { parsePayrollWorkbook, type PayrollRow } from "@/lib/payrollImport";
 
 const schema = z.object({
   name: z.string().min(2, "Informe o nome do motorista"),
@@ -337,6 +338,120 @@ export async function importDriversFromTiqueTaque(): Promise<TiqueTaqueDriverImp
   revalidatePath("/cadastros/motoristas");
   revalidatePath("/dashboard");
   return { result: { created: toCreate.length, errors } };
+}
+
+export type PayrollImportRowError = { row: number; message: string };
+export type PayrollImportResult = {
+  created: number;
+  updated: number;
+  sindicatoNaoEncontrado: number;
+  errors: PayrollImportRowError[];
+};
+export type PayrollImportState = { error?: string; result?: PayrollImportResult };
+
+// Importa a exportacao "Empregados em Excel" da folha de pagamento (.xls ou
+// .xlsx, formato bem diferente do modelo proprio do app — ver
+// src/lib/payrollImport.ts). O empregador (razao social) nao vem como
+// coluna no arquivo: cada exportacao e de UMA empresa so, entao quem sobe o
+// arquivo informa no formulario.
+//
+// Mesma politica conservadora do importDrivers manual: CPF ja cadastrado
+// nao tem o cadastro inteiro sobrescrito, so empregador/unidade de
+// alocacao/funcao sao atualizados — o resto (CNH, telefone, admissao etc.
+// editados manualmente depois da primeira importacao) fica intocado.
+export async function importDriversFromPayrollFile(
+  _prevState: PayrollImportState,
+  formData: FormData
+): Promise<PayrollImportState> {
+  const session = await requireRole("ADMIN", "GESTOR");
+
+  const arquivo = formData.get("arquivo");
+  if (!(arquivo instanceof File) || arquivo.size === 0) {
+    return { error: "Selecione o arquivo da folha de pagamento (.xls ou .xlsx)." };
+  }
+  const empregador = normalizeText(formData.get("empregador"));
+  if (!empregador) {
+    return { error: "Informe o empregador (razão social) deste arquivo." };
+  }
+
+  let rows: PayrollRow[];
+  try {
+    const buffer = Buffer.from(await arquivo.arrayBuffer());
+    rows = parsePayrollWorkbook(buffer);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Não foi possível ler o arquivo." };
+  }
+  if (rows.length === 0) {
+    return { error: "A planilha não tem linhas de dados." };
+  }
+
+  const [sindicatos, existingDrivers] = await Promise.all([
+    prisma.sindicato.findMany({ where: { companyId: session.companyId }, select: { id: true, nome: true } }),
+    prisma.driver.findMany({ where: { companyId: session.companyId }, select: { id: true, cpf: true } }),
+  ]);
+  const sindicatoByName = new Map(sindicatos.map((s) => [s.nome.trim().toLowerCase(), s.id]));
+  const existingDriverByCpf = new Map(existingDrivers.map((d) => [d.cpf, d.id]));
+
+  const errors: PayrollImportRowError[] = [];
+  let created = 0;
+  let updated = 0;
+  let sindicatoNaoEncontrado = 0;
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const rowNumber = i + 2; // linha 1 e o cabecalho
+
+    if (!row.ativo) continue; // seguranca extra, mesmo o arquivo sendo "apenas ativos"
+    if (!row.nome) {
+      errors.push({ row: rowNumber, message: "Nome em branco" });
+      continue;
+    }
+    if (row.cpf.length !== 11) {
+      errors.push({ row: rowNumber, message: `CPF inválido para "${row.nome}"` });
+      continue;
+    }
+
+    const sindicatoId = row.sindicato ? sindicatoByName.get(row.sindicato.toLowerCase()) : undefined;
+    if (row.sindicato && !sindicatoId) sindicatoNaoEncontrado++;
+
+    const existingId = existingDriverByCpf.get(row.cpf);
+    if (existingId) {
+      await prisma.driver.update({
+        where: { id: existingId },
+        data: { empregador, departamento: row.departamento || undefined, funcao: row.funcao || undefined },
+      });
+      updated++;
+      continue;
+    }
+
+    try {
+      const createdDriver = await prisma.driver.create({
+        data: {
+          companyId: session.companyId,
+          name: row.nome,
+          cpf: row.cpf,
+          cnh: row.cnh || undefined,
+          cnhCategory: row.cnhCategory || undefined,
+          cnhExpiration: row.cnhExpiration ? parseLocalDate(row.cnhExpiration) : undefined,
+          admissao: row.admissao ? parseLocalDate(row.admissao) : undefined,
+          phone: row.telefone || undefined,
+          empregador,
+          departamento: row.departamento || undefined,
+          funcao: row.funcao || undefined,
+          sindicatoId,
+          active: true,
+        },
+      });
+      existingDriverByCpf.set(row.cpf, createdDriver.id);
+      created++;
+    } catch {
+      errors.push({ row: rowNumber, message: "Erro ao salvar a linha (CPF duplicado?)" });
+    }
+  }
+
+  revalidatePath("/cadastros/motoristas");
+  revalidatePath("/dashboard");
+  return { result: { created, updated, sindicatoNaoEncontrado, errors } };
 }
 
 export type TiqueTaqueSyncResult = { updated: number; unchanged: number; notFound: number };
