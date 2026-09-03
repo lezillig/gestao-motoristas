@@ -26,11 +26,11 @@ function cellValue(row: PontoEscalaRow, col: ColumnKey): string | number {
     case "data":
       return row.dateISO;
     case "inicioSiat":
-      return row.startScheduled;
+      return row.startScheduled ?? "";
     case "inicioPonto":
-      return row.startActual;
+      return row.startActual ?? "";
     case "diffInicio":
-      return row.startDiff;
+      return row.startDiff ?? Number.NEGATIVE_INFINITY;
     case "fimSiat":
       return row.endScheduled ?? "";
     case "fimPonto":
@@ -145,7 +145,7 @@ export default function PontoEscalaTable({ rows, tolerancia }: { rows: PontoEsca
   }
 
   function renderCell(row: PontoEscalaRow, col: ColumnKey) {
-    const atrasado = row.startDiff > tolerancia;
+    const atrasado = row.startDiff !== null && row.startDiff > tolerancia;
     const saidaCedo = row.endDiff !== null && row.endDiff < -tolerancia;
     switch (col) {
       case "motorista":
@@ -157,11 +157,13 @@ export default function PontoEscalaTable({ rows, tolerancia }: { rows: PontoEsca
       case "data":
         return <span className="whitespace-nowrap text-slate-600">{format(parseISO(row.dateISO), "dd/MM/yyyy")}</span>;
       case "inicioSiat":
-        return <span className="whitespace-nowrap text-slate-600">{row.startScheduled}</span>;
+        return <span className="whitespace-nowrap text-slate-600">{row.startScheduled ?? "—"}</span>;
       case "inicioPonto":
-        return <span className="whitespace-nowrap text-slate-800">{row.startActual}</span>;
+        return <span className="whitespace-nowrap text-slate-800">{row.startActual ?? "—"}</span>;
       case "diffInicio":
-        return (
+        return row.startDiff === null ? (
+          <span className="text-xs text-slate-400">—</span>
+        ) : (
           <span className={`${badgeClass} ${atrasado ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-600"}`}>
             {formatDiff(row.startDiff)}
           </span>
@@ -206,13 +208,17 @@ export default function PontoEscalaTable({ rows, tolerancia }: { rows: PontoEsca
               <div className="flex flex-wrap gap-x-8 gap-y-2">
                 <div>
                   <p className="mb-1 font-medium text-slate-500">Reserva(s) do dia no SIAT</p>
-                  <ul className="space-y-0.5">
-                    {row.escalas.map((e) => (
-                      <li key={e.id}>
-                        {e.startTime} – {e.endTime ?? "sem horário de fim"}
-                      </li>
-                    ))}
-                  </ul>
+                  {row.escalas.length === 0 ? (
+                    <p className="text-slate-400">Nenhuma reserva no SIAT nesse dia.</p>
+                  ) : (
+                    <ul className="space-y-0.5">
+                      {row.escalas.map((e) => (
+                        <li key={e.id}>
+                          {e.startTime || "(sem horário de início)"} – {e.endTime ?? "sem horário de fim"}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
                 {(row.intervaloInicio || row.intervaloFim) && (
                   <div>
@@ -223,9 +229,13 @@ export default function PontoEscalaTable({ rows, tolerancia }: { rows: PontoEsca
                   </div>
                 )}
                 <div className="flex items-end">
-                  <Link href={`/ponto/${row.entryId}`} className="text-xs font-medium text-blue-700 hover:underline">
-                    Ver/editar registro de ponto
-                  </Link>
+                  {row.entryId ? (
+                    <Link href={`/ponto/${row.entryId}`} className="text-xs font-medium text-blue-700 hover:underline">
+                      Ver/editar registro de ponto
+                    </Link>
+                  ) : (
+                    <span className="text-slate-400">Sem registro de ponto nesse dia.</span>
+                  )}
                 </div>
               </div>
             </td>
@@ -305,7 +315,7 @@ export default function PontoEscalaTable({ rows, tolerancia }: { rows: PontoEsca
             {rows.length === 0 && (
               <tr>
                 <td colSpan={columns.length + 1} className="px-4 py-8 text-center text-slate-500">
-                  Nenhum dia com escala e ponto batido neste período.
+                  Nenhum dia com escala ou ponto batido neste período.
                 </td>
               </tr>
             )}
