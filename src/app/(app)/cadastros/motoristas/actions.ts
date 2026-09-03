@@ -10,6 +10,7 @@ import { readWorkbookRows, normalizeText, cellToLocalDateString } from "@/lib/sp
 import { fetchAllEmployees, fetchPaymentSources } from "@/lib/tiquetaque/client";
 import { parsePayrollWorkbook, type PayrollRow } from "@/lib/payrollImport";
 import { isValidCPF, normalizeCpf } from "@/lib/cpf";
+import { findSindicatoMatch, suggestSindicatoMatch } from "@/lib/sindicatoMatch";
 
 const schema = z.object({
   name: z.string().min(2, "Informe o nome do motorista"),
@@ -390,7 +391,6 @@ export async function importDriversFromPayrollFile(
     prisma.sindicato.findMany({ where: { companyId: session.companyId }, select: { id: true, nome: true } }),
     prisma.driver.findMany({ where: { companyId: session.companyId }, select: { id: true, cpf: true } }),
   ]);
-  const sindicatoByName = new Map(sindicatos.map((s) => [s.nome.trim().toLowerCase(), s.id]));
   // CPF ja cadastrado pode ou nao ter pontuacao, dependendo de como foi
   // criado — normaliza os dois lados antes de comparar (mesmo cuidado do
   // bug real ja corrigido em cadastros/clientes/actions.ts).
@@ -415,7 +415,8 @@ export async function importDriversFromPayrollFile(
       continue;
     }
 
-    const sindicatoId = row.sindicato ? sindicatoByName.get(row.sindicato.toLowerCase()) : undefined;
+    const sindicatoMatch = row.sindicato ? findSindicatoMatch(row.sindicato, sindicatos) : null;
+    const sindicatoId = sindicatoMatch?.id;
     if (row.sindicato && !sindicatoId) sindicatoNaoEncontrado++;
 
     const existingId = existingDriverByCpf.get(row.cpf);
@@ -456,6 +457,111 @@ export async function importDriversFromPayrollFile(
   revalidatePath("/cadastros/motoristas");
   revalidatePath("/dashboard");
   return { result: { created, updated, sindicatoNaoEncontrado, errors } };
+}
+
+export type SindicatoDivergencia = {
+  textoNaPlanilha: string;
+  qtd: number;
+  status: "encontrado" | "sugestao" | "sem_correspondencia";
+  sindicatoEncontrado?: string;
+  sugestao?: { nome: string; score: number };
+};
+export type PreviewSindicatosResult = { divergencias: SindicatoDivergencia[] };
+export type PreviewSindicatosState = { error?: string; result?: PreviewSindicatosResult };
+
+// So le a planilha e compara os sindicatos citados contra o cadastro — nao
+// grava nada. Serve pra responder "quais nomes estao divergindo" antes de
+// importar de verdade, com sugestao por similaridade (Dice coefficient
+// sobre palavras significativas) pros que nem batem por substring.
+export async function previewPayrollSindicatos(
+  _prevState: PreviewSindicatosState,
+  formData: FormData
+): Promise<PreviewSindicatosState> {
+  const session = await requireRole("ADMIN", "GESTOR");
+
+  const arquivo = formData.get("arquivo");
+  if (!(arquivo instanceof File) || arquivo.size === 0) {
+    return { error: "Selecione o arquivo da folha de pagamento (.xls ou .xlsx)." };
+  }
+
+  let rows: PayrollRow[];
+  try {
+    const buffer = Buffer.from(await arquivo.arrayBuffer());
+    rows = parsePayrollWorkbook(buffer);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Não foi possível ler o arquivo." };
+  }
+
+  const sindicatos = await prisma.sindicato.findMany({
+    where: { companyId: session.companyId },
+    select: { id: true, nome: true },
+  });
+
+  const countByText = new Map<string, number>();
+  for (const row of rows) {
+    if (!row.ativo || !row.sindicato) continue;
+    countByText.set(row.sindicato, (countByText.get(row.sindicato) ?? 0) + 1);
+  }
+
+  const divergencias: SindicatoDivergencia[] = [...countByText.entries()]
+    .map(([textoNaPlanilha, qtd]) => {
+      const match = findSindicatoMatch(textoNaPlanilha, sindicatos);
+      if (match) {
+        return { textoNaPlanilha, qtd, status: "encontrado" as const, sindicatoEncontrado: match.nome };
+      }
+      const suggestion = suggestSindicatoMatch(textoNaPlanilha, sindicatos);
+      if (suggestion && suggestion.score >= 0.3) {
+        return {
+          textoNaPlanilha,
+          qtd,
+          status: "sugestao" as const,
+          sugestao: { nome: suggestion.sindicato.nome, score: Math.round(suggestion.score * 100) / 100 },
+        };
+      }
+      return { textoNaPlanilha, qtd, status: "sem_correspondencia" as const };
+    })
+    .sort((a, b) => b.qtd - a.qtd);
+
+  return { result: { divergencias } };
+}
+
+const MERGE_FIELDS = ["empregador", "departamento", "funcao"] as const;
+export type MergeField = (typeof MERGE_FIELDS)[number];
+export type MergeFieldResult = { updated: number };
+export type MergeFieldState = { error?: string; result?: MergeFieldResult };
+
+// Empregador/unidade de alocacao/cargo sao texto livre vindo de fontes
+// diferentes (TiqueTaque, folha de pagamento, cadastro manual) — a mesma
+// empresa/unidade pode acabar gravada com grafias diferentes (ex.: "AZUL"
+// vs "Azul Transportes e Turismo LTDA"). Unifica todo motorista que tem o
+// valor "de" pro valor "para", dentro da mesma empresa (companyId).
+export async function mergeDriverFieldValue(
+  _prevState: MergeFieldState,
+  formData: FormData
+): Promise<MergeFieldState> {
+  const session = await requireRole("ADMIN", "GESTOR");
+
+  const field = formData.get("field");
+  if (typeof field !== "string" || !MERGE_FIELDS.includes(field as MergeField)) {
+    return { error: "Campo inválido." };
+  }
+  const from = normalizeText(formData.get("from"));
+  const to = normalizeText(formData.get("to"));
+  if (!from || !to) {
+    return { error: "Selecione os dois valores (de / para)." };
+  }
+  if (from === to) {
+    return { error: "Os dois valores já são iguais." };
+  }
+
+  const result = await prisma.driver.updateMany({
+    where: { companyId: session.companyId, [field]: from },
+    data: { [field]: to },
+  });
+
+  revalidatePath("/cadastros/motoristas");
+  revalidatePath("/dashboard");
+  return { result: { updated: result.count } };
 }
 
 export type TiqueTaqueSyncResult = { updated: number; unchanged: number; notFound: number };

@@ -7,6 +7,7 @@ import { cardClass, badgeClass, inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import SortableTh from "@/components/ui/SortableTh";
 import ComboboxFilter from "@/components/ui/ComboboxFilter";
+import MergeFieldForm from "./MergeFieldForm";
 import { cnhAlertLevel, daysUntil } from "@/lib/driverAlerts";
 import { toggleDriverActive } from "./actions";
 import type { Prisma } from "@prisma/client";
@@ -132,6 +133,8 @@ export default async function MotoristasPage({
         secondaryActionHref="/cadastros/motoristas/importar"
         secondaryActionLabel="Importar planilha"
       />
+
+      <MergeFieldForm empregadores={empregadores} departamentos={departamentos} cargos={cargos} />
 
       <form className="mb-4 flex flex-wrap items-end gap-3" method="get">
         <div className="min-w-[220px] flex-1">
