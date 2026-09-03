@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Upload, CheckCircle2 } from "lucide-react";
+import Link from "next/link";
+import { Upload, CheckCircle2, RefreshCw } from "lucide-react";
 import { inputClass, labelClass, primaryButtonClass, secondaryButtonClass } from "@/lib/ui";
 import {
   prepareClienteImport,
+  prepareClienteSyncFromDepartamento,
   commitClienteImport,
   type ClienteImportGroup,
   type ClienteImportRow,
@@ -20,6 +22,12 @@ export default function ClienteImportForm() {
   const [names, setNames] = useState<Record<string, string>>({});
   const [result, setResult] = useState<{ clientesCriados: number; motoristasVinculados: number } | null>(null);
 
+  function applyPrepared(res: Prepared) {
+    setPrepared(res);
+    setNames(Object.fromEntries(res.groups.map((g) => [g.key, g.suggestedNome])));
+    setStep("review");
+  }
+
   async function handleUpload(formData: FormData) {
     setPending(true);
     setError(null);
@@ -29,9 +37,19 @@ export default function ClienteImportForm() {
       setError(res.error);
       return;
     }
-    setPrepared(res);
-    setNames(Object.fromEntries(res.groups.map((g) => [g.key, g.suggestedNome])));
-    setStep("review");
+    applyPrepared(res);
+  }
+
+  async function handleSync() {
+    setPending(true);
+    setError(null);
+    const res = await prepareClienteSyncFromDepartamento();
+    setPending(false);
+    if ("error" in res) {
+      setError(res.error);
+      return;
+    }
+    applyPrepared(res);
   }
 
   async function handleConfirm() {
@@ -63,9 +81,9 @@ export default function ClienteImportForm() {
           {result.clientesCriados} cliente(s) criado(s) · {result.motoristasVinculados} motorista(s)/funcionário(s)
           vinculado(s).
         </p>
-        <a href="/cadastros/clientes" className={`${primaryButtonClass} w-fit`}>
+        <Link href="/cadastros/clientes" className={`${primaryButtonClass} w-fit`}>
           Ver clientes
-        </a>
+        </Link>
       </div>
     );
   }
@@ -74,9 +92,9 @@ export default function ClienteImportForm() {
     return (
       <div className="flex flex-col gap-5">
         <p className="text-sm text-slate-600">
-          Encontramos {prepared.groups.length} centro(s) de custo distinto(s) na planilha. Revise o nome final de cada
-          um antes de confirmar — se duas linhas forem o mesmo cliente escrito diferente, edite as duas pro mesmo
-          texto pra evitar cadastro duplicado.
+          Encontramos {prepared.groups.length} centro(s) de custo distinto(s). Revise o nome final de cada um antes
+          de confirmar — se dois forem o mesmo cliente escrito diferente, edite os dois pro mesmo texto pra evitar
+          cadastro duplicado.
         </p>
 
         <div className="flex flex-col gap-2">
@@ -146,23 +164,52 @@ export default function ClienteImportForm() {
   }
 
   return (
-    <form action={handleUpload} className="flex flex-col gap-4">
-      <div>
-        <label className={labelClass}>Arquivo (.xlsx) — colunas CPF, Nome, Centro de custo - Atual</label>
-        <input
-          type="file"
-          name="arquivo"
-          accept=".xlsx"
-          required
-          className="block w-full text-sm text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-700 file:px-3.5 file:py-2 file:text-sm file:font-medium file:text-white file:hover:bg-blue-800"
-        />
+    <div className="flex flex-col gap-6">
+      <div className="rounded-lg border border-slate-200 p-4">
+        <p className="mb-3 text-sm text-slate-600">
+          Já dá pra puxar direto da Unidade de alocação que os motoristas/funcionários já têm cadastrada — sem
+          precisar de planilha nova. Serve pra maioria dos casos; use o upload abaixo só se precisar de um
+          nome de cliente diferente do texto da unidade de alocação.
+        </p>
+        <button
+          type="button"
+          onClick={handleSync}
+          disabled={pending}
+          className={`${primaryButtonClass} inline-flex items-center gap-2`}
+        >
+          <RefreshCw className="h-4 w-4" /> {pending ? "Buscando..." : "Sincronizar a partir da Unidade de alocação"}
+        </button>
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      <p className="text-xs text-slate-400">
+        Cliente sem motorista vinculado (ex.: locação sem motorista) não aparece por aqui — cadastre direto em
+        &quot;Novo cliente&quot;.
+      </p>
 
-      <button type="submit" disabled={pending} className={`${primaryButtonClass} inline-flex w-fit items-center gap-2`}>
-        <Upload className="h-4 w-4" /> {pending ? "Lendo arquivo..." : "Analisar planilha"}
-      </button>
-    </form>
+      <div className="border-t border-slate-200 pt-6">
+        <form action={handleUpload} className="flex flex-col gap-4">
+          <div>
+            <label className={labelClass}>Ou envie uma planilha — colunas CPF, Nome, Centro de custo - Atual</label>
+            <input
+              type="file"
+              name="arquivo"
+              accept=".xlsx"
+              required
+              className="block w-full text-sm text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-700 file:px-3.5 file:py-2 file:text-sm file:font-medium file:text-white file:hover:bg-blue-800"
+            />
+          </div>
+
+          {error && <p className="text-sm text-red-600">{error}</p>}
+
+          <button
+            type="submit"
+            disabled={pending}
+            className={`${primaryButtonClass} inline-flex w-fit items-center gap-2`}
+          >
+            <Upload className="h-4 w-4" /> {pending ? "Lendo arquivo..." : "Analisar planilha"}
+          </button>
+        </form>
+      </div>
+    </div>
   );
 }

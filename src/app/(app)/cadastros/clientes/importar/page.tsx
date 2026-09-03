@@ -7,7 +7,7 @@ export default function ImportarClientesPage() {
     <div className="max-w-2xl">
       <PageHeader
         title="Importar centro de custo"
-        subtitle="Planilha com colunas CPF, Nome e Centro de custo - Atual — vincula cada motorista/funcionário já cadastrado ao cliente correspondente."
+        subtitle="Sincroniza direto da Unidade de alocação dos motoristas/funcionários já cadastrados, ou envie uma planilha (colunas CPF, Nome e Centro de custo - Atual) se precisar de um nome diferente."
       />
       <div className={cardClass}>
         <ClienteImportForm />

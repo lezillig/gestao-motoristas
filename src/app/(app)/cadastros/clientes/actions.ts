@@ -181,6 +181,54 @@ export async function prepareClienteImport(formData: FormData): Promise<PrepareC
   return { groups, rows, rowErrors };
 }
 
+// Deriva os grupos direto da Unidade de alocacao (Driver.departamento) ja
+// preenchida pelo TiqueTaque/folha de pagamento, em vez de pedir uma
+// planilha separada — a pedido do usuario, que considera os dois conceitos
+// a mesma coisa na pratica. Reaproveita a MESMA revisao/merge de grafias e
+// o mesmo commitClienteImport de baixo, so a origem dos dados muda. Nao
+// cobre "locacao sem motorista" (sem departamento pra puxar) — pra esse
+// caso o cadastro manual ("Novo cliente") continua sendo o caminho.
+export async function prepareClienteSyncFromDepartamento(): Promise<PrepareClienteImportResult> {
+  const session = await requireRole("ADMIN", "GESTOR");
+
+  const drivers = await prisma.driver.findMany({
+    where: { companyId: session.companyId, departamento: { not: null } },
+    select: { id: true, departamento: true },
+  });
+  if (drivers.length === 0) {
+    return { error: "Nenhum motorista/funcionário tem Unidade de alocação preenchida ainda." };
+  }
+
+  const existingClientes = await prisma.cliente.findMany({
+    where: { companyId: session.companyId },
+    select: { id: true, nome: true },
+  });
+  const existingByGroupKey = new Map(existingClientes.map((c) => [groupKeyFor(c.nome), c.id]));
+
+  const rows: ClienteImportRow[] = [];
+  const groupsByKey = new Map<string, ClienteImportGroup>();
+
+  for (const driver of drivers) {
+    const departamentoRaw = driver.departamento!;
+    const groupKey = groupKeyFor(departamentoRaw);
+    let group = groupsByKey.get(groupKey);
+    if (!group) {
+      group = {
+        key: groupKey,
+        suggestedNome: departamentoRaw,
+        count: 0,
+        existingClienteId: existingByGroupKey.get(groupKey) ?? null,
+      };
+      groupsByKey.set(groupKey, group);
+    }
+    group.count++;
+    rows.push({ row: 0, driverId: driver.id, groupKey }); // "row" nao existe nessa origem, campo nao usado no commit
+  }
+
+  const groups = [...groupsByKey.values()].sort((a, b) => b.count - a.count);
+  return { groups, rows, rowErrors: [] };
+}
+
 export type CommitClienteImportResult = { error: string } | { clientesCriados: number; motoristasVinculados: number };
 
 export async function commitClienteImport(formData: FormData): Promise<CommitClienteImportResult> {
