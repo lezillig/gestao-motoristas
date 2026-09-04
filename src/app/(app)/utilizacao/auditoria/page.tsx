@@ -45,6 +45,21 @@ function windowsOverlap(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date, tole
   return aStart.getTime() - tol < bEnd.getTime() && bStart.getTime() - tol < aEnd.getTime();
 }
 
+// O sync do Ituran (cron /api/cron/ituran-import) roda 1x por dia de
+// madrugada e so busca o dia ANTERIOR — confirmado real (2026-09-03): uma
+// viagem de hoje ja aparecia no proprio site da Ituran, mas o endpoint
+// /v2/trips deles devolvia 0 viagens pra frota inteira nesse mesmo dia (a
+// Ituran so fecha/consolida a viagem depois que ela termina). Entao "sem
+// viagem" pra hoje ou pra ontem a noite e esperado, nao falta de dado real.
+function maybeNotYetSynced(dataISO: string | undefined): boolean {
+  if (!dataISO) return false;
+  const shifted = new Date(Date.now() - 3 * 60 * 60 * 1000); // UTC-3 fixo, ver src/lib/date.ts
+  const todayISO = `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}-${String(shifted.getUTCDate()).padStart(2, "0")}`;
+  const yesterday = new Date(shifted.getTime() - 24 * 60 * 60 * 1000);
+  const yesterdayISO = `${yesterday.getUTCFullYear()}-${String(yesterday.getUTCMonth() + 1).padStart(2, "0")}-${String(yesterday.getUTCDate()).padStart(2, "0")}`;
+  return dataISO === todayISO || dataISO === yesterdayISO;
+}
+
 const LEAVE_LABELS: Record<string, string> = {
   folga: "Folga",
   atestado: "Atestado",
@@ -171,6 +186,39 @@ export default async function AuditoriaDiaPage({
 
   const effectiveVehicle = effectiveVehicleId ? vehicles.find((v) => v.id === effectiveVehicleId) : undefined;
   const worked = entry ? workedMinutes(entry) : null;
+
+  // O SIAT as vezes tem 2+ reservas DIFERENTES (numeros distintos) pro mesmo
+  // horario/veiculo/passageiro — confirmado real (2026-09-04): o proprio
+  // painel do SIAT mostra 2 reservas (#1000349 e #994447) identicas em tudo
+  // menos o numero. Nao e bug do nosso sync (cada uma vira uma linha de
+  // Escala de proposito, sao registros diferentes) — mas listar cada uma
+  // separada aqui confundia, entao agrupa por horario+veiculo pra mostrar
+  // como "1 corrida, N reservas no SIAT" em vez de N corridas identicas.
+  const escalaGroups = (() => {
+    const map = new Map<string, { startTime: string; endTime: string | null; vehiclePlate: string; requestType: string | null; fontes: Set<string>; labels: string[]; ids: string[] }>();
+    for (const e of escalas) {
+      const key = `${e.startTime}|${e.endTime ?? ""}|${e.vehicleId ?? ""}`;
+      const label = e.routeName || e.scaleName || e.clientName || "—";
+      const existing = map.get(key);
+      if (existing) {
+        if (!existing.labels.includes(label)) existing.labels.push(label);
+        existing.fontes.add(e.fonte ?? "Manual");
+        existing.ids.push(e.siatId ?? e.id);
+        if (e.requestType === "fixa") existing.requestType = "fixa";
+      } else {
+        map.set(key, {
+          startTime: e.startTime,
+          endTime: e.endTime,
+          vehiclePlate: e.vehicle?.plate ?? "Sem veículo",
+          requestType: e.requestType,
+          fontes: new Set([e.fonte ?? "Manual"]),
+          labels: [label],
+          ids: [e.siatId ?? e.id],
+        });
+      }
+    }
+    return [...map.values()];
+  })();
 
   return (
     <div className="max-w-5xl">
@@ -316,23 +364,37 @@ export default async function AuditoriaDiaPage({
                     </tr>
                   </thead>
                   <tbody>
-                    {escalas.map((e) => (
-                      <tr key={e.id} className="border-b border-slate-100 last:border-0">
+                    {escalaGroups.map((g, i) => (
+                      <tr key={i} className="border-b border-slate-100 last:border-0">
                         <td className="py-2 pr-3 text-slate-700">
                           <span className="inline-flex items-center gap-1">
-                            {e.startTime || "—"}
-                            {e.requestType === "fixa" && (
+                            {g.startTime || "—"}
+                            {g.requestType === "fixa" && (
                               <span title='Reserva "fixa" (rota recorrente) — a API do SIAT não traz o horário real dessa rota.'>
                                 <AlertTriangle className="h-3 w-3 text-amber-500" />
                               </span>
                             )}
                           </span>
                         </td>
-                        <td className="py-2 pr-3 text-slate-700">{e.endTime ?? "—"}</td>
-                        <td className="py-2 pr-3 font-mono text-xs text-slate-600">{e.vehicle?.plate ?? "Sem veículo"}</td>
-                        <td className="py-2 pr-3 text-slate-600">{e.routeName ?? e.scaleName ?? e.clientName ?? "—"}</td>
+                        <td className="py-2 pr-3 text-slate-700">{g.endTime ?? "—"}</td>
+                        <td className="py-2 pr-3 font-mono text-xs text-slate-600">{g.vehiclePlate}</td>
+                        <td className="py-2 pr-3 text-slate-600">
+                          {g.labels.join(" · ")}
+                          {g.ids.length > 1 && (
+                            <span
+                              title={`O SIAT tem ${g.ids.length} reservas separadas pra esse mesmo horário/veículo (nº ${g.ids.join(", ")}) — não é erro nosso, é assim que veio de lá.`}
+                              className={`${badgeClass} ml-2 bg-amber-100 text-amber-700`}
+                            >
+                              {g.ids.length} reservas SIAT
+                            </span>
+                          )}
+                        </td>
                         <td className="py-2 pr-3">
-                          <span className={`${badgeClass} bg-slate-100 text-slate-600`}>{e.fonte ?? "Manual"}</span>
+                          {[...g.fontes].map((f) => (
+                            <span key={f} className={`${badgeClass} bg-slate-100 text-slate-600`}>
+                              {f}
+                            </span>
+                          ))}
                         </td>
                       </tr>
                     ))}
@@ -379,7 +441,16 @@ export default async function AuditoriaDiaPage({
             {!effectiveVehicleId ? (
               <p className="text-sm text-slate-400">Nenhum veículo identificado pra esse dia — escolha um no filtro pra ver as viagens do Ituran.</p>
             ) : trips.length === 0 ? (
-              <p className="text-sm text-slate-400">Nenhuma viagem registrada pelo Ituran nesse dia.</p>
+              <div className="text-sm text-slate-400">
+                <p>Nenhuma viagem registrada pelo Ituran nesse dia.</p>
+                {maybeNotYetSynced(data) && (
+                  <p className="mt-1 text-xs text-amber-600">
+                    Esse dia é recente demais pra já estar sincronizado — nosso robô busca as viagens do Ituran 1x por
+                    dia, de madrugada, e só traz o dia anterior. Se o veículo rodou hoje ou ontem à noite, confira
+                    direto no site do Ituran; aqui deve aparecer amanhã.
+                  </p>
+                )}
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
