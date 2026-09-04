@@ -27,6 +27,7 @@ import {
   FlaskConical,
   Building2,
   AlarmClockOff,
+  SearchCheck,
 } from "lucide-react";
 
 type NavItem = {
@@ -94,6 +95,10 @@ const NAV: NavItem[] = [
     label: "Utilização de veículos",
     icon: Route,
     roles: ["ADMIN", "GESTOR"],
+    children: [
+      { href: "/utilizacao", label: "Check-ins", icon: Route },
+      { href: "/utilizacao/auditoria", label: "Auditoria do dia", icon: SearchCheck },
+    ],
   },
   {
     href: "/telemetria",

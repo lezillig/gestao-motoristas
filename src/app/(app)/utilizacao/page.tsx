@@ -1,5 +1,6 @@
+import Link from "next/link";
 import { format } from "date-fns";
-import { AlertTriangle, Wrench } from "lucide-react";
+import { AlertTriangle, SearchCheck, Wrench } from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass, inputClass, primaryButtonClass, secondaryButtonClass } from "@/lib/ui";
@@ -82,6 +83,13 @@ export default async function UtilizacaoPage({
         actionLabel="Novo check-in"
       />
 
+      <div className="mb-6 flex justify-end">
+        <Link href="/utilizacao/auditoria" className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+          <SearchCheck className="h-4 w-4" />
+          Auditoria do dia
+        </Link>
+      </div>
+
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className={cardClass}>
           <div
@@ -150,12 +158,13 @@ export default async function UtilizacaoPage({
                 <SortableTh label="Km inicial" field="kmInicial" basePath="/utilizacao" currentParams={{}} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3" />
+                <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody>
               {logs.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
                     Nenhum check-in registrado ainda.
                   </td>
                 </tr>
@@ -199,6 +208,15 @@ export default async function UtilizacaoPage({
                           </button>
                         </form>
                       )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <Link
+                        href={`/utilizacao/auditoria?driverId=${l.driverId}&vehicleId=${l.vehicleId}&data=${format(l.checkInAt, "yyyy-MM-dd")}`}
+                        title="Ver auditoria do dia"
+                        className="inline-flex items-center rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                      >
+                        <SearchCheck className="h-4 w-4" />
+                      </Link>
                     </td>
                   </tr>
                 );
