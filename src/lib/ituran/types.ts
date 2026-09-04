@@ -53,8 +53,13 @@ export type IturanTripRaw = {
   license_plate?: string | null;
   driver_code?: number | null;
   driver_name?: string | null;
-  start_location?: { timestamp?: string | null };
-  end_location?: { timestamp?: string | null };
+  // Mesmo formato do last_location do veiculo (confirmado real,
+  // 2026-09-04: start_location/end_location de /v2/trips tem
+  // location.point.{lat,lon} e location.address.location, alem do
+  // timestamp) — so que ate agora so extraiamos o timestamp e jogavamos o
+  // resto fora.
+  start_location?: IturanLocationRaw;
+  end_location?: IturanLocationRaw;
   duration_in_seconds?: number;
   distance?: number | null;
   max_speed?: number | null;
@@ -75,4 +80,10 @@ export type IturanTrip = {
   maxSpeedKmh: number | null;
   idleMinutes: number | null;
   driverNameRaw: string | null;
+  startLat: number | null;
+  startLon: number | null;
+  startAddress: string | null;
+  endLat: number | null;
+  endLon: number | null;
+  endAddress: string | null;
 };

@@ -137,6 +137,12 @@ function mapTrip(t: IturanTripRaw): IturanTrip | null {
     maxSpeedKmh: t.max_speed ?? null,
     idleMinutes: t.idle_duration_in_minutes ?? null,
     driverNameRaw: t.driver_name?.trim() || null,
+    startLat: t.start_location?.location?.point?.lat ?? null,
+    startLon: t.start_location?.location?.point?.lon ?? null,
+    startAddress: t.start_location?.location?.address?.location ?? null,
+    endLat: t.end_location?.location?.point?.lat ?? null,
+    endLon: t.end_location?.location?.point?.lon ?? null,
+    endAddress: t.end_location?.location?.address?.location ?? null,
   };
 }
 

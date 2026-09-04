@@ -10,6 +10,8 @@ import { parseLocalDate } from "@/lib/date";
 import { toMinutes } from "@/lib/time";
 import { workedMinutes } from "@/lib/pontoCompliance";
 import { pontoWindow } from "@/lib/viagemPontoAudit";
+import TripMap from "./TripMapLoader";
+import type { TripPoint } from "./TripMap";
 
 function formatBRL(cents: number): string {
   return (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -98,14 +100,13 @@ export default async function AuditoriaDiaPage({
   const alerts: { level: "info" | "warning"; text: string }[] = [];
   let escalas: Awaited<ReturnType<typeof prisma.escala.findMany<{ include: { vehicle: true } }>>> = [];
   let entry: Awaited<ReturnType<typeof prisma.timeClockEntry.findFirst>> = null;
-  let usageLogs: Awaited<ReturnType<typeof prisma.vehicleUsageLog.findMany<{ include: { vehicle: true } }>>> = [];
   let trips: Awaited<ReturnType<typeof prisma.vehicleTrip.findMany<{ include: { vehicle: true } }>>> = [];
   let fuel: Awaited<ReturnType<typeof prisma.fuelTransaction.findMany>> = [];
   let leave: Awaited<ReturnType<typeof prisma.driverLeave.findFirst>> = null;
   let effectiveVehicleId: string | null = vehicleId ?? null;
 
   if (ready) {
-    [leave, escalas, entry, usageLogs] = await Promise.all([
+    [leave, escalas, entry] = await Promise.all([
       prisma.driverLeave.findFirst({
         where: { companyId: session.companyId, driverId: driverId!, startDate: { lte: dayStart! }, endDate: { gte: dayStart! } },
       }),
@@ -116,25 +117,17 @@ export default async function AuditoriaDiaPage({
       prisma.timeClockEntry.findFirst({
         where: { companyId: session.companyId, driverId: driverId!, date: { gte: dayStart!, lt: dayEnd! } },
       }),
-      prisma.vehicleUsageLog.findMany({
-        where: {
-          companyId: session.companyId,
-          driverId: driverId!,
-          checkInAt: { gte: dayStart!, lt: dayEnd! },
-          ...(vehicleId ? { vehicleId } : {}),
-        },
-        include: { vehicle: true },
-        orderBy: { checkInAt: "asc" },
-      }),
     ]);
 
     escalas.sort((a, b) => toMinutes(a.startTime || "00:00") - toMinutes(b.startTime || "00:00"));
 
     // Sem veiculo escolhido no filtro, tenta descobrir qual foi usado nesse
-    // dia (pela escala ou pelo check-in) pra ainda assim cruzar com
-    // Ituran/abastecimento — mais util que simplesmente nao mostrar nada.
+    // dia pela escala, pra ainda assim cruzar com Ituran/abastecimento —
+    // mais util que simplesmente nao mostrar nada. (O check-in manual de
+    // veiculo nao entra nessa deteccao — ver secao removida abaixo, ninguem
+    // usa esse formulario na operacao real.)
     if (!effectiveVehicleId) {
-      effectiveVehicleId = escalas.find((e) => e.vehicleId)?.vehicleId ?? usageLogs[0]?.vehicleId ?? null;
+      effectiveVehicleId = escalas.find((e) => e.vehicleId)?.vehicleId ?? null;
     }
 
     [trips, fuel] = await Promise.all([
@@ -171,11 +164,10 @@ export default async function AuditoriaDiaPage({
       }
     }
     if (driver) {
-      for (const t of trips) {
-        if (t.driverNameRaw && !namesLikelyMatch(t.driverNameRaw, driver.name)) {
-          alerts.push({ level: "warning", text: `Viagem do Ituran das ${format(t.startAt, "HH:mm")} está associada a outro motorista no rastreador ("${t.driverNameRaw}").` });
-        }
-      }
+      // NAO cruza driverNameRaw do Ituran com o motorista selecionado — o
+      // usuario confirmou (2026-09-04) que esse campo no Ituran nao e
+      // atualizado online, entao ele nao reflete quem realmente dirigiu; um
+      // alerta em cima disso so gerava falso positivo.
       for (const f of fuel) {
         if (f.motoristaOriginal && !namesLikelyMatch(f.motoristaOriginal, driver.name)) {
           alerts.push({ level: "warning", text: `Abastecimento das ${format(f.dataHora, "HH:mm")} veio com motorista diferente na nota fiscal ("${f.motoristaOriginal}").` });
@@ -186,6 +178,20 @@ export default async function AuditoriaDiaPage({
 
   const effectiveVehicle = effectiveVehicleId ? vehicles.find((v) => v.id === effectiveVehicleId) : undefined;
   const worked = entry ? workedMinutes(entry) : null;
+
+  const tripPoints: TripPoint[] = trips
+    .filter((t) => t.startLat != null && t.startLon != null && t.endLat != null && t.endLon != null)
+    .map((t) => ({
+      id: t.id,
+      startLat: t.startLat!,
+      startLon: t.startLon!,
+      startAddress: t.startAddress,
+      startTime: format(t.startAt, "HH:mm"),
+      endLat: t.endLat!,
+      endLon: t.endLon!,
+      endAddress: t.endAddress,
+      endTime: format(t.endAt, "HH:mm"),
+    }));
 
   // O SIAT as vezes tem 2+ reservas DIFERENTES (numeros distintos) pro mesmo
   // horario/veiculo/passageiro — confirmado real (2026-09-04): o proprio
@@ -405,38 +411,6 @@ export default async function AuditoriaDiaPage({
           </div>
 
           <div className={cardClass}>
-            <h2 className="mb-3 text-sm font-semibold text-slate-900">Check-in de veículo</h2>
-            {usageLogs.length === 0 ? (
-              <p className="text-sm text-slate-400">Nenhum check-in de veículo nesse dia.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
-                      <th className="py-2 pr-3">Veículo</th>
-                      <th className="py-2 pr-3">Check-in</th>
-                      <th className="py-2 pr-3">Check-out</th>
-                      <th className="py-2 pr-3">Km inicial</th>
-                      <th className="py-2 pr-3">Km final</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {usageLogs.map((l) => (
-                      <tr key={l.id} className="border-b border-slate-100 last:border-0">
-                        <td className="py-2 pr-3 font-mono text-xs text-slate-600">{l.vehicle.plate}</td>
-                        <td className="py-2 pr-3 text-slate-700">{format(l.checkInAt, "HH:mm")}</td>
-                        <td className="py-2 pr-3 text-slate-700">{l.checkOutAt ? format(l.checkOutAt, "HH:mm") : "Em aberto"}</td>
-                        <td className="py-2 pr-3 text-slate-600">{l.kmInicial.toLocaleString("pt-BR")} km</td>
-                        <td className="py-2 pr-3 text-slate-600">{l.kmFinal ? `${l.kmFinal.toLocaleString("pt-BR")} km` : "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          <div className={cardClass}>
             <h2 className="mb-3 text-sm font-semibold text-slate-900">Ituran (viagens do veículo)</h2>
             {!effectiveVehicleId ? (
               <p className="text-sm text-slate-400">Nenhum veículo identificado pra esse dia — escolha um no filtro pra ver as viagens do Ituran.</p>
@@ -452,38 +426,36 @@ export default async function AuditoriaDiaPage({
                 )}
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
-                      <th className="py-2 pr-3">Início</th>
-                      <th className="py-2 pr-3">Fim</th>
-                      <th className="py-2 pr-3">Distância</th>
-                      <th className="py-2 pr-3">Vel. máx.</th>
-                      <th className="py-2 pr-3">Ocioso</th>
-                      <th className="py-2 pr-3">Motorista no rastreador</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {trips.map((t) => {
-                      const mismatch = t.driverNameRaw && driver && !namesLikelyMatch(t.driverNameRaw, driver.name);
-                      return (
+              <div className="flex flex-col gap-4">
+                {tripPoints.length > 0 && <TripMap trips={tripPoints} />}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
+                        <th className="py-2 pr-3">Início</th>
+                        <th className="py-2 pr-3">Fim</th>
+                        <th className="py-2 pr-3">Distância</th>
+                        <th className="py-2 pr-3">Vel. máx.</th>
+                        <th className="py-2 pr-3">Ocioso</th>
+                        <th className="py-2 pr-3" title="Campo do próprio Ituran — confirmado que não é atualizado em tempo real, não usar pra conferir quem dirigiu">
+                          Motorista no rastreador <span className="italic text-slate-400">(não confiável)</span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {trips.map((t) => (
                         <tr key={t.id} className="border-b border-slate-100 last:border-0">
                           <td className="py-2 pr-3 text-slate-700">{format(t.startAt, "HH:mm")}</td>
                           <td className="py-2 pr-3 text-slate-700">{format(t.endAt, "HH:mm")}</td>
                           <td className="py-2 pr-3 text-slate-600">{t.distanceKm != null ? `${t.distanceKm.toFixed(1)} km` : "—"}</td>
                           <td className="py-2 pr-3 text-slate-600">{t.maxSpeedKmh != null ? `${t.maxSpeedKmh} km/h` : "—"}</td>
                           <td className="py-2 pr-3 text-slate-600">{t.idleMinutes != null ? `${t.idleMinutes}min` : "—"}</td>
-                          <td className="py-2 pr-3">
-                            <span className={mismatch ? `${badgeClass} bg-amber-100 text-amber-700` : "text-slate-600"}>
-                              {t.driverNameRaw ?? "—"}
-                            </span>
-                          </td>
+                          <td className="py-2 pr-3 text-slate-400">{t.driverNameRaw ?? "—"}</td>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>

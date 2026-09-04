@@ -1,0 +1,7 @@
+-- AlterTable
+ALTER TABLE "VehicleTrip" ADD COLUMN     "endAddress" TEXT,
+ADD COLUMN     "endLat" DOUBLE PRECISION,
+ADD COLUMN     "endLon" DOUBLE PRECISION,
+ADD COLUMN     "startAddress" TEXT,
+ADD COLUMN     "startLat" DOUBLE PRECISION,
+ADD COLUMN     "startLon" DOUBLE PRECISION;

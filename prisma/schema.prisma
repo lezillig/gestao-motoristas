@@ -628,6 +628,18 @@ model VehicleTrip {
   maxSpeedKmh   Int?
   idleMinutes   Int?
   driverNameRaw String?
+  // Ponto de partida/chegada da viagem — a API da Ituran ja manda isso
+  // dentro de start_location/end_location, mas ate 2026-09-04 a gente so
+  // extraia o timestamp e descartava lat/lon/endereco. So os 2 pontos, sem
+  // trajeto (a Ituran nao expoe historico de posicao ponto a ponto na API
+  // de viagens, so no site deles) — usado pra desenhar um mapa simples
+  // "saiu daqui, chegou aqui" na Auditoria do dia.
+  startLat      Float?
+  startLon      Float?
+  startAddress  String?
+  endLat        Float?
+  endLon        Float?
+  endAddress    String?
   escalaId      String?
   escala        Escala?  @relation(fields: [escalaId], references: [id])
   createdAt     DateTime @default(now())
