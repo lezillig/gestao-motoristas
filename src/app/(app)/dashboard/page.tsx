@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { format } from "date-fns";
-import { AlertTriangle, IdCard, Landmark, ShieldCheck } from "lucide-react";
+import { AlertTriangle, IdCard, Landmark, SearchCheck, ShieldCheck } from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass } from "@/lib/ui";
@@ -41,11 +41,20 @@ export default async function DashboardPage() {
 
   return (
     <div className="max-w-6xl">
-      <div className="mb-6">
-        <h1 className="text-xl font-semibold text-slate-900">Painel</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Visão geral de motoristas, vínculo sindical e vencimentos de CNH.
-        </p>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900">Painel</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Visão geral de motoristas, vínculo sindical e vencimentos de CNH.
+          </p>
+        </div>
+        <Link
+          href="/utilizacao/auditoria"
+          className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          <SearchCheck className="h-4 w-4" />
+          Auditoria do dia
+        </Link>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
