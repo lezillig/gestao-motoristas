@@ -74,8 +74,7 @@ export function anpWeekRange(date: Date): { start: Date; end: Date } {
   };
 }
 
-function anpFileUrl(start: Date, end: Date): string {
-  const ano = start.getFullYear();
+function anpFileUrl(start: Date, end: Date, ano: number): string {
   const s = format(start, "yyyy-MM-dd");
   const e = format(end, "yyyy-MM-dd");
   return `https://www.gov.br/anp/pt-br/assuntos/precos-e-defesa-da-concorrencia/precos/arquivos-lpc/${ano}/resumo_semanal_lpc_${s}_${e}.xlsx`;
@@ -88,8 +87,15 @@ export type AnpPriceRow = { uf: string; produto: AnpProduto; precoMedioCents: nu
 // publicado (semana futura, atraso por feriado, etc.) — a sincronizacao
 // que chama isto e best-effort, uma semana faltando nao trava as outras.
 export async function fetchAnpWeek(start: Date, end: Date): Promise<AnpPriceRow[] | null> {
-  const url = anpFileUrl(start, end);
-  const res = await fetch(url);
+  // A pasta e pelo ano em que a planilha foi PUBLICADA, nao o ano em que a
+  // semana comeca — confirmado real (2026-09-05) que a semana 28/12/2025 a
+  // 03/01/2026 mora em .../2026/..., nao .../2025/... Tenta o ano de fim
+  // primeiro (cobre o caso comum E a virada de ano), cai pro ano de inicio
+  // se nao achar (variacao ja vista ao vivo em torno de outras viradas).
+  let res = await fetch(anpFileUrl(start, end, end.getFullYear()));
+  if (!res.ok && end.getFullYear() !== start.getFullYear()) {
+    res = await fetch(anpFileUrl(start, end, start.getFullYear()));
+  }
   if (!res.ok) return null;
 
   const buffer = Buffer.from(await res.arrayBuffer());
