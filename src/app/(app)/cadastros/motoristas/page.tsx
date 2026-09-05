@@ -36,14 +36,13 @@ export default async function MotoristasPage({
     empregador?: string | string[];
     departamento?: string | string[];
     cargo?: string | string[];
-    regime?: string;
     escala?: string;
     sort?: string;
     dir?: string;
   }>;
 }) {
   const session = await requireRole("ADMIN", "GESTOR");
-  const { q, status, regime, escala, sort, dir, ...rawFilters } = await searchParams;
+  const { q, status, escala, sort, dir, ...rawFilters } = await searchParams;
   const sindicatoId = toArray(rawFilters.sindicatoId);
   const empregador = toArray(rawFilters.empregador);
   const departamento = toArray(rawFilters.departamento);
@@ -62,7 +61,6 @@ export default async function MotoristasPage({
   if (empregador.length > 0) where.empregador = { in: empregador };
   if (departamento.length > 0) where.departamento = { in: departamento };
   if (cargo.length > 0) where.funcao = { in: cargo };
-  if (regime === "PADRAO" || regime === "DOZE_X_TRINTA_SEIS") where.regimeHoras = regime;
   if (escala === "SEIS_UM" || escala === "CINCO_DOIS") where.escalaSemanal = escala;
 
   const sortField: SortField = SORT_FIELDS.includes(sort as SortField) ? (sort as SortField) : "name";
@@ -86,7 +84,7 @@ export default async function MotoristasPage({
                       ? { escalaSemanal: { sort: sortDir, nulls: "last" } }
                       : { name: sortDir };
 
-  const sortLinkParams = { q, sindicatoId, status, empregador, departamento, cargo, regime, escala };
+  const sortLinkParams = { q, sindicatoId, status, empregador, departamento, cargo, escala };
 
   const [drivers, sindicatos, empregadorRows, departamentoRows, cargoRows] = await Promise.all([
     prisma.driver.findMany({
@@ -193,14 +191,6 @@ export default async function MotoristasPage({
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600">Regime</label>
-          <select name="regime" defaultValue={regime ?? ""} className={inputClass}>
-            <option value="">Todos</option>
-            <option value="PADRAO">Padrão</option>
-            <option value="DOZE_X_TRINTA_SEIS">12x36</option>
-          </select>
-        </div>
-        <div>
           <label className="mb-1 block text-xs font-medium text-slate-600">Escala</label>
           <select name="escala" defaultValue={escala ?? ""} className={inputClass}>
             <option value="">Todas</option>
@@ -215,7 +205,7 @@ export default async function MotoristasPage({
 
       <p className="mb-3 text-sm text-slate-500">
         {drivers.length} motorista{drivers.length === 1 ? "" : "s"} encontrado{drivers.length === 1 ? "" : "s"}
-        {q || sindicatoId.length > 0 || status || empregador.length > 0 || departamento.length > 0 || cargo.length > 0 || regime || escala
+        {q || sindicatoId.length > 0 || status || empregador.length > 0 || departamento.length > 0 || cargo.length > 0 || escala
           ? " com os filtros aplicados"
           : ""}
         .
