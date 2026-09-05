@@ -255,6 +255,24 @@ export default async function CombustivelPage({
     return `/combustivel?${params.toString()}`;
   };
 
+  // Cada numero de KPI vira link direto pra tabela ja filtrada em
+  // "Situacao" — sem isso o admin via, por exemplo, "195 acima da media"
+  // no card mas nao tinha como saber que existe um filtro "Situacao" pra
+  // listar exatamente essas linhas (confirmado real: usuario achou que a
+  // informacao "nao vinha" quando na verdade so nao tinha link nenhum ate
+  // ela). Preserva mes e demais filtros atuais, so troca "situacao".
+  const situacaoLinkHref = (situacaoAlvo: string) => {
+    const params = new URLSearchParams();
+    params.set("mes", format(monthStart, "yyyy-MM"));
+    if (placa) params.set("placa", placa);
+    if (motorista) params.set("motorista", motorista);
+    if (modelo) params.set("modelo", modelo);
+    if (combustivel) params.set("combustivel", combustivel);
+    if (posto) params.set("posto", posto);
+    params.set("situacao", situacaoAlvo);
+    return `/combustivel?${params.toString()}`;
+  };
+
   return (
     <div className="max-w-6xl">
       <PageHeader
@@ -302,15 +320,21 @@ export default async function CombustivelPage({
             <Link2Off className="h-4 w-4" />
           </div>
           <p className="text-sm text-slate-500">Vínculo de cadastro</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">{semVeiculo.length}</p>
+          <Link href={situacaoLinkHref("sem_veiculo")} className="mt-1 block text-2xl font-semibold text-slate-900 hover:underline">
+            {semVeiculo.length}
+          </Link>
           <p className="text-xs text-slate-500">sem veículo vinculado</p>
           <div className="mt-3 flex items-end justify-between border-t border-slate-100 pt-3 text-sm">
             <div>
-              <p className="font-semibold text-slate-900">{semMotorista.length}</p>
+              <Link href={situacaoLinkHref("sem_motorista")} className="font-semibold text-slate-900 hover:underline">
+                {semMotorista.length}
+              </Link>
               <p className="text-xs text-slate-500">sem motorista vinculado</p>
             </div>
             <div className="text-right">
-              <p className="font-semibold text-slate-900">{inactiveLinks.length}</p>
+              <Link href={situacaoLinkHref("inativo")} className="font-semibold text-slate-900 hover:underline">
+                {inactiveLinks.length}
+              </Link>
               <p className="text-xs text-slate-500">veículo/motorista inativo</p>
             </div>
           </div>
@@ -321,14 +345,19 @@ export default async function CombustivelPage({
             <TriangleAlert className="h-4 w-4" />
           </div>
           <p className="text-sm text-slate-500">Padrões atípicos</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">{duplicates.length}</p>
+          <Link href={situacaoLinkHref("duplicata")} className="mt-1 block text-2xl font-semibold text-slate-900 hover:underline">
+            {duplicates.length}
+          </Link>
           <p className="text-xs text-slate-500">possíveis duplicatas</p>
           <div className="mt-3 flex items-end justify-between border-t border-slate-100 pt-3 text-sm">
             <div>
-              <p className="font-semibold text-slate-900">{regressions.length}</p>
+              <Link href={situacaoLinkHref("hodometro")} className="font-semibold text-slate-900 hover:underline">
+                {regressions.length}
+              </Link>
               <p className="text-xs text-slate-500">hodômetro retrocedido</p>
             </div>
             <div className="text-right">
+              {/* Sem filtro de Situacao equivalente pra "sem hodometro" — nao vira link */}
               <p className="font-semibold text-slate-900">{semHodometro.length}</p>
               <p className="text-xs text-slate-500">sem hodômetro informado</p>
             </div>
@@ -340,7 +369,9 @@ export default async function CombustivelPage({
             <Gauge className="h-4 w-4" />
           </div>
           <p className="text-sm text-slate-500">Preço ANP</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">{overpriced.length}</p>
+          <Link href={situacaoLinkHref("anp")} className="mt-1 block text-2xl font-semibold text-slate-900 hover:underline">
+            {overpriced.length}
+          </Link>
           <p className="text-xs text-slate-500">acima da média da região (+10%)</p>
           <div className="mt-3 border-t border-slate-100 pt-3 text-sm">
             {weeksMissing > 0 ? (
