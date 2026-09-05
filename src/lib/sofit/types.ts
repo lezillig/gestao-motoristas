@@ -47,6 +47,30 @@ export type SofitExpensesResponse = {
   expenses: { count: number; nodes: SofitExpenseRaw[] };
 };
 
+// Cadastro de funcionario da Sofit (query `employees`, separada de
+// `expenses` acima) — confirmado real via introspecao (2026-09-05) que tem
+// os campos de CNH que a folha/RH mantem la: habilitation_num/_category/
+// _due_date (due_date ja vem "AAAA-MM-DD", sem hora). Nem todo funcionario
+// tem isso preenchido (rodou nos 623 cadastrados: 324 com due_date).
+export type SofitEmployeeCnhRaw = {
+  id: number;
+  cpf: string | null;
+  habilitation_num: string | null;
+  habilitation_category: string | null;
+  habilitation_due_date: string | null;
+};
+
+export type SofitEmployeesResponse = {
+  employees: { count: number; nodes: SofitEmployeeCnhRaw[] };
+};
+
+export type SofitEmployeeCnh = {
+  cpf: string; // normalizado, so digitos
+  habilitationNum: string | null;
+  habilitationCategory: string | null;
+  habilitationDueDate: string | null; // "AAAA-MM-DD"
+};
+
 // Ja normalizado — o que o resto do codigo consome.
 export type SofitFuelTransaction = {
   sofitTransactionId: string;

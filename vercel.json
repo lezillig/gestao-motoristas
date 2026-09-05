@@ -18,6 +18,10 @@
       "schedule": "0 7 * * *"
     },
     {
+      "path": "/api/cron/sofit-cnh-import",
+      "schedule": "15 7 * * *"
+    },
+    {
       "path": "/api/cron/ticketlog-import",
       "schedule": "30 7 * * *"
     }

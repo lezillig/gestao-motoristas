@@ -1,4 +1,11 @@
-import type { SofitExpensesResponse, SofitFuelTransaction, SofitTransactionRaw } from "./types";
+import type {
+  SofitEmployeeCnh,
+  SofitEmployeeCnhRaw,
+  SofitEmployeesResponse,
+  SofitExpensesResponse,
+  SofitFuelTransaction,
+  SofitTransactionRaw,
+} from "./types";
 
 const SOFIT_MAX_PAGE_SIZE = 20; // confirmado real: perPage > 20 e rejeitado (422)
 const MAX_PAGES = 500; // circuito de seguranca — ~10 mil transacoes, bem acima de 1 dia de uso
@@ -129,4 +136,56 @@ export async function fetchFuelTransactionsSince(
   }
 
   return { transactions: result, hasMore: false };
+}
+
+const EMPLOYEES_QUERY = `
+  query Employees($page: Int!, $perPage: Int!) {
+    employees(page: $page, perPage: $perPage) {
+      count
+      nodes {
+        id
+        cpf
+        habilitation_num
+        habilitation_category
+        habilitation_due_date
+      }
+    }
+  }
+`;
+
+function mapEmployeeCnh(e: SofitEmployeeCnhRaw): SofitEmployeeCnh | null {
+  if (!e.cpf) return null; // sem CPF nao da pra casar com nenhum motorista nosso
+  return {
+    cpf: e.cpf.replace(/\D/g, ""),
+    habilitationNum: e.habilitation_num?.trim() || null,
+    habilitationCategory: e.habilitation_category?.trim().toUpperCase() || null,
+    habilitationDueDate: e.habilitation_due_date,
+  };
+}
+
+// Cadastro inteiro (nao ha cursor incremental tipo "since" pra funcionario,
+// ao contrario de despesa) — mas e pequeno (~600 registros / perPage 20 =
+// ~30 paginas), cabe folgado no orcamento de tempo de uma unica invocacao.
+export async function fetchEmployeesCnh(deadline: number = Date.now() + 45_000): Promise<{ employees: SofitEmployeeCnh[]; hasMore: boolean }> {
+  const result: SofitEmployeeCnh[] = [];
+  let page = 1;
+  let total = Infinity;
+
+  while ((page - 1) * SOFIT_MAX_PAGE_SIZE < total && page <= MAX_PAGES) {
+    if (Date.now() > deadline) {
+      return { employees: result, hasMore: true };
+    }
+    const data = await sofitFetch<SofitEmployeesResponse>(EMPLOYEES_QUERY, {
+      page,
+      perPage: SOFIT_MAX_PAGE_SIZE,
+    });
+    total = data.employees.count;
+    for (const raw of data.employees.nodes) {
+      const mapped = mapEmployeeCnh(raw);
+      if (mapped) result.push(mapped);
+    }
+    page += 1;
+  }
+
+  return { employees: result, hasMore: false };
 }
