@@ -80,12 +80,27 @@ function anpFileUrl(start: Date, end: Date, ano: number): string {
   return `https://www.gov.br/anp/pt-br/assuntos/precos-e-defesa-da-concorrencia/precos/arquivos-lpc/${ano}/resumo_semanal_lpc_${s}_${e}.xlsx`;
 }
 
-export type AnpPriceRow = { uf: string; produto: AnpProduto; precoMedioCents: number };
+// municipio: "" pra linha de media do ESTADO (aba ESTADOS), nome do
+// municipio (maiusculo, sem acento) pra linha de media do MUNICIPIO (aba
+// MUNICIPIOS) — ver comentario do model AnpPrecoReferencia sobre o porque
+// de "" e nao null.
+export type AnpPriceRow = { uf: string; municipio: string; produto: AnpProduto; precoMedioCents: number };
+
+function normalizeAnpText(value: unknown): string {
+  return String(value ?? "").trim().toUpperCase();
+}
 
 // Busca e parseia o arquivo publico da ANP pra uma semana especifica.
 // Devolve null (em vez de lancar erro) quando o arquivo ainda nao foi
 // publicado (semana futura, atraso por feriado, etc.) — a sincronizacao
 // que chama isto e best-effort, uma semana faltando nao trava as outras.
+//
+// Le as 2 abas do mesmo arquivo ja baixado — ESTADOS (media por UF) e
+// MUNICIPIOS (media por cidade, quando a ANP tem posto pesquisado la; nem
+// todo municipio brasileiro tem amostra). Comparar o preco pago contra a
+// media do MUNICIPIO e muito mais proximo do posto real de abastecimento
+// do que a media do ESTADO inteiro — a media estadual fica so como
+// fallback pra cidade que a ANP nao pesquisa.
 export async function fetchAnpWeek(start: Date, end: Date): Promise<AnpPriceRow[] | null> {
   // A pasta e pelo ano em que a planilha foi PUBLICADA, nao o ano em que a
   // semana comeca — confirmado real (2026-09-05) que a semana 28/12/2025 a
@@ -101,18 +116,45 @@ export async function fetchAnpWeek(start: Date, end: Date): Promise<AnpPriceRow[
   const buffer = Buffer.from(await res.arrayBuffer());
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
-  const sheet = workbook.getWorksheet("ESTADOS");
-  if (!sheet) return null;
 
   const rows: AnpPriceRow[] = [];
-  sheet.eachRow((row, rowNumber) => {
+
+  const estadosSheet = workbook.getWorksheet("ESTADOS");
+  estadosSheet?.eachRow((row, rowNumber) => {
     if (rowNumber <= 10) return; // linhas 1-10 sao cabecalho/metadados
-    const estadoNome = String(row.getCell(4).value ?? "").trim().toUpperCase();
-    const produtoNome = String(row.getCell(5).value ?? "").trim().toUpperCase();
+    const estadoNome = normalizeAnpText(row.getCell(4).value);
+    const produtoNome = normalizeAnpText(row.getCell(5).value);
     const precoMedio = row.getCell(8).value;
     const uf = UF_BY_ESTADO_NOME[estadoNome];
     if (!uf || typeof precoMedio !== "number") return;
-    rows.push({ uf, produto: produtoNome as AnpProduto, precoMedioCents: Math.round(precoMedio * 100) });
+    rows.push({ uf, municipio: "", produto: produtoNome as AnpProduto, precoMedioCents: Math.round(precoMedio * 100) });
   });
+
+  // Capital de estado NAO aparece na aba MUNICIPIOS — a ANP publica capital
+  // numa aba separada, CAPITAIS (confirmado real, 2026-09-05: "SAO PAULO"
+  // dentro de MUNICIPIOS da zero resultado, mas esta em CAPITAIS).
+  //
+  // Colunas NAO tem o mesmo deslocamento da aba ESTADOS: ESTADOS tem uma
+  // coluna "REGIAO" antes de "ESTADOS" que MUNICIPIOS/CAPITAIS nao tem, mas
+  // ganham uma coluna "MUNICIPIO" que ESTADOS nao tem — as duas diferencas
+  // se cancelam e PRODUTO/PRECO MEDIO acabam no MESMO numero de coluna nas
+  // 2 abas (confirmado lendo os cabecalhos reais das 3 abas, coluna a
+  // coluna — nao adivinhado por contagem visual do array impresso, que
+  // enganou uma vez aqui por causa do null de indice 0 do ExcelJS).
+  // MUNICIPIOS/CAPITAIS: col3=ESTADO, col4=MUNICIPIO, col5=PRODUTO,
+  // col8=PRECO MEDIO REVENDA.
+  for (const sheetName of ["MUNICIPIOS", "CAPITAIS"]) {
+    const sheet = workbook.getWorksheet(sheetName);
+    sheet?.eachRow((row, rowNumber) => {
+      if (rowNumber <= 10) return;
+      const estadoNome = normalizeAnpText(row.getCell(3).value);
+      const municipioNome = normalizeAnpText(row.getCell(4).value);
+      const produtoNome = normalizeAnpText(row.getCell(5).value);
+      const precoMedio = row.getCell(8).value;
+      const uf = UF_BY_ESTADO_NOME[estadoNome];
+      if (!uf || !municipioNome || typeof precoMedio !== "number") return;
+      rows.push({ uf, municipio: municipioNome, produto: produtoNome as AnpProduto, precoMedioCents: Math.round(precoMedio * 100) });
+    });
+  }
   return rows;
 }

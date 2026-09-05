@@ -338,6 +338,7 @@ export async function syncAnpPrices(mes: string, _prevState: AnpSyncState): Prom
     const result = await prisma.anpPrecoReferencia.createMany({
       data: rows.map((r) => ({
         uf: r.uf,
+        municipio: r.municipio,
         produto: r.produto,
         semanaInicio: start,
         semanaFim: end,

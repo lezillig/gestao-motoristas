@@ -752,13 +752,19 @@ model FuelCardStatus {
 model AnpPrecoReferencia {
   id              String   @id @default(cuid())
   uf              String
+  // "" (nao null, de proposito — NULL nao conflita com NULL num indice
+  // unico do Postgres, o que quebraria o skipDuplicates) pra linha de
+  // media do ESTADO; nome do municipio (maiusculo, sem acento, igual a
+  // ANP escreve) pra linha de media do MUNICIPIO — a ANP publica os 2
+  // niveis na mesma planilha semanal (abas ESTADOS e MUNICIPIOS).
+  municipio       String   @default("")
   produto         String
   semanaInicio    DateTime
   semanaFim       DateTime
   precoMedioCents Int
   createdAt       DateTime @default(now())
 
-  @@unique([uf, produto, semanaInicio])
+  @@unique([uf, municipio, produto, semanaInicio])
   @@index([semanaInicio])
 }
 

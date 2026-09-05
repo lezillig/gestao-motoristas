@@ -19,6 +19,7 @@ import {
   findSuspectedDuplicates,
   findOdometerRegressions,
   findOverpricedTransactions,
+  compareFuelPrices,
   totalSpentCents,
   averagePriceCentsPerLiter,
   spentByVehicle,
@@ -133,6 +134,7 @@ export default async function CombustivelPage({
 
   const overpriced = findOverpricedTransactions(txs, refPrices);
   const overpricedById = new Map(overpriced.map((o) => [o.id, o]));
+  const priceComparisonById = new Map(compareFuelPrices(txs, refPrices).map((c) => [c.id, c]));
 
   const duplicateIds = new Set(duplicates.map((t) => t.id));
   const regressionIds = new Set(regressions.map((t) => t.id));
@@ -512,13 +514,14 @@ export default async function CombustivelPage({
                 <SortableTh label="Hodômetro" field="hodometro" basePath="/combustivel" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <SortableTh label="Km/L" field="kmPorLitro" basePath="/combustivel" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
                 <SortableTh label="Posto" field="posto" basePath="/combustivel" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="px-4 py-3" />
+                <th className="px-4 py-3">Preço ANP</th>
                 <th className="px-4 py-3">Situação</th>
               </tr>
             </thead>
             <tbody>
               {filteredTxs.length === 0 && (
                 <tr>
-                  <td colSpan={12} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={13} className="px-4 py-8 text-center text-slate-500">
                     Nenhuma transação de combustível encontrada.
                   </td>
                 </tr>
@@ -546,6 +549,24 @@ export default async function CombustivelPage({
                       : "—"}
                   </td>
                   <td className="px-4 py-3 text-slate-600">{t.posto ?? "—"}</td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {priceComparisonById.has(t.id) ? (
+                      <span
+                        title={
+                          priceComparisonById.get(t.id)!.granularidade === "municipio"
+                            ? "Média de revenda da ANP na mesma cidade, na semana do abastecimento"
+                            : "Cidade não tem amostra da ANP (ou a transação não tem cidade cadastrada) — comparado com a média do estado inteiro"
+                        }
+                      >
+                        {formatBRL(priceComparisonById.get(t.id)!.refPriceCents)}
+                        {priceComparisonById.get(t.id)!.granularidade === "estado" && (
+                          <span className="ml-1 text-xs text-slate-400">(estado)</span>
+                        )}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap items-center gap-1.5">
                       {!t.vehicleId && <span className={`${badgeClass} bg-amber-100 text-amber-700`}>Sem veículo</span>}

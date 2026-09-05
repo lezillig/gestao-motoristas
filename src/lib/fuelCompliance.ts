@@ -123,51 +123,85 @@ export function spentByVehicle(txs: FuelTransaction[], vehicles: Vehicle[]) {
     .sort((a, b) => b.cents - a.cents);
 }
 
-const OVERPRICE_THRESHOLD = 0.1; // 10% acima da media ANP da mesma UF/produto/semana
+const OVERPRICE_THRESHOLD = 0.1; // 10% acima da media ANP da mesma UF (ou municipio) /produto/semana
 
-export type OverpricedTransaction = {
+function normalizeCidade(value: string): string {
+  return value
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "");
+}
+
+export type FuelPriceComparison = {
   id: string;
   paidPriceCents: number;
   refPriceCents: number;
+  // "municipio": achou preco medio da ANP pra cidade exata do abastecimento
+  // (o mais proximo do posto real que a ANP publica). "estado": a cidade
+  // nao tem amostra da ANP (ou a transacao nao tem cidade cadastrada — hoje
+  // so vem preenchida na importacao manual do Ticket Log, nao no sync
+  // automatico da Sofit), caiu pra media do estado inteiro como fallback.
+  granularidade: "municipio" | "estado";
   deltaPercent: number;
 };
 
+export type OverpricedTransaction = FuelPriceComparison;
+
 // Eixo E: compara o preco pago por litro contra a media de revenda da ANP
-// pra mesma UF + produto + semana (src/lib/anp/client.ts). So compara
-// transacoes com UF preenchido e cujo texto de "combustivel" e reconhecido
-// por normalizeProduto — sem essas duas informacoes, a transacao fica de
-// fora (nao e possivel comparar, nao e um "OK" nem um alerta). Informativo,
-// nao e acusacao de fraude — mesmo tom ja usado em jurisprudencia.ts.
-export function findOverpricedTransactions(
-  txs: FuelTransaction[],
-  refPrices: AnpPrecoReferencia[]
-): OverpricedTransaction[] {
-  const results: OverpricedTransaction[] = [];
+// da MESMA CIDADE (quando a ANP pesquisa essa cidade) ou, na falta disso,
+// do estado inteiro — pra mesmo produto + semana (src/lib/anp/client.ts).
+// So compara transacoes com UF preenchido e cujo texto de "combustivel" e
+// reconhecido por normalizeProduto — sem essas duas informacoes, a
+// transacao fica de fora (nao e possivel comparar, nao e um "OK" nem um
+// alerta). Informativo, nao e acusacao de fraude — mesmo tom ja usado em
+// jurisprudencia.ts.
+export function compareFuelPrices(txs: FuelTransaction[], refPrices: AnpPrecoReferencia[]): FuelPriceComparison[] {
+  const results: FuelPriceComparison[] = [];
   for (const t of txs) {
     if (!t.uf || !t.combustivel || t.volumeLitros <= 0) continue;
     const produto = normalizeProduto(t.combustivel);
     if (!produto) continue;
 
-    const ref = refPrices.find(
+    const cidadeNorm = t.cidade ? normalizeCidade(t.cidade) : null;
+    const refMunicipio = cidadeNorm
+      ? refPrices.find(
+          (r) =>
+            r.municipio === cidadeNorm &&
+            r.uf === t.uf &&
+            r.produto === produto &&
+            t.dataHora >= r.semanaInicio &&
+            t.dataHora <= r.semanaFim
+        )
+      : undefined;
+    const refEstado = refPrices.find(
       (r) =>
+        r.municipio === "" &&
         r.uf === t.uf &&
         r.produto === produto &&
         t.dataHora >= r.semanaInicio &&
         t.dataHora <= r.semanaFim
     );
+    const ref = refMunicipio ?? refEstado;
     if (!ref) continue;
 
     const paidPriceCents = t.valorCents / t.volumeLitros;
-    if (paidPriceCents > ref.precoMedioCents * (1 + OVERPRICE_THRESHOLD)) {
-      results.push({
-        id: t.id,
-        paidPriceCents,
-        refPriceCents: ref.precoMedioCents,
-        deltaPercent: ((paidPriceCents - ref.precoMedioCents) / ref.precoMedioCents) * 100,
-      });
-    }
+    results.push({
+      id: t.id,
+      paidPriceCents,
+      refPriceCents: ref.precoMedioCents,
+      granularidade: refMunicipio ? "municipio" : "estado",
+      deltaPercent: ((paidPriceCents - ref.precoMedioCents) / ref.precoMedioCents) * 100,
+    });
   }
   return results;
+}
+
+export function findOverpricedTransactions(
+  txs: FuelTransaction[],
+  refPrices: AnpPrecoReferencia[]
+): OverpricedTransaction[] {
+  return compareFuelPrices(txs, refPrices).filter((c) => c.deltaPercent > OVERPRICE_THRESHOLD * 100);
 }
 
 // Ranking "contratos com maior gasto" pro Relatorio Resumido de Consumo
