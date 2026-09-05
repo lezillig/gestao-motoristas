@@ -10,7 +10,7 @@ import { readWorkbookRows, normalizeText, cellToLocalDateString } from "@/lib/sp
 import { fetchAllEmployees, fetchPaymentSources } from "@/lib/tiquetaque/client";
 import { parsePayrollWorkbook, type PayrollRow } from "@/lib/payrollImport";
 import { isValidCPF, normalizeCpf } from "@/lib/cpf";
-import { findSindicatoMatch, suggestSindicatoMatch } from "@/lib/sindicatoMatch";
+import { findSindicatoMatch, suggestSindicatoMatch, suggestShortName } from "@/lib/sindicatoMatch";
 
 const schema = z.object({
   name: z.string().min(2, "Informe o nome do motorista"),
@@ -477,9 +477,13 @@ export type SindicatoDivergencia = {
   qtd: number;
   status: "encontrado" | "sugestao" | "sem_correspondencia";
   sindicatoEncontrado?: string;
-  sugestao?: { nome: string; score: number };
+  sugestao?: { id: string; nome: string; score: number };
+  nomeSugeridoNovo: string;
 };
-export type PreviewSindicatosResult = { divergencias: SindicatoDivergencia[] };
+export type PreviewSindicatosResult = {
+  divergencias: SindicatoDivergencia[];
+  sindicatosExistentes: { id: string; nome: string }[];
+};
 export type PreviewSindicatosState = { error?: string; result?: PreviewSindicatosResult };
 
 // So le a planilha e compara os sindicatos citados contra o cadastro — nao
@@ -518,9 +522,10 @@ export async function previewPayrollSindicatos(
 
   const divergencias: SindicatoDivergencia[] = [...countByText.entries()]
     .map(([textoNaPlanilha, qtd]) => {
+      const nomeSugeridoNovo = suggestShortName(textoNaPlanilha);
       const match = findSindicatoMatch(textoNaPlanilha, sindicatos);
       if (match) {
-        return { textoNaPlanilha, qtd, status: "encontrado" as const, sindicatoEncontrado: match.nome };
+        return { textoNaPlanilha, qtd, status: "encontrado" as const, sindicatoEncontrado: match.nome, nomeSugeridoNovo };
       }
       const suggestion = suggestSindicatoMatch(textoNaPlanilha, sindicatos);
       if (suggestion && suggestion.score >= 0.3) {
@@ -528,14 +533,99 @@ export async function previewPayrollSindicatos(
           textoNaPlanilha,
           qtd,
           status: "sugestao" as const,
-          sugestao: { nome: suggestion.sindicato.nome, score: Math.round(suggestion.score * 100) / 100 },
+          sugestao: { id: suggestion.sindicato.id, nome: suggestion.sindicato.nome, score: Math.round(suggestion.score * 100) / 100 },
+          nomeSugeridoNovo,
         };
       }
-      return { textoNaPlanilha, qtd, status: "sem_correspondencia" as const };
+      return { textoNaPlanilha, qtd, status: "sem_correspondencia" as const, nomeSugeridoNovo };
     })
     .sort((a, b) => b.qtd - a.qtd);
 
-  return { result: { divergencias } };
+  return { result: { divergencias, sindicatosExistentes: sindicatos } };
+}
+
+export type ResolveSindicatosResult = { criados: number; motoristasAtualizados: number };
+export type ResolveSindicatosState = { error?: string; result?: ResolveSindicatosResult };
+
+// Aplica a decisao "de/para" que o admin tomou na tela pra cada texto de
+// sindicato divergente da planilha (ver previewPayrollSindicatos acima):
+// "__novo__" cria um Sindicato novo com o nome editado na tela, qualquer
+// outro valor e o id de um sindicato ja cadastrado escolhido como
+// equivalente. Reprocessa o arquivo do zero (mesma agregacao/ordenacao
+// deterministica da preview) em vez de guardar estado entre as duas
+// chamadas — os campos "resolucao_N"/"nomeNovo_N" que a tela gera usam o
+// indice dessa mesma ordenacao.
+export async function resolveSindicatosFromPayroll(
+  _prevState: ResolveSindicatosState,
+  formData: FormData
+): Promise<ResolveSindicatosState> {
+  const session = await requireRole("ADMIN", "GESTOR");
+
+  const arquivo = formData.get("arquivo");
+  if (!(arquivo instanceof File) || arquivo.size === 0) {
+    return { error: "Selecione o arquivo da folha de pagamento (.xls ou .xlsx)." };
+  }
+
+  let rows: PayrollRow[];
+  try {
+    const buffer = Buffer.from(await arquivo.arrayBuffer());
+    rows = parsePayrollWorkbook(buffer);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Não foi possível ler o arquivo." };
+  }
+
+  const countByText = new Map<string, number>();
+  for (const row of rows) {
+    if (!row.ativo || !row.sindicato) continue;
+    countByText.set(row.sindicato, (countByText.get(row.sindicato) ?? 0) + 1);
+  }
+  const textos = [...countByText.entries()].sort((a, b) => b[1] - a[1]).map(([texto]) => texto);
+
+  let criados = 0;
+  const sindicatoIdByTexto = new Map<string, string>();
+  for (let i = 0; i < textos.length; i++) {
+    const resolucao = formData.get(`resolucao_${i}`);
+    if (typeof resolucao !== "string" || !resolucao) continue;
+    if (resolucao === "__novo__") {
+      const nomeNovoRaw = formData.get(`nomeNovo_${i}`);
+      const nomeNovo = typeof nomeNovoRaw === "string" ? nomeNovoRaw.trim() : "";
+      if (!nomeNovo) continue;
+      const created = await prisma.sindicato.create({ data: { companyId: session.companyId, nome: nomeNovo } });
+      sindicatoIdByTexto.set(textos[i], created.id);
+      criados++;
+    } else {
+      sindicatoIdByTexto.set(textos[i], resolucao);
+    }
+  }
+
+  if (sindicatoIdByTexto.size === 0) {
+    return { error: "Nenhum sindicato selecionado pra aplicar." };
+  }
+
+  const existingDrivers = await prisma.driver.findMany({
+    where: { companyId: session.companyId },
+    select: { id: true, cpf: true, sindicatoId: true },
+  });
+  const driverByCpf = new Map(existingDrivers.map((d) => [normalizeCpf(d.cpf), d]));
+
+  let motoristasAtualizados = 0;
+  for (const row of rows) {
+    if (!row.ativo || !row.sindicato) continue;
+    const sindicatoId = sindicatoIdByTexto.get(row.sindicato);
+    if (!sindicatoId) continue;
+    const driver = driverByCpf.get(row.cpf);
+    // So preenche quem ainda nao tem sindicato — mesma politica
+    // conservadora do resto da importacao (nunca sobrescreve vinculo ja
+    // existente sem revisao humana explicita, ver merge De/Para acima).
+    if (!driver || driver.sindicatoId != null) continue;
+    await prisma.driver.update({ where: { id: driver.id }, data: { sindicatoId } });
+    driver.sindicatoId = sindicatoId; // evita reprocessar se o mesmo CPF aparecer 2x na planilha
+    motoristasAtualizados++;
+  }
+
+  revalidatePath("/cadastros/motoristas");
+  revalidatePath("/dashboard");
+  return { result: { criados, motoristasAtualizados } };
 }
 
 const MERGE_TEXT_FIELDS = ["empregador", "departamento", "funcao"] as const;

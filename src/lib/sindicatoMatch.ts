@@ -64,6 +64,32 @@ export function findSindicatoMatch(payrollText: string, sindicatos: SindicatoOpt
   return bySubstring ?? null;
 }
 
+// So um chute inicial pro campo de nome (sempre editavel na tela) quando o
+// admin escolhe "criar novo sindicato" — tenta extrair a sigla curta do
+// comeco do texto legal completo da planilha (ex.: "SINDIFRETUR   SIND
+// EMPREG EMPRES TRANSP..." -> "SINDIFRETUR"), incluindo sufixo de estado
+// quando separado por hifen (ex.: "SINDLOC - MA" -> "SINDLOC-MA"). Quando o
+// texto comeca direto com a palavra generica "SIND"/"SINDICATO" (sem sigla
+// própria antes), nao tem o que extrair — devolve o texto inteiro mesmo.
+export function suggestShortName(fullText: string): string {
+  const tokens = fullText.trim().split(/\s+/);
+  if (tokens.length === 0 || !tokens[0]) return fullText;
+
+  let first = tokens[0];
+  const hyphenSuffixSameToken = first.match(/^([A-Z0-9]+)-([A-Z]{2,4})$/);
+  if (hyphenSuffixSameToken) {
+    first = hyphenSuffixSameToken[1];
+  } else if (first.includes("-")) {
+    first = first.split("-")[0];
+  }
+
+  if (first === "SIND" || first === "SINDICATO" || first.length < 4) return fullText;
+
+  if (hyphenSuffixSameToken) return `${first}-${hyphenSuffixSameToken[2]}`;
+  if (tokens[1] === "-" && tokens[2] && /^[A-Z]{2,4}$/.test(tokens[2]) && tokens[2] !== "SIND") return `${first}-${tokens[2]}`;
+  return first;
+}
+
 // Usado so pro relatorio/preview (nunca aplica automatico): sugere o
 // sindicato cadastrado mais parecido por sobreposicao de palavras
 // significativas (Dice coefficient), mesmo sem substring exata — ajuda a
