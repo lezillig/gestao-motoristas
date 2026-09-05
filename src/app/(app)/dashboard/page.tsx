@@ -5,6 +5,7 @@ import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass } from "@/lib/ui";
 import { cnhAlertLevel, daysUntil, requiresCnh } from "@/lib/driverAlerts";
+import { buildCnhVigia } from "@/lib/cnhVigia";
 
 export default async function DashboardPage() {
   const session = await requireRole("ADMIN", "GESTOR");
@@ -39,6 +40,9 @@ export default async function DashboardPage() {
 
   const semSindicato = activeMotoristas.filter((d) => !d.sindicatoId).length;
 
+  const vigiaCnh = await buildCnhVigia(session.companyId);
+  const vigiaByDriverId = new Map(vigiaCnh.map((v) => [v.driverId, v]));
+
   return (
     <div className="max-w-6xl">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -49,11 +53,11 @@ export default async function DashboardPage() {
           </p>
         </div>
         <Link
-          href="/utilizacao/auditoria"
+          href="/utilizacao/auditoria/excecoes"
           className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
         >
           <SearchCheck className="h-4 w-4" />
-          Auditoria do dia
+          Exceções do dia
         </Link>
       </div>
 
@@ -115,32 +119,56 @@ export default async function DashboardPage() {
             <ul className="divide-y divide-slate-100">
               {alerts.map(({ driver, level }) => {
                 const days = driver.cnhExpiration ? daysUntil(driver.cnhExpiration) : null;
+                const vigia = vigiaByDriverId.get(driver.id);
                 return (
-                  <li key={driver.id} className="flex items-center justify-between gap-3 py-3">
-                    <div>
-                      <p className="text-sm font-medium text-slate-800">{driver.name}</p>
-                      <p className="text-xs text-slate-500">
-                        {driver.sindicato?.nome ?? "Sem sindicato"}
-                        {level === "pendente"
-                          ? " · CNH não cadastrada"
-                          : ` · CNH ${driver.cnhCategory} · vence em ${format(driver.cnhExpiration!, "dd/MM/yyyy")}`}
-                      </p>
-                    </div>
-                    <span
-                      className={`${badgeClass} ${
-                        level === "vencida"
-                          ? "bg-red-100 text-red-700"
+                  <li key={driver.id} className="py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-slate-800">{driver.name}</p>
+                        <p className="text-xs text-slate-500">
+                          {driver.sindicato?.nome ?? "Sem sindicato"}
+                          {level === "pendente"
+                            ? " · CNH não cadastrada"
+                            : ` · CNH ${driver.cnhCategory} · vence em ${format(driver.cnhExpiration!, "dd/MM/yyyy")}`}
+                        </p>
+                      </div>
+                      <span
+                        className={`${badgeClass} ${
+                          level === "vencida"
+                            ? "bg-red-100 text-red-700"
+                            : level === "pendente"
+                              ? "bg-slate-100 text-slate-600"
+                              : "bg-amber-100 text-amber-700"
+                        }`}
+                      >
+                        {level === "vencida"
+                          ? `Vencida há ${Math.abs(days!)}d`
                           : level === "pendente"
-                            ? "bg-slate-100 text-slate-600"
-                            : "bg-amber-100 text-amber-700"
-                      }`}
-                    >
-                      {level === "vencida"
-                        ? `Vencida há ${Math.abs(days!)}d`
-                        : level === "pendente"
-                          ? "Pendente"
-                          : `Vence em ${days}d`}
-                    </span>
+                            ? "Pendente"
+                            : `Vence em ${days}d`}
+                      </span>
+                    </div>
+                    {/* Vigia de CNH acionavel: so mostra quando ha viagem
+                        agendada no SIAT antes/depois do vencimento — vira
+                        decisao urgente, nao so lembrete de renovar. */}
+                    {vigia?.proximaViagem && (
+                      <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                        <p>
+                          <span className="font-medium">Tem viagem agendada</span> em{" "}
+                          {format(vigia.proximaViagem.date, "dd/MM/yyyy")} às {vigia.proximaViagem.startTime}
+                          {vigia.proximaViagem.clientName ? ` (${vigia.proximaViagem.clientName})` : ""} — CNH{" "}
+                          {level === "vencida" ? "já vencida" : "vence antes disso"}.
+                        </p>
+                        {vigia.substitutos.length > 0 ? (
+                          <p className="mt-1">
+                            Motorista(s) categoria {driver.cnhCategory} livre(s) nesse dia:{" "}
+                            {vigia.substitutos.map((s) => s.driverName).join(", ")}.
+                          </p>
+                        ) : (
+                          <p className="mt-1">Nenhum motorista da mesma categoria livre nesse dia — precisa realocar.</p>
+                        )}
+                      </div>
+                    )}
                   </li>
                 );
               })}

@@ -28,6 +28,7 @@ import {
   Building2,
   AlarmClockOff,
   SearchCheck,
+  AlertTriangle,
 } from "lucide-react";
 
 type NavItem = {
@@ -97,6 +98,7 @@ const NAV: NavItem[] = [
     roles: ["ADMIN", "GESTOR"],
     children: [
       { href: "/utilizacao", label: "Check-ins", icon: Route },
+      { href: "/utilizacao/auditoria/excecoes", label: "Exceções do dia", icon: AlertTriangle },
       { href: "/utilizacao/auditoria", label: "Auditoria do dia", icon: SearchCheck },
     ],
   },

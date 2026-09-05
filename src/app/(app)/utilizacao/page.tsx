@@ -83,7 +83,11 @@ export default async function UtilizacaoPage({
         actionLabel="Novo check-in"
       />
 
-      <div className="mb-6 flex justify-end">
+      <div className="mb-6 flex justify-end gap-2">
+        <Link href="/utilizacao/auditoria/excecoes" className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+          <SearchCheck className="h-4 w-4" />
+          Exceções do dia
+        </Link>
         <Link href="/utilizacao/auditoria" className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
           <SearchCheck className="h-4 w-4" />
           Auditoria do dia
