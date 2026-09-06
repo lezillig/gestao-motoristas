@@ -27,10 +27,15 @@ export async function GET(req: NextRequest) {
 
   const companies = await prisma.company.findMany({ select: { id: true } });
 
+  // Um unico deadline pra invocacao inteira (nao um novo por empresa) — com
+  // N empresas, um deadline fresco a cada iteracao deixava a funcao livre
+  // pra rodar N*45s, bem acima do teto de 60s da funcao serverless
+  // (maxDuration acima).
+  const deadline = Date.now() + 45_000;
   const results = [];
   for (const company of companies) {
     try {
-      const result = await syncSofitCnhCore(company.id, Date.now() + 45_000);
+      const result = await syncSofitCnhCore(company.id, deadline);
       results.push({ companyId: company.id, ...result });
     } catch (e) {
       results.push({ companyId: company.id, error: e instanceof Error ? e.message : "erro desconhecido" });

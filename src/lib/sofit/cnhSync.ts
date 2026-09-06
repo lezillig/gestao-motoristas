@@ -33,7 +33,11 @@ export async function syncSofitCnhCore(companyId: string, deadline?: number): Pr
       continue;
     }
 
-    const expiration = emp.habilitationDueDate ? parseLocalDate(emp.habilitationDueDate) : null;
+    const parsedExpiration = emp.habilitationDueDate ? parseLocalDate(emp.habilitationDueDate) : null;
+    // parseLocalDate devolve Invalid Date pra string mal formada em vez de
+    // lancar — sem essa checagem, um vencimento invalido da Sofit gravava
+    // um Invalid Date no banco em vez de simplesmente ser ignorado.
+    const expiration = parsedExpiration && !Number.isNaN(parsedExpiration.getTime()) ? parsedExpiration : null;
     const data: { cnh?: string; cnhCategory?: string; cnhExpiration?: Date } = {};
     if (emp.habilitationNum && emp.habilitationNum !== driver.cnh) data.cnh = emp.habilitationNum;
     if (emp.habilitationCategory && emp.habilitationCategory !== driver.cnhCategory) data.cnhCategory = emp.habilitationCategory;

@@ -1,3 +1,4 @@
+import { normalizeCpf } from "@/lib/cpf";
 import type {
   SofitEmployeeCnh,
   SofitEmployeeCnhRaw,
@@ -156,7 +157,7 @@ const EMPLOYEES_QUERY = `
 function mapEmployeeCnh(e: SofitEmployeeCnhRaw): SofitEmployeeCnh | null {
   if (!e.cpf) return null; // sem CPF nao da pra casar com nenhum motorista nosso
   return {
-    cpf: e.cpf.replace(/\D/g, ""),
+    cpf: normalizeCpf(e.cpf),
     habilitationNum: e.habilitation_num?.trim() || null,
     habilitationCategory: e.habilitation_category?.trim().toUpperCase() || null,
     habilitationDueDate: e.habilitation_due_date,
