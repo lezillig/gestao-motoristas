@@ -1,11 +1,15 @@
 import Link from "next/link";
-import { format } from "date-fns";
-import { AlertTriangle, IdCard, Landmark, SearchCheck, ShieldCheck } from "lucide-react";
+import { format, differenceInCalendarDays } from "date-fns";
+import { AlertTriangle, IdCard, Landmark, SearchCheck, ShieldCheck, UserX } from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass } from "@/lib/ui";
 import { cnhAlertLevel, daysUntil, requiresCnh } from "@/lib/driverAlerts";
 import { buildCnhVigia } from "@/lib/cnhVigia";
+import { isTiqueTaqueAvailable, fetchAllEmployees } from "@/lib/tiquetaque/client";
+import { normalizeCpf } from "@/lib/cpf";
+
+const SEM_PONTO_LIMIAR_DIAS = 30;
 
 const LEAVE_LABELS: Record<string, string> = {
   folga: "Folga",
@@ -58,6 +62,47 @@ export default async function DashboardPage() {
 
   const vigiaCnh = await buildCnhVigia(session.companyId);
   const vigiaByDriverId = new Map(vigiaCnh.map((v) => [v.driverId, v]));
+
+  const alertDriverIds = alerts.map((a) => a.driver.id);
+
+  // Ultima batida de ponto de cada motorista com alerta de CNH — motorista
+  // que ja nao bate ponto ha muito tempo (e nao esta de ferias/afastado, ja
+  // cruzado acima) pode nem estar mais trabalhando de verdade, entao
+  // renovar a CNH talvez nem seja a prioridade real.
+  const ultimaBatida =
+    alertDriverIds.length > 0
+      ? await prisma.timeClockEntry.groupBy({
+          by: ["driverId"],
+          where: { companyId: session.companyId, driverId: { in: alertDriverIds } },
+          _max: { date: true },
+        })
+      : [];
+  const ultimaBatidaByDriverId = new Map(ultimaBatida.map((u) => [u.driverId, u._max.date]));
+
+  // Status no TiqueTaque nao e sincronizado pelo cron automatico (so um
+  // botao manual em Motoristas atualiza Driver.active a partir de la) —
+  // pra nao depender de alguem lembrar de clicar, confere direto na API
+  // aqui, ao vivo, sempre que a chave estiver configurada. So 1-2 chamadas
+  // (a lista inteira de funcionarios, paginada), nao uma por motorista —
+  // best-effort: se a API falhar/demorar, o Painel continua funcionando
+  // normal, so sem esse cruzamento.
+  let tiquetaqueByDriverId = new Map<string, "inativo" | "nao_encontrado">();
+  if (isTiqueTaqueAvailable() && alertDriverIds.length > 0) {
+    try {
+      const funcionarios = await fetchAllEmployees();
+      const empregadoByCpf = new Map(funcionarios.map((f) => [normalizeCpf(f.cpf), f]));
+      const statusMap = new Map<string, "inativo" | "nao_encontrado">();
+      for (const a of alerts) {
+        const emp = empregadoByCpf.get(normalizeCpf(a.driver.cpf));
+        if (!emp) statusMap.set(a.driver.id, "nao_encontrado");
+        else if (emp.dismissed) statusMap.set(a.driver.id, "inativo");
+      }
+      tiquetaqueByDriverId = statusMap;
+    } catch {
+      // TiqueTaque fora do ar ou instavel — segue sem essa informacao em
+      // vez de derrubar o Painel inteiro por causa de uma checagem extra.
+    }
+  }
 
   return (
     <div className="max-w-6xl">
@@ -137,6 +182,10 @@ export default async function DashboardPage() {
                 const days = driver.cnhExpiration ? daysUntil(driver.cnhExpiration) : null;
                 const vigia = vigiaByDriverId.get(driver.id);
                 const afastamento = afastamentoByDriverId.get(driver.id);
+                const tiquetaqueStatus = tiquetaqueByDriverId.get(driver.id);
+                const ultimaBatida = ultimaBatidaByDriverId.get(driver.id) ?? null;
+                const diasSemPonto = ultimaBatida ? differenceInCalendarDays(now, ultimaBatida) : null;
+                const semPontoHaMuitoTempo = !afastamento && (diasSemPonto === null || diasSemPonto > SEM_PONTO_LIMIAR_DIAS);
                 return (
                   <li key={driver.id} className="py-3">
                     <div className="flex items-center justify-between gap-3">
@@ -179,6 +228,26 @@ export default async function DashboardPage() {
                         </span>
                       </div>
                     </div>
+                    {(tiquetaqueStatus || semPontoHaMuitoTempo) && (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                        {tiquetaqueStatus === "inativo" && (
+                          <span className={`${badgeClass} bg-red-100 text-red-700`} title="Driver.active foi atualizado a partir do TiqueTaque, ou confira manualmente">
+                            <UserX className="mr-1 h-3 w-3" /> Inativo no TiqueTaque
+                          </span>
+                        )}
+                        {tiquetaqueStatus === "nao_encontrado" && (
+                          <span className={`${badgeClass} bg-slate-100 text-slate-600`} title="CPF não corresponde a nenhum funcionário no TiqueTaque agora">
+                            <UserX className="mr-1 h-3 w-3" /> Não encontrado no TiqueTaque
+                          </span>
+                        )}
+                        {semPontoHaMuitoTempo && (
+                          <span className={`${badgeClass} bg-amber-100 text-amber-700`}>
+                            <AlertTriangle className="mr-1 h-3 w-3" />
+                            {diasSemPonto === null ? "Nunca bateu ponto" : `Sem bater ponto há ${diasSemPonto}d`}
+                          </span>
+                        )}
+                      </div>
+                    )}
                     {/* Vigia de CNH acionavel: so mostra quando ha viagem
                         agendada no SIAT antes/depois do vencimento — vira
                         decisao urgente, nao so lembrete de renovar. */}
