@@ -38,8 +38,14 @@ const DEPARTAMENTOS_NAO_OPERACIONAIS = [
 // TiqueTaque entrava na lista de "CNH pendente" por engano.
 export function requiresCnh(funcao: string | null, departamento?: string | null): boolean {
   if (funcao) {
-    const normalized = funcao.toLowerCase();
-    return normalized.includes("motorista") || normalized.includes("condutor");
+    // startsWith, nao includes — confirmado real (2026-09-06): "AJUDANTE DE
+    // MOTORISTA" (nao dirige, so acompanha) entrava como "precisa de CNH"
+    // so por conter a palavra "motorista" no meio do cargo. Todo cargo de
+    // motorista de verdade ja confirmado nesta empresa comeca com
+    // "MOTORISTA"/"CONDUTOR" (ex. "MOTORISTA DE VAN", "MOTORISTA DE MICRO
+    // ONIBUS") — nunca aparece no meio/fim do cargo.
+    const normalized = funcao.trim().toLowerCase();
+    return normalized.startsWith("motorista") || normalized.startsWith("condutor");
   }
   if (departamento && DEPARTAMENTOS_NAO_OPERACIONAIS.includes(departamento.toUpperCase().trim())) {
     return false;
