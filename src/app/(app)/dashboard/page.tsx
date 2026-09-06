@@ -192,7 +192,7 @@ export default async function DashboardPage() {
                       <div>
                         <p className="text-sm font-medium text-slate-800">{driver.name}</p>
                         <p className="text-xs text-slate-500">
-                          {driver.sindicato?.nome ?? "Sem sindicato"}
+                          {driver.funcao ?? "Cargo não informado"} · {driver.sindicato?.nome ?? "Sem sindicato"}
                           {level === "pendente"
                             ? " · CNH não cadastrada"
                             : ` · CNH ${driver.cnhCategory} · vence em ${format(driver.cnhExpiration!, "dd/MM/yyyy")}`}
