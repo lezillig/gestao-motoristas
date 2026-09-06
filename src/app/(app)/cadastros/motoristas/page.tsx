@@ -51,7 +51,7 @@ export default async function MotoristasPage({
   const where: Prisma.DriverWhereInput = { companyId: session.companyId };
   if (q) {
     where.OR = [
-      { name: { contains: q } },
+      { name: { contains: q, mode: "insensitive" } },
       { cpf: { contains: q } },
     ];
   }
