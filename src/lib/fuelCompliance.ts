@@ -123,7 +123,7 @@ export function spentByVehicle(txs: FuelTransaction[], vehicles: Vehicle[]) {
     .sort((a, b) => b.cents - a.cents);
 }
 
-const OVERPRICE_THRESHOLD = 0.1; // 10% acima da media ANP da mesma UF (ou municipio) /produto/semana
+export const OVERPRICE_THRESHOLD = 0.1; // 10% acima da media ANP da mesma UF (ou municipio) /produto/semana
 
 function normalizeCidade(value: string): string {
   return value

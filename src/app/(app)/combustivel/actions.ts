@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { combineLocalDateTime } from "@/lib/date";
+import { normalizeCpf } from "@/lib/cpf";
 import { readWorkbookRows, normalizeText } from "@/lib/spreadsheet";
 import { anpWeekRange, fetchAnpWeek } from "@/lib/anp/client";
 import { matchVehicleAndDriver } from "@/lib/fuelMatching";
@@ -137,7 +138,11 @@ export async function importFuelTransactions(
   // exatamente o que foi digitado (com pontuacao), so a importacao de planilha
   // (importDrivers) normaliza pra digitos. Normaliza os dois lados aqui pra
   // casar de qualquer jeito.
-  const driverByCpf = new Map(drivers.map((d) => [d.cpf.replace(/\D/g, ""), d.id]));
+  // normalizeCpf (nao so replace/\D/) — sem o zero a esquerda, um motorista
+  // cujo CPF cadastrado perdeu o zero (ex.: veio de planilha como numero)
+  // nunca batia com o cpfDigits de 11 digitos vindo da linha de
+  // abastecimento (mesmo bug ja corrigido em lib/sofit/client.ts).
+  const driverByCpf = new Map(drivers.map((d) => [normalizeCpf(d.cpf), d.id]));
   const driverByName = new Map(drivers.map((d) => [d.name.trim().toLowerCase(), d.id]));
   const codigosVistos = new Set(existingCodigos.map((t) => t.codigoTransacao as string));
 

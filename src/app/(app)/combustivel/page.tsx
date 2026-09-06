@@ -18,8 +18,8 @@ import {
   findInactiveLinkTransactions,
   findSuspectedDuplicates,
   findOdometerRegressions,
-  findOverpricedTransactions,
   compareFuelPrices,
+  OVERPRICE_THRESHOLD,
   totalSpentCents,
   averagePriceCentsPerLiter,
   spentByVehicle,
@@ -132,9 +132,10 @@ export default async function CombustivelPage({
   const semHodometro = txs.filter((t) => t.hodometro == null);
   const ranking = spentByVehicle(txs, vehicles).slice(0, 5);
 
-  const overpriced = findOverpricedTransactions(txs, refPrices);
+  const priceComparisons = compareFuelPrices(txs, refPrices);
+  const priceComparisonById = new Map(priceComparisons.map((c) => [c.id, c]));
+  const overpriced = priceComparisons.filter((c) => c.deltaPercent > OVERPRICE_THRESHOLD * 100);
   const overpricedById = new Map(overpriced.map((o) => [o.id, o]));
-  const priceComparisonById = new Map(compareFuelPrices(txs, refPrices).map((c) => [c.id, c]));
 
   const duplicateIds = new Set(duplicates.map((t) => t.id));
   const regressionIds = new Set(regressions.map((t) => t.id));
