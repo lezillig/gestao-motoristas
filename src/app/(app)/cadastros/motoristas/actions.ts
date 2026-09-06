@@ -388,7 +388,7 @@ export async function importDriversFromPayrollFile(
   }
 
   const [sindicatos, existingDrivers] = await Promise.all([
-    prisma.sindicato.findMany({ where: { companyId: session.companyId }, select: { id: true, nome: true } }),
+    prisma.sindicato.findMany({ where: { companyId: session.companyId, active: true }, select: { id: true, nome: true } }),
     prisma.driver.findMany({
       where: { companyId: session.companyId },
       select: { id: true, cpf: true, sindicatoId: true },
@@ -510,7 +510,7 @@ export async function previewPayrollSindicatos(
   }
 
   const sindicatos = await prisma.sindicato.findMany({
-    where: { companyId: session.companyId },
+    where: { companyId: session.companyId, active: true },
     select: { id: true, nome: true },
   });
 
