@@ -119,6 +119,13 @@ export async function buildViagemPontoAudit(
       continue; // turno ainda aberto, nao da pra auditar ainda
     }
 
+    // Plantao do SIAT sincronizado sem veiculo definido ainda (Escala.
+    // vehicleId null) nao tem como ser cruzado com VehicleTrip (que sempre
+    // tem vehicleId real) — sem esse pulo, TODO plantao sem veiculo com
+    // ponto batido virava falso positivo de "ponto sem viagem" (confirmado
+    // real, 2026-09-06, apos o sync de Plantao entrar no ar).
+    if (!escala.vehicleId) continue;
+
     const dayTrips = tripsByVehicleDate.get(`${escala.vehicleId}_${dayKey}`) ?? [];
     let hasOverlap = false;
     for (const t of dayTrips) {
