@@ -4,12 +4,24 @@ export type CnhAlertLevel = "vencida" | "vence_em_breve" | "ok" | "pendente" | "
 
 const WARNING_WINDOW_DAYS = 30;
 
+// Maiusculo + sem acento, pra "JURÍDICO" (como o TiqueTaque manda de
+// verdade) bater com "JURIDICO" na lista abaixo — sem isso a comparacao
+// falhava silenciosamente pra qualquer nome de departamento acentuado.
+function normalizeUpper(value: string): string {
+  return value
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "");
+}
+
 // Departamentos claramente administrativos vindos do TiqueTaque
 // (contract_data.department) — confirmado real (2026-09-06): EVANDRO JOSE
 // DOS SANTOS (departamento FINANCEIRO, cargo em branco no TiqueTaque
 // tambem) aparecia errado como "CNH pendente" so pelo default abaixo. Todo
 // motorista real conferido ate agora tem departamento OPERACIONAL ou
-// ESCOLAR* — nunca um desses nomes administrativos.
+// ESCOLAR* — nunca um desses nomes administrativos. Lista fechada, nao
+// aberta — ver comentario da funcao abaixo sobre a limitacao disso.
 const DEPARTAMENTOS_NAO_OPERACIONAIS = [
   "FINANCEIRO",
   "RH",
@@ -17,12 +29,18 @@ const DEPARTAMENTOS_NAO_OPERACIONAIS = [
   "ADMINISTRATIVO",
   "COMERCIAL",
   "TI",
+  "TECNOLOGIA DA INFORMACAO",
   "DIRETORIA",
   "JURIDICO",
   "MARKETING",
   "COMPRAS",
   "CONTABILIDADE",
-];
+  "SAC",
+  "ATENDIMENTO",
+  "SUPRIMENTOS",
+  "CONTROLADORIA",
+  "QUALIDADE",
+].map(normalizeUpper);
 
 // Desde que o import do TiqueTaque passou a trazer TODOS os funcionarios
 // (nao so quem dirige), precisa distinguir quem realmente precisa de CNH —
@@ -35,19 +53,25 @@ const DEPARTAMENTOS_NAO_OPERACIONAIS = [
 // precisou) — EXCETO quando o `departamento` (tambem do TiqueTaque, quando
 // disponivel) diz claramente que a pessoa nao e operacional. Sem isso,
 // gente do financeiro/RH/administrativo cujo cargo nunca foi preenchido no
-// TiqueTaque entrava na lista de "CNH pendente" por engano.
+// TiqueTaque entrava na lista de "CNH pendente" por engano. Lista fechada
+// de departamentos administrativos, nao aberta — um departamento novo que
+// a empresa venha a usar (ex. "SUPRIMENTOS") e nao estiver na lista ainda
+// reproduz o mesmo bug pra outra pessoa; e uma mitigacao, nao uma garantia.
 export function requiresCnh(funcao: string | null, departamento?: string | null): boolean {
   if (funcao) {
-    // startsWith, nao includes — confirmado real (2026-09-06): "AJUDANTE DE
-    // MOTORISTA" (nao dirige, so acompanha) entrava como "precisa de CNH"
-    // so por conter a palavra "motorista" no meio do cargo. Todo cargo de
-    // motorista de verdade ja confirmado nesta empresa comeca com
-    // "MOTORISTA"/"CONDUTOR" (ex. "MOTORISTA DE VAN", "MOTORISTA DE MICRO
-    // ONIBUS") — nunca aparece no meio/fim do cargo.
-    const normalized = funcao.trim().toLowerCase();
-    return normalized.startsWith("motorista") || normalized.startsWith("condutor");
+    // includes, mas excluindo quem so ACOMPANHA o motorista — confirmado
+    // real (2026-09-06): "AJUDANTE DE MOTORISTA" nao dirige, mas contem a
+    // palavra "motorista" no cargo. Um startsWith puro corrigia esse caso
+    // mas arriscava um falso negativo pro lado oposto (cargo real com
+    // prefixo, ex. "SEGUNDO MOTORISTA" ou um codigo de RH na frente) —
+    // excluir pelo sinal negativo (ajudante/auxiliar) e mais robusto que
+    // exigir uma posicao fixa no texto.
+    const normalized = normalizeUpper(funcao);
+    const ehMotoristaOuCondutor = normalized.includes("MOTORISTA") || normalized.includes("CONDUTOR");
+    const eApenasAjudanteOuAuxiliar = normalized.includes("AJUDANTE") || normalized.includes("AUXILIAR");
+    return ehMotoristaOuCondutor && !eApenasAjudanteOuAuxiliar;
   }
-  if (departamento && DEPARTAMENTOS_NAO_OPERACIONAIS.includes(departamento.toUpperCase().trim())) {
+  if (departamento && DEPARTAMENTOS_NAO_OPERACIONAIS.includes(normalizeUpper(departamento))) {
     return false;
   }
   return true;

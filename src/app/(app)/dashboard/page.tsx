@@ -60,25 +60,13 @@ export default async function DashboardPage() {
 
   const semSindicato = activeMotoristas.filter((d) => !d.sindicatoId).length;
 
-  const vigiaCnh = await buildCnhVigia(session.companyId);
-  const vigiaByDriverId = new Map(vigiaCnh.map((v) => [v.driverId, v]));
-
   const alertDriverIds = alerts.map((a) => a.driver.id);
 
-  // Ultima batida de ponto de cada motorista com alerta de CNH — motorista
-  // que ja nao bate ponto ha muito tempo (e nao esta de ferias/afastado, ja
-  // cruzado acima) pode nem estar mais trabalhando de verdade, entao
-  // renovar a CNH talvez nem seja a prioridade real.
-  const ultimaBatida =
-    alertDriverIds.length > 0
-      ? await prisma.timeClockEntry.groupBy({
-          by: ["driverId"],
-          where: { companyId: session.companyId, driverId: { in: alertDriverIds } },
-          _max: { date: true },
-        })
-      : [];
-  const ultimaBatidaByDriverId = new Map(ultimaBatida.map((u) => [u.driverId, u._max.date]));
-
+  // Ultima batida de ponto (so de quem tem alerta de CNH) e status no
+  // TiqueTaque (de TODOS os motoristas ativos — precisa cobrir tambem quem
+  // poderia ser sugerido como substituto, nao so quem esta em risco) sao
+  // independentes entre si — roda em paralelo em vez de serializado.
+  //
   // Status no TiqueTaque nao e sincronizado pelo cron automatico (so um
   // botao manual em Motoristas atualiza Driver.active a partir de la) —
   // pra nao depender de alguem lembrar de clicar, confere direto na API
@@ -86,23 +74,45 @@ export default async function DashboardPage() {
   // (a lista inteira de funcionarios, paginada), nao uma por motorista —
   // best-effort: se a API falhar/demorar, o Painel continua funcionando
   // normal, so sem esse cruzamento.
-  let tiquetaqueByDriverId = new Map<string, "inativo" | "nao_encontrado">();
-  if (isTiqueTaqueAvailable() && alertDriverIds.length > 0) {
-    try {
-      const funcionarios = await fetchAllEmployees();
-      const empregadoByCpf = new Map(funcionarios.map((f) => [normalizeCpf(f.cpf), f]));
+  const [ultimaBatida, tiquetaqueByDriverId] = await Promise.all([
+    alertDriverIds.length > 0
+      ? prisma.timeClockEntry.groupBy({
+          by: ["driverId"],
+          where: { companyId: session.companyId, driverId: { in: alertDriverIds } },
+          _max: { date: true },
+        })
+      : Promise.resolve([]),
+    (async () => {
       const statusMap = new Map<string, "inativo" | "nao_encontrado">();
-      for (const a of alerts) {
-        const emp = empregadoByCpf.get(normalizeCpf(a.driver.cpf));
-        if (!emp) statusMap.set(a.driver.id, "nao_encontrado");
-        else if (emp.dismissed) statusMap.set(a.driver.id, "inativo");
+      if (!isTiqueTaqueAvailable() || activeMotoristas.length === 0) return statusMap;
+      try {
+        const funcionarios = await fetchAllEmployees();
+        const empregadoByCpf = new Map(funcionarios.map((f) => [normalizeCpf(f.cpf), f]));
+        for (const d of activeMotoristas) {
+          const emp = empregadoByCpf.get(normalizeCpf(d.cpf));
+          if (!emp) statusMap.set(d.id, "nao_encontrado");
+          else if (emp.dismissed) statusMap.set(d.id, "inativo");
+        }
+      } catch {
+        // TiqueTaque fora do ar ou instavel — segue sem essa informacao em
+        // vez de derrubar o Painel inteiro por causa de uma checagem extra.
       }
-      tiquetaqueByDriverId = statusMap;
-    } catch {
-      // TiqueTaque fora do ar ou instavel — segue sem essa informacao em
-      // vez de derrubar o Painel inteiro por causa de uma checagem extra.
-    }
-  }
+      return statusMap;
+    })(),
+  ]);
+  const ultimaBatidaByDriverId = new Map(ultimaBatida.map((u) => [u.driverId, u._max.date]));
+
+  // Quem nao pode ser sugerido como substituto pelo vigia de CNH — de
+  // ferias/atestado/folga, ou inativo/nao encontrado no TiqueTaque agora
+  // (mesmo cruzamento que ja fazemos pra explicar o motorista EM risco,
+  // reaproveitado aqui pra nao sugerir alguem igualmente indisponivel).
+  const indisponiveisParaSubstituicao = new Set(
+    activeMotoristas
+      .filter((d) => afastamentoByDriverId.has(d.id) || tiquetaqueByDriverId.has(d.id))
+      .map((d) => d.id)
+  );
+  const vigiaCnh = await buildCnhVigia(session.companyId, indisponiveisParaSubstituicao, now);
+  const vigiaByDriverId = new Map(vigiaCnh.map((v) => [v.driverId, v]));
 
   return (
     <div className="max-w-6xl">

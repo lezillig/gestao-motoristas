@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { cnhAlertLevel, requiresCnh } from "@/lib/driverAlerts";
+import { cnhAlertLevel, requiresCnh, type CnhAlertLevel } from "@/lib/driverAlerts";
 
 export type SubstitutoSugerido = { driverId: string; driverName: string };
 
@@ -32,16 +32,28 @@ export type CnhRisco = {
 // com CNH em dia, MESMA categoria do motorista em risco (de proposito nao
 // tenta hierarquia entre categorias tipo "E cobre D" — uma regra errada
 // aqui tem consequencia de seguranca/trabalhista, mais vale ser
-// conservador e so sugerir categoria identica), e sem escala no mesmo dia
-// da viagem em risco.
-export async function buildCnhVigia(companyId: string, now = new Date()): Promise<CnhRisco[]> {
+// conservador e so sugerir categoria identica), sem escala no mesmo dia da
+// viagem em risco, e que NAO esteja em `indisponiveis` — de ferias/
+// atestado/folga, ou inativo/nao encontrado no TiqueTaque agora (o
+// chamador, dashboard/page.tsx, ja calcula isso pra mostrar nos badges do
+// motorista em risco; passa aqui de proposito pra nao sugerir como
+// substituto alguem que a mesma tela ja sabe que nao esta disponivel —
+// confirmado real, 2026-09-06: sem isso o vigia podia sugerir um motorista
+// de ferias ou ja desligado).
+export async function buildCnhVigia(companyId: string, indisponiveis: Set<string>, now = new Date()): Promise<CnhRisco[]> {
   const drivers = await prisma.driver.findMany({
     where: { companyId, active: true },
     select: { id: true, name: true, funcao: true, departamento: true, cnhCategory: true, cnhExpiration: true },
   });
 
+  // Calcula o nivel de CNH uma vez por motorista (nao 2-3x) — reaproveitado
+  // no filtro de risco, no filtro do pool de candidatos e no `nivel` final.
+  const levelByDriverId = new Map<string, CnhAlertLevel>(
+    drivers.map((d) => [d.id, cnhAlertLevel(d.cnhExpiration, d.funcao, d.departamento, now)])
+  );
+
   const atRisk = drivers.filter((d) => {
-    const level = cnhAlertLevel(d.cnhExpiration, d.funcao, d.departamento, now);
+    const level = levelByDriverId.get(d.id);
     return level === "vencida" || level === "vence_em_breve";
   });
   if (atRisk.length === 0) return [];
@@ -73,7 +85,7 @@ export async function buildCnhVigia(companyId: string, now = new Date()): Promis
   }
 
   const candidatePool = drivers.filter(
-    (d) => requiresCnh(d.funcao, d.departamento) && cnhAlertLevel(d.cnhExpiration, d.funcao, d.departamento, now) === "ok"
+    (d) => requiresCnh(d.funcao, d.departamento) && levelByDriverId.get(d.id) === "ok" && !indisponiveis.has(d.id)
   );
 
   return atRisk.map((d) => {
@@ -91,7 +103,7 @@ export async function buildCnhVigia(companyId: string, now = new Date()): Promis
       driverName: d.name,
       cnhCategory: d.cnhCategory,
       cnhExpiration: d.cnhExpiration,
-      nivel: cnhAlertLevel(d.cnhExpiration, d.funcao, d.departamento, now) as "vencida" | "vence_em_breve",
+      nivel: levelByDriverId.get(d.id) as "vencida" | "vence_em_breve",
       proximaViagem: proxima
         ? { escalaId: proxima.id, date: proxima.date, startTime: proxima.startTime, routeName: proxima.routeName, clientName: proxima.clientName }
         : null,
