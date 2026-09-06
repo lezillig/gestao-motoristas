@@ -37,11 +37,11 @@ export type CnhRisco = {
 export async function buildCnhVigia(companyId: string, now = new Date()): Promise<CnhRisco[]> {
   const drivers = await prisma.driver.findMany({
     where: { companyId, active: true },
-    select: { id: true, name: true, funcao: true, cnhCategory: true, cnhExpiration: true },
+    select: { id: true, name: true, funcao: true, departamento: true, cnhCategory: true, cnhExpiration: true },
   });
 
   const atRisk = drivers.filter((d) => {
-    const level = cnhAlertLevel(d.cnhExpiration, d.funcao, now);
+    const level = cnhAlertLevel(d.cnhExpiration, d.funcao, d.departamento, now);
     return level === "vencida" || level === "vence_em_breve";
   });
   if (atRisk.length === 0) return [];
@@ -73,7 +73,7 @@ export async function buildCnhVigia(companyId: string, now = new Date()): Promis
   }
 
   const candidatePool = drivers.filter(
-    (d) => requiresCnh(d.funcao) && cnhAlertLevel(d.cnhExpiration, d.funcao, now) === "ok"
+    (d) => requiresCnh(d.funcao, d.departamento) && cnhAlertLevel(d.cnhExpiration, d.funcao, d.departamento, now) === "ok"
   );
 
   return atRisk.map((d) => {
@@ -91,7 +91,7 @@ export async function buildCnhVigia(companyId: string, now = new Date()): Promis
       driverName: d.name,
       cnhCategory: d.cnhCategory,
       cnhExpiration: d.cnhExpiration,
-      nivel: cnhAlertLevel(d.cnhExpiration, d.funcao, now) as "vencida" | "vence_em_breve",
+      nivel: cnhAlertLevel(d.cnhExpiration, d.funcao, d.departamento, now) as "vencida" | "vence_em_breve",
       proximaViagem: proxima
         ? { escalaId: proxima.id, date: proxima.date, startTime: proxima.startTime, routeName: proxima.routeName, clientName: proxima.clientName }
         : null,

@@ -48,9 +48,9 @@ export default async function DashboardPage() {
   // realmente dirige — desde que o import do TiqueTaque passou a trazer
   // todos os funcionarios (nao so motoristas), precisa filtrar por cargo
   // aqui tambem, ou a contagem passaria a incluir RH/financeiro/etc.
-  const activeMotoristas = activeDrivers.filter((d) => requiresCnh(d.funcao));
+  const activeMotoristas = activeDrivers.filter((d) => requiresCnh(d.funcao, d.departamento));
   const alerts = activeMotoristas
-    .map((d) => ({ driver: d, level: cnhAlertLevel(d.cnhExpiration, d.funcao) }))
+    .map((d) => ({ driver: d, level: cnhAlertLevel(d.cnhExpiration, d.funcao, d.departamento) }))
     .filter((a) => a.level !== "ok" && a.level !== "nao_aplicavel")
     .sort((a, b) => (a.driver.cnhExpiration?.getTime() ?? Infinity) - (b.driver.cnhExpiration?.getTime() ?? Infinity));
 

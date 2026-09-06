@@ -235,7 +235,7 @@ export default async function MotoristasPage({
                 </tr>
               )}
               {drivers.map((d) => {
-                const level = cnhAlertLevel(d.cnhExpiration, d.funcao);
+                const level = cnhAlertLevel(d.cnhExpiration, d.funcao, d.departamento);
                 const days = d.cnhExpiration ? daysUntil(d.cnhExpiration) : null;
                 return (
                   <tr key={d.id} className="border-b border-slate-100 last:border-0">
