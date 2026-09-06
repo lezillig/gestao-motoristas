@@ -7,10 +7,18 @@ import { cardClass, badgeClass } from "@/lib/ui";
 import { cnhAlertLevel, daysUntil, requiresCnh } from "@/lib/driverAlerts";
 import { buildCnhVigia } from "@/lib/cnhVigia";
 
+const LEAVE_LABELS: Record<string, string> = {
+  folga: "Folga",
+  atestado: "Atestado",
+  ferias: "Férias",
+  abono: "Abono",
+};
+
 export default async function DashboardPage() {
   const session = await requireRole("ADMIN", "GESTOR");
+  const now = new Date();
 
-  const [drivers, sindicatos] = await Promise.all([
+  const [drivers, sindicatos, afastamentosAtivos] = await Promise.all([
     prisma.driver.findMany({
       where: { companyId: session.companyId },
       include: { sindicato: true },
@@ -21,7 +29,15 @@ export default async function DashboardPage() {
       include: { _count: { select: { drivers: true } } },
       orderBy: { nome: "asc" },
     }),
+    // Cruza com afastamento do TiqueTaque valido HOJE — motorista com CNH
+    // vencida mas de ferias/atestado nao e a mesma urgencia de quem esta
+    // trabalhando normalmente sem CNH valida.
+    prisma.driverLeave.findMany({
+      where: { companyId: session.companyId, startDate: { lte: now }, endDate: { gte: now } },
+      select: { driverId: true, leaveType: true, endDate: true },
+    }),
   ]);
+  const afastamentoByDriverId = new Map(afastamentosAtivos.map((a) => [a.driverId, a]));
 
   const activeDrivers = drivers.filter((d) => d.active);
   // "Motoristas ativos" e os cards de CNH so fazem sentido pra quem
@@ -120,6 +136,7 @@ export default async function DashboardPage() {
               {alerts.map(({ driver, level }) => {
                 const days = driver.cnhExpiration ? daysUntil(driver.cnhExpiration) : null;
                 const vigia = vigiaByDriverId.get(driver.id);
+                const afastamento = afastamentoByDriverId.get(driver.id);
                 return (
                   <li key={driver.id} className="py-3">
                     <div className="flex items-center justify-between gap-3">
@@ -132,21 +149,35 @@ export default async function DashboardPage() {
                             : ` · CNH ${driver.cnhCategory} · vence em ${format(driver.cnhExpiration!, "dd/MM/yyyy")}`}
                         </p>
                       </div>
-                      <span
-                        className={`${badgeClass} ${
-                          level === "vencida"
-                            ? "bg-red-100 text-red-700"
+                      <div className="flex items-center gap-1.5">
+                        {/* Afastamento do TiqueTaque explica a ausencia —
+                            motorista vencido mas de ferias/atestado nao tem
+                            a mesma urgencia de quem esta trabalhando sem
+                            CNH valida. */}
+                        {afastamento && (
+                          <span
+                            className={`${badgeClass} bg-slate-100 text-slate-600`}
+                            title={`Afastado até ${format(afastamento.endDate, "dd/MM/yyyy")}`}
+                          >
+                            {LEAVE_LABELS[afastamento.leaveType] ?? afastamento.leaveType}
+                          </span>
+                        )}
+                        <span
+                          className={`${badgeClass} ${
+                            level === "vencida"
+                              ? "bg-red-100 text-red-700"
+                              : level === "pendente"
+                                ? "bg-slate-100 text-slate-600"
+                                : "bg-amber-100 text-amber-700"
+                          }`}
+                        >
+                          {level === "vencida"
+                            ? `Vencida há ${Math.abs(days!)}d`
                             : level === "pendente"
-                              ? "bg-slate-100 text-slate-600"
-                              : "bg-amber-100 text-amber-700"
-                        }`}
-                      >
-                        {level === "vencida"
-                          ? `Vencida há ${Math.abs(days!)}d`
-                          : level === "pendente"
-                            ? "Pendente"
-                            : `Vence em ${days}d`}
-                      </span>
+                              ? "Pendente"
+                              : `Vence em ${days}d`}
+                        </span>
+                      </div>
                     </div>
                     {/* Vigia de CNH acionavel: so mostra quando ha viagem
                         agendada no SIAT antes/depois do vencimento — vira
