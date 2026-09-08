@@ -5,7 +5,7 @@ import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
-import ComboboxFilter from "@/components/ui/ComboboxFilter";
+import CheckboxDropdownFilter from "@/components/ui/CheckboxDropdownFilter";
 import { toArray } from "@/lib/searchParams";
 import { parseLocalDate } from "@/lib/date";
 import { PONTUALIDADE_TOLERANCIA_MINUTOS } from "@/lib/pontoCompliance";
@@ -306,37 +306,37 @@ export default async function PontoEscalaPage({
           <input type="date" name="ate" defaultValue={ate ?? ""} className={inputClass} />
         </div>
         <div className="w-64">
-          <ComboboxFilter
-            multiple
+          <CheckboxDropdownFilter
             name="driverId"
             label="Motorista"
+            allLabel="Todos"
             defaultValue={driverId}
             options={drivers.map((d) => ({ value: d.id, label: d.name }))}
           />
         </div>
         <div className="w-56">
-          <ComboboxFilter
-            multiple
+          <CheckboxDropdownFilter
             name="empregador"
             label="Empregador"
+            allLabel="Todos"
             defaultValue={empregador}
             options={empregadores.map((e) => ({ value: e, label: e }))}
           />
         </div>
         <div className="w-56">
-          <ComboboxFilter
-            multiple
+          <CheckboxDropdownFilter
             name="cargo"
             label="Cargo"
+            allLabel="Todos"
             defaultValue={cargo}
             options={cargos.map((c) => ({ value: c, label: c }))}
           />
         </div>
         <div className="w-56">
-          <ComboboxFilter
-            multiple
+          <CheckboxDropdownFilter
             name="unidade"
             label="Unidade alocada"
+            allLabel="Todas"
             defaultValue={unidade}
             options={unidades.map((u) => ({ value: u, label: u }))}
           />

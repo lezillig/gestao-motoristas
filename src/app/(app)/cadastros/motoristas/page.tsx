@@ -6,7 +6,6 @@ import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass, inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import SortableTh from "@/components/ui/SortableTh";
-import ComboboxFilter from "@/components/ui/ComboboxFilter";
 import CheckboxDropdownFilter from "@/components/ui/CheckboxDropdownFilter";
 import { toArray } from "@/lib/searchParams";
 import MergeFieldForm from "./MergeFieldForm";
@@ -115,10 +114,10 @@ export default async function MotoristasPage({
           </div>
         </div>
         <div className="w-48">
-          <ComboboxFilter
-            multiple
+          <CheckboxDropdownFilter
             name="sindicatoId"
             label="Sindicato"
+            allLabel="Todos"
             defaultValue={sindicatoId}
             options={sindicatos.map((s) => ({ value: s.id, label: s.nome }))}
           />
@@ -132,28 +131,28 @@ export default async function MotoristasPage({
           </select>
         </div>
         <div className="w-56">
-          <ComboboxFilter
-            multiple
+          <CheckboxDropdownFilter
             name="empregador"
             label="Empregador"
+            allLabel="Todos"
             defaultValue={empregador}
             options={empregadores.map((e) => ({ value: e, label: e }))}
           />
         </div>
         <div className="w-56">
-          <ComboboxFilter
-            multiple
+          <CheckboxDropdownFilter
             name="departamento"
             label="Unidade de alocação"
+            allLabel="Todos"
             defaultValue={departamento}
             options={departamentos.map((d) => ({ value: d, label: d }))}
           />
         </div>
         <div className="w-56">
-          <ComboboxFilter
-            multiple
+          <CheckboxDropdownFilter
             name="cargo"
             label="Cargo"
+            allLabel="Todos"
             defaultValue={cargo}
             options={cargos.map((c) => ({ value: c, label: c }))}
           />
