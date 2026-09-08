@@ -48,18 +48,20 @@ function windowsOverlap(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date, tole
 }
 
 // O sync do Ituran (cron /api/cron/ituran-import) roda 1x por dia de
-// madrugada e so busca o dia ANTERIOR — confirmado real (2026-09-03): uma
-// viagem de hoje ja aparecia no proprio site da Ituran, mas o endpoint
-// /v2/trips deles devolvia 0 viagens pra frota inteira nesse mesmo dia (a
-// Ituran so fecha/consolida a viagem depois que ela termina). Entao "sem
-// viagem" pra hoje ou pra ontem a noite e esperado, nao falta de dado real.
+// madrugada (03h BRT) e busca exatamente o D-1 — confirmado real
+// (2026-09-03): uma viagem de HOJE ja aparecia no proprio site da Ituran,
+// mas o endpoint /v2/trips deles devolvia 0 viagens pra frota inteira
+// nesse mesmo dia (a Ituran so fecha/consolida a viagem depois que ela
+// termina). So "hoje" (D-0) nunca tem viagem sincronizada ainda — ontem
+// (D-1) ja rodou no cron dessa madrugada e deve estar completo. Antes
+// esta funcao tambem flagava "ontem" como possivelmente nao sincronizado,
+// o que gerava o aviso errado pro usuario num dia que ja devia estar
+// fechado (confirmado real, 2026-09-08).
 function maybeNotYetSynced(dataISO: string | undefined): boolean {
   if (!dataISO) return false;
   const shifted = new Date(Date.now() - 3 * 60 * 60 * 1000); // UTC-3 fixo, ver src/lib/date.ts
   const todayISO = `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}-${String(shifted.getUTCDate()).padStart(2, "0")}`;
-  const yesterday = new Date(shifted.getTime() - 24 * 60 * 60 * 1000);
-  const yesterdayISO = `${yesterday.getUTCFullYear()}-${String(yesterday.getUTCMonth() + 1).padStart(2, "0")}-${String(yesterday.getUTCDate()).padStart(2, "0")}`;
-  return dataISO === todayISO || dataISO === yesterdayISO;
+  return dataISO === todayISO;
 }
 
 const LEAVE_LABELS: Record<string, string> = {
@@ -419,9 +421,8 @@ export default async function AuditoriaDiaPage({
                 <p>Nenhuma viagem registrada pelo Ituran nesse dia.</p>
                 {maybeNotYetSynced(data) && (
                   <p className="mt-1 text-xs text-amber-600">
-                    Esse dia é recente demais pra já estar sincronizado — nosso robô busca as viagens do Ituran 1x por
-                    dia, de madrugada, e só traz o dia anterior. Se o veículo rodou hoje ou ontem à noite, confira
-                    direto no site do Ituran; aqui deve aparecer amanhã.
+                    Esse dia é hoje — nosso robô busca as viagens do Ituran 1x por dia, de madrugada, e só traz o dia
+                    anterior. Se o veículo já rodou hoje, confira direto no site do Ituran; aqui deve aparecer amanhã.
                   </p>
                 )}
               </div>
