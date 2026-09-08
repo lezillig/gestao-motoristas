@@ -21,7 +21,6 @@ import {
   ChevronDown,
   CalendarOff,
   CalendarRange,
-  PiggyBank,
   Users,
   Scale,
   FlaskConical,
@@ -80,7 +79,6 @@ const NAV: NavItem[] = [
     children: [
       { href: "/afastamentos", label: "Afastamentos", icon: CalendarOff },
       { href: "/ponto/analise", label: "Análise de riscos", icon: ShieldAlert, roles: ["ADMIN", "GESTOR"] },
-      { href: "/ponto/banco-horas", label: "Banco de horas", icon: PiggyBank },
       { href: "/convencoes", label: "Convenção coletiva", icon: FileText, roles: ["ADMIN", "GESTOR"] },
       { href: "/ponto/correcoes", label: "Histórico de correções", icon: History },
       { href: "/ponto/passivo", label: "Passivo trabalhista", icon: Scale },
