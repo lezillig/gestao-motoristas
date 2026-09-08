@@ -129,36 +129,42 @@ export default async function DashboardPage() {
           label="Motoristas ativos"
           value={activeMotoristas.length}
           tone="neutral"
+          href="/cadastros/motoristas?status=ativo"
         />
         <StatCard
           icon={IdCard}
           label="Funcionários ativos (todos os cargos)"
           value={activeDrivers.length}
           tone="neutral"
+          href="/cadastros/motoristas?status=ativo"
         />
         <StatCard
           icon={AlertTriangle}
           label="CNH vencida"
           value={expired}
           tone={expired > 0 ? "critical" : "good"}
+          href="/cadastros/motoristas?status=ativo&cnhStatus=vencida"
         />
         <StatCard
           icon={AlertTriangle}
           label="CNH vence em 30 dias"
           value={dueSoon}
           tone={dueSoon > 0 ? "warning" : "good"}
+          href="/cadastros/motoristas?status=ativo&cnhStatus=vence_em_breve"
         />
         <StatCard
           icon={IdCard}
           label="CNH pendente"
           value={pending}
           tone={pending > 0 ? "warning" : "good"}
+          href="/cadastros/motoristas?status=ativo&cnhStatus=pendente"
         />
         <StatCard
           icon={Landmark}
           label="Sindicatos cadastrados"
           value={sindicatos.length}
           tone="neutral"
+          href="/cadastros/sindicatos"
         />
       </div>
 
@@ -317,11 +323,16 @@ function StatCard({
   label,
   value,
   tone,
+  href,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: number;
   tone: "neutral" | "good" | "warning" | "critical";
+  // Leva pro detalhe (lista filtrada em Motoristas ou Sindicatos, ambas com
+  // exportação própria) — o card vira um atalho pro "por trás desse número",
+  // em vez de só mostrar a contagem.
+  href?: string;
 }) {
   const toneClass = {
     neutral: "bg-slate-100 text-slate-600",
@@ -330,13 +341,23 @@ function StatCard({
     critical: "bg-red-100 text-red-700",
   }[tone];
 
-  return (
-    <div className={cardClass}>
+  const content = (
+    <>
       <div className={`mb-3 flex h-9 w-9 items-center justify-center rounded-lg ${toneClass}`}>
         <Icon className="h-4 w-4" />
       </div>
       <p className="text-2xl font-semibold text-slate-900">{value}</p>
       <p className="mt-0.5 text-xs text-slate-500">{label}</p>
-    </div>
+    </>
+  );
+
+  if (!href) {
+    return <div className={cardClass}>{content}</div>;
+  }
+
+  return (
+    <Link href={href} prefetch={false} className={`${cardClass} block transition-shadow hover:shadow-md`}>
+      {content}
+    </Link>
   );
 }
