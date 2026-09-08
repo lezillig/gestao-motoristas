@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass } from "@/lib/ui";
 import { cnhAlertLevel, daysUntil, requiresCnh } from "@/lib/driverAlerts";
 import { buildCnhVigia } from "@/lib/cnhVigia";
-import { isTiqueTaqueAvailable, fetchAllEmployees } from "@/lib/tiquetaque/client";
+import { isTiqueTaqueAvailable, fetchAllEmployeesCached } from "@/lib/tiquetaque/client";
 import { normalizeCpf } from "@/lib/cpf";
 
 const SEM_PONTO_LIMIAR_DIAS = 30;
@@ -86,7 +86,7 @@ export default async function DashboardPage() {
       const statusMap = new Map<string, "inativo" | "nao_encontrado">();
       if (!isTiqueTaqueAvailable() || activeMotoristas.length === 0) return statusMap;
       try {
-        const funcionarios = await fetchAllEmployees();
+        const funcionarios = await fetchAllEmployeesCached();
         const empregadoByCpf = new Map(funcionarios.map((f) => [normalizeCpf(f.cpf), f]));
         for (const d of activeMotoristas) {
           const emp = empregadoByCpf.get(normalizeCpf(d.cpf));

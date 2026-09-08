@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import type { TiqueTaqueEmployee, TiqueTaqueDayEntry, TiqueTaqueLeave } from "./types";
 import { pairPunchesIntoDays } from "./pairing";
 
@@ -103,6 +104,21 @@ export async function fetchAllEmployees(deadline?: number): Promise<TiqueTaqueEm
   }
   return employees;
 }
+
+// So pro Painel (dashboard/page.tsx), que confere status no TiqueTaque AO
+// VIVO em toda visita a pagina mais visitada do sistema, pra TODOS os
+// motoristas ativos — sem cache, isso e uma paginacao completa do
+// cadastro (~600 funcionarios) repetida a cada carregamento, de qualquer
+// usuario. O roster do TiqueTaque nao muda a cada segundo, entao cachear
+// por 2 minutos reduz a latencia do Painel na maioria das visitas sem
+// deixar o dado velho o suficiente pra importar. NUNCA usar essa versao
+// em fluxo de sincronizacao manual (botao "Sincronizar") — la o usuario
+// clicou justamente esperando dado fresco na hora.
+export const fetchAllEmployeesCached = unstable_cache(
+  async () => fetchAllEmployees(),
+  ["tiquetaque-all-employees"],
+  { revalidate: 120 }
+);
 
 type PaymentSourcesPage = {
   _meta?: { total?: number };
