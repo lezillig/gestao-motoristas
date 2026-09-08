@@ -69,8 +69,6 @@ export default async function VeiculosPage({
         subtitle="Frota disponível para vínculo nas escalas."
         actionHref="/cadastros/veiculos/novo"
         actionLabel="Novo veículo"
-        secondaryActionHref="/cadastros/veiculos/importar"
-        secondaryActionLabel="Importar planilha"
       />
 
       <form className="mb-4 flex flex-wrap items-end gap-3" method="get">

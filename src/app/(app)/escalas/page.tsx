@@ -83,8 +83,6 @@ export default async function EscalasPage({
         subtitle="Vínculo motorista × veículo por turno."
         actionHref="/escalas/novo"
         actionLabel="Nova escala"
-        secondaryActionHref="/escalas/importar-siat"
-        secondaryActionLabel="Sincronizar com SIAT"
       />
 
       <div className="mb-4 flex items-center justify-between">

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { format, subDays } from "date-fns";
 import { AlertTriangle, Gauge, Satellite, Trophy } from "lucide-react";
 import { requireRole } from "@/lib/auth";
@@ -128,7 +129,13 @@ export default async function TelemetriaPage({
             </p>
           </div>
         </div>
-        <GerarLeiturasButton label={provider.name === "Ituran" ? "Gerar leituras" : "Gerar leituras simuladas"} />
+        {provider.name === "Ituran" ? (
+          <Link href="/integracoes" className="text-xs font-medium text-blue-700 hover:underline">
+            Gerar leituras em Integrações →
+          </Link>
+        ) : (
+          <GerarLeiturasButton label="Gerar leituras simuladas" />
+        )}
       </div>
 
       <form className={`${cardClass} mb-6 flex flex-wrap items-end gap-3`} method="get">

@@ -76,8 +76,6 @@ export default async function ResumoConsumoPage({
       <PageHeader
         title="Resumo de consumo por contrato"
         subtitle="Relatório resumido do sistema de gestão de frota — um total por veículo e contrato no período, sem detalhe de transação."
-        secondaryActionHref="/combustivel/resumo/importar"
-        secondaryActionLabel="Importar relatório"
       />
       <p className="mb-4 text-xs text-slate-400">
         <Link href="/combustivel" className="text-blue-700 hover:underline">

@@ -25,9 +25,6 @@ import {
   spentByVehicle,
 } from "@/lib/fuelCompliance";
 import { anpWeekRange } from "@/lib/anp/client";
-import { isSofitAvailable } from "@/lib/sofit/client";
-import AnpSyncButton from "./AnpSyncButton";
-import SofitSyncButton from "./SofitSyncButton";
 
 const SORT_FIELDS = [
   "dataHora",
@@ -281,19 +278,11 @@ export default async function CombustivelPage({
       <PageHeader
         title="Combustível"
         subtitle="Abastecimentos do cartão Ticket Log (via Sofit ou extrato manual), cruzados com o cadastro de motoristas e veículos."
-        secondaryActionHref="/combustivel/importar"
-        secondaryActionLabel="Importar extrato"
       />
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-3">
-          <Link href="/combustivel/resumo" className="text-xs text-blue-700 hover:underline">
-            Ver resumo de consumo por contrato →
-          </Link>
-          <Link href="/combustivel/cartoes" className="text-xs text-blue-700 hover:underline">
-            Ver saldo/limite dos cartões (Ticket Log) →
-          </Link>
-        </div>
-        {isSofitAvailable() && <SofitSyncButton />}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <Link href="/combustivel/resumo" className="text-xs text-blue-700 hover:underline">
+          Ver resumo de consumo por contrato →
+        </Link>
       </div>
 
       <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-4">
@@ -382,7 +371,9 @@ export default async function CombustivelPage({
                 <p className="mb-2 text-xs text-slate-500">
                   {weeksMissing} de {weekStartsInMonth.length} semana(s) ainda não sincronizada(s)
                 </p>
-                <AnpSyncButton mes={format(monthStart, "yyyy-MM")} />
+                <Link href="/integracoes" className="text-xs font-medium text-blue-700 hover:underline">
+                  Sincronizar em Integrações →
+                </Link>
               </div>
             ) : (
               <p className="text-xs text-slate-500">Preços da ANP sincronizados para o período.</p>

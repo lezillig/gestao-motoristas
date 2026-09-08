@@ -18,7 +18,6 @@ import {
 } from "@/lib/pontoCompliance";
 import { driverDailyLimitMinutes } from "@/lib/convencao";
 import { formatHoursMinutes } from "@/lib/time";
-import { isTiqueTaqueAvailable } from "@/lib/tiquetaque/client";
 
 export default async function PontoPage({
   searchParams,
@@ -212,8 +211,6 @@ export default async function PontoPage({
         subtitle="Registro de jornada e checagem automática de hora extra e interjornada (Lei 13.103/2015)."
         actionHref="/ponto/novo"
         actionLabel="Novo registro"
-        secondaryActionHref={isTiqueTaqueAvailable() ? "/ponto/importar-tiquetaque" : undefined}
-        secondaryActionLabel={isTiqueTaqueAvailable() ? "Importar do TiqueTaque" : undefined}
       />
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">

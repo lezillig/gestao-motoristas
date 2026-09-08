@@ -37,8 +37,6 @@ export default async function ClientesPage({
         subtitle="Cliente/centro de custo de cada motorista ou funcionário — base para análise de custo por contrato."
         actionHref="/cadastros/clientes/novo"
         actionLabel="Novo cliente"
-        secondaryActionHref="/cadastros/clientes/importar"
-        secondaryActionLabel="Importar centro de custo"
       />
 
       <div className={`${cardClass} p-0 overflow-hidden`}>
