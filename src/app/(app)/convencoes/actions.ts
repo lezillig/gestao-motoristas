@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { put, del, get } from "@vercel/blob";
+import { del, get, head } from "@vercel/blob";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -62,25 +62,31 @@ export async function createConvencao(
     return { error: "Sindicato não encontrado." };
   }
 
-  const arquivo = formData.get("arquivo");
-  if (!(arquivo instanceof File) || arquivo.size === 0) {
+  // O arquivo ja foi enviado direto do navegador pro Vercel Blob antes desta
+  // action rodar (ver ConvencaoForm.tsx e /api/convencoes/upload) — um upload
+  // de PDF real de convenção coletiva passando pela nossa funcao serverless
+  // esbarrava no limite de 4,5MB de corpo de request da propria Vercel
+  // (infraestrutura, nao configuravel via Next.js), quebrando a pagina
+  // inteira em vez de mostrar um erro tratavel. Aqui so recebemos o caminho
+  // de onde o arquivo ja esta.
+  const arquivoPath = formData.get("arquivoPath");
+  const arquivoNome = formData.get("arquivoNome");
+  if (typeof arquivoPath !== "string" || !arquivoPath) {
     return { error: "Selecione o arquivo PDF da convenção coletiva." };
   }
-  if (arquivo.type !== "application/pdf") {
-    return { error: "O arquivo precisa ser um PDF." };
+  // O path e prefixado com o id do sindicato no upload (ver
+  // /api/convencoes/upload) — confere de novo aqui por defesa em profundidade,
+  // já que essa action e a fonte de verdade de qual convenção fica associada
+  // a qual sindicato.
+  if (!arquivoPath.startsWith(`${sindicato.id}/`)) {
+    return { error: "Arquivo não corresponde ao sindicato selecionado." };
   }
-
-  const buffer = Buffer.from(await arquivo.arrayBuffer());
-  // O "type" do File e informado pelo navegador/cliente e pode ser forjado;
-  // confirma pela assinatura real do arquivo (magic bytes "%PDF-").
-  if (buffer.subarray(0, 5).toString("latin1") !== "%PDF-") {
-    return { error: "O arquivo não é um PDF válido." };
+  const info = await head(arquivoPath).catch(() => null);
+  if (!info || info.contentType !== "application/pdf") {
+    return { error: "O arquivo não é um PDF válido, ou o upload falhou. Tente novamente." };
   }
-
-  const safeName = arquivo.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
-  const fileName = `${Date.now()}-${safeName || "convencao.pdf"}`;
-  const relativePath = `${sindicato.id}/${fileName}`;
-  await put(relativePath, buffer, { access: "private", contentType: "application/pdf" });
+  const relativePath = arquivoPath;
+  const fileName = typeof arquivoNome === "string" && arquivoNome ? arquivoNome : "convencao.pdf";
 
   await prisma.convencaoColetiva.create({
     data: {
@@ -89,7 +95,7 @@ export async function createConvencao(
       tipo: parsed.data.tipo,
       vigenciaInicio: parsed.data.vigenciaInicio,
       vigenciaFim: parsed.data.vigenciaFim ?? null,
-      fileName: arquivo.name,
+      fileName,
       // Caminho relativo interno (nao e mais uma URL publica); o download
       // passa pela rota autenticada /api/convencoes/[id]/arquivo.
       fileUrl: relativePath,

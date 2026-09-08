@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useRef, useState } from "react";
+import { upload } from "@vercel/blob/client";
 import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 import { inputClass, labelClass, primaryButtonClass, secondaryButtonClass } from "@/lib/ui";
@@ -14,13 +15,62 @@ export default function ConvencaoForm({
   sindicatos: { id: string; nome: string }[];
 }) {
   const [state, formAction, pending] = useActionState<ConvencaoFormState, FormData>(action, {});
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+
+  // O arquivo vai direto do navegador pro Vercel Blob (nao pela nossa funcao
+  // serverless) — request de Server Action na Vercel tem um teto de 4,5MB de
+  // corpo IMPOSTO PELA PLATAFORMA, que um PDF real de convenção coletiva
+  // (comum vir escaneado) estourava facilmente, derrubando a pagina inteira
+  // em vez de mostrar um erro. So depois do upload concluido chamamos a
+  // action de verdade, passando so o caminho onde o arquivo ja esta.
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setUploadError(null);
+    const form = formRef.current;
+    if (!form) return;
+    const data = new FormData(form);
+    const sindicatoId = data.get("sindicatoId");
+    const arquivo = data.get("arquivo");
+    if (!(arquivo instanceof File) || arquivo.size === 0) {
+      setUploadError("Selecione o arquivo PDF da convenção coletiva.");
+      return;
+    }
+    if (typeof sindicatoId !== "string" || !sindicatoId) {
+      setUploadError("Selecione o sindicato.");
+      return;
+    }
+    if (arquivo.type !== "application/pdf") {
+      setUploadError("O arquivo precisa ser um PDF.");
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const safeName = arquivo.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+      const pathname = `${sindicatoId}/${Date.now()}-${safeName || "convencao.pdf"}`;
+      const blob = await upload(pathname, arquivo, {
+        access: "private",
+        handleUploadUrl: "/api/convencoes/upload",
+      });
+      data.set("arquivoPath", blob.pathname);
+      data.set("arquivoNome", arquivo.name);
+      data.delete("arquivo");
+      formAction(data);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Falha ao enviar o arquivo.");
+    } finally {
+      setUploading(false);
+    }
+  }
 
   return (
-    <form action={formAction} className="flex flex-col gap-4">
-      {state.error && (
+    <form ref={formRef} onSubmit={handleSubmit} className="flex flex-col gap-4">
+      {(state.error || uploadError) && (
         <div className="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-700">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{state.error}</span>
+          <span>{uploadError ?? state.error}</span>
         </div>
       )}
       <div>
@@ -62,8 +112,8 @@ export default function ConvencaoForm({
         <input type="file" name="arquivo" accept="application/pdf" required className={inputClass} />
       </div>
       <div className="mt-2 flex gap-3">
-        <button type="submit" disabled={pending} className={primaryButtonClass}>
-          {pending ? "Enviando..." : "Salvar"}
+        <button type="submit" disabled={pending || uploading} className={primaryButtonClass}>
+          {uploading ? "Enviando arquivo..." : pending ? "Salvando..." : "Salvar"}
         </button>
         <Link href="/convencoes" className={secondaryButtonClass}>
           Cancelar
