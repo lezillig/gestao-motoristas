@@ -11,20 +11,16 @@ import { toArray } from "@/lib/searchParams";
 import MergeFieldForm from "./MergeFieldForm";
 import { cnhAlertLevel, daysUntil } from "@/lib/driverAlerts";
 import { toggleDriverActive } from "./actions";
-import type { Prisma } from "@prisma/client";
+import {
+  CNH_STATUS_OPTIONS,
+  MOTORISTA_SORT_FIELDS,
+  fetchMotoristasList,
+  type MotoristaSortField,
+} from "@/lib/motoristasList";
+import MotoristasExportBar from "./MotoristasExportBar";
 
-const SORT_FIELDS = [
-  "name",
-  "cpf",
-  "sindicato",
-  "cnhExpiration",
-  "empregador",
-  "departamento",
-  "funcao",
-  "regimeHoras",
-  "escalaSemanal",
-] as const;
-type SortField = (typeof SORT_FIELDS)[number];
+const SORT_FIELDS: readonly MotoristaSortField[] = MOTORISTA_SORT_FIELDS;
+type SortField = MotoristaSortField;
 
 export default async function MotoristasPage({
   searchParams,
@@ -37,61 +33,30 @@ export default async function MotoristasPage({
     departamento?: string | string[];
     cargo?: string | string[];
     escala?: string;
+    cnhStatus?: string;
     sort?: string;
     dir?: string;
   }>;
 }) {
   const session = await requireRole("ADMIN", "GESTOR");
-  const { q, status, escala, sort, dir, ...rawFilters } = await searchParams;
+  const { q, status, escala, cnhStatus, sort, dir, ...rawFilters } = await searchParams;
   const sindicatoId = toArray(rawFilters.sindicatoId);
   const empregador = toArray(rawFilters.empregador);
   const departamento = toArray(rawFilters.departamento);
   const cargo = toArray(rawFilters.cargo);
 
-  const where: Prisma.DriverWhereInput = { companyId: session.companyId };
-  if (q) {
-    where.OR = [
-      { name: { contains: q, mode: "insensitive" } },
-      { cpf: { contains: q } },
-    ];
-  }
-  if (sindicatoId.length > 0) where.sindicatoId = { in: sindicatoId };
-  if (status === "ativo") where.active = true;
-  if (status === "inativo") where.active = false;
-  if (empregador.length > 0) where.empregador = { in: empregador };
-  if (departamento.length > 0) where.departamento = { in: departamento };
-  if (cargo.length > 0) where.funcao = { in: cargo };
-  if (escala === "SEIS_UM" || escala === "CINCO_DOIS") where.escalaSemanal = escala;
-
   const sortField: SortField = SORT_FIELDS.includes(sort as SortField) ? (sort as SortField) : "name";
   const sortDir = dir === "desc" ? "desc" : "asc";
-  const orderBy: Prisma.DriverOrderByWithRelationInput =
-    sortField === "sindicato"
-      ? { sindicato: { nome: sortDir } }
-      : sortField === "cnhExpiration"
-          ? { cnhExpiration: { sort: sortDir, nulls: "last" } }
-          : sortField === "cpf"
-            ? { cpf: sortDir }
-            : sortField === "empregador"
-              ? { empregador: { sort: sortDir, nulls: "last" } }
-              : sortField === "departamento"
-                ? { departamento: { sort: sortDir, nulls: "last" } }
-                : sortField === "funcao"
-                  ? { funcao: { sort: sortDir, nulls: "last" } }
-                  : sortField === "regimeHoras"
-                    ? { regimeHoras: { sort: sortDir, nulls: "last" } }
-                    : sortField === "escalaSemanal"
-                      ? { escalaSemanal: { sort: sortDir, nulls: "last" } }
-                      : { name: sortDir };
 
-  const sortLinkParams = { q, sindicatoId, status, empregador, departamento, cargo, escala };
+  const sortLinkParams = { q, sindicatoId, status, empregador, departamento, cargo, escala, cnhStatus };
 
   const [drivers, sindicatos, empregadorRows, departamentoRows, cargoRows] = await Promise.all([
-    prisma.driver.findMany({
-      where,
-      include: { sindicato: true },
-      orderBy,
-    }),
+    fetchMotoristasList(
+      session.companyId,
+      { q, sindicatoId, status, empregador, departamento, cargo, escala, cnhStatus },
+      sortField,
+      sortDir
+    ),
     prisma.sindicato.findMany({
       where: { companyId: session.companyId, active: true },
       orderBy: { nome: "asc" },
@@ -128,6 +93,7 @@ export default async function MotoristasPage({
         actionLabel="Novo motorista"
         secondaryActionHref="/cadastros/motoristas/importar"
         secondaryActionLabel="Importar planilha"
+        extra={<MotoristasExportBar searchParams={sortLinkParams} />}
       />
 
       <MergeFieldForm empregadores={empregadores} departamentos={departamentos} cargos={cargos} sindicatos={sindicatos} />
@@ -198,6 +164,17 @@ export default async function MotoristasPage({
             <option value="CINCO_DOIS">5x2</option>
           </select>
         </div>
+        <div className="w-48">
+          <label className="mb-1 block text-xs font-medium text-slate-600">Situação da CNH</label>
+          <select name="cnhStatus" defaultValue={cnhStatus ?? ""} className={inputClass}>
+            <option value="">Todas</option>
+            {CNH_STATUS_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
         <button type="submit" className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
           Filtrar
         </button>
@@ -205,7 +182,7 @@ export default async function MotoristasPage({
 
       <p className="mb-3 text-sm text-slate-500">
         {drivers.length} motorista{drivers.length === 1 ? "" : "s"} encontrado{drivers.length === 1 ? "" : "s"}
-        {q || sindicatoId.length > 0 || status || empregador.length > 0 || departamento.length > 0 || cargo.length > 0 || escala
+        {q || sindicatoId.length > 0 || status || empregador.length > 0 || departamento.length > 0 || cargo.length > 0 || escala || cnhStatus
           ? " com os filtros aplicados"
           : ""}
         .

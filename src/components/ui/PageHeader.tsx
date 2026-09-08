@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { Plus, Upload } from "lucide-react";
 
 export default function PageHeader({
@@ -8,6 +9,7 @@ export default function PageHeader({
   actionLabel,
   secondaryActionHref,
   secondaryActionLabel,
+  extra,
 }: {
   title: string;
   subtitle?: string;
@@ -15,6 +17,10 @@ export default function PageHeader({
   actionLabel?: string;
   secondaryActionHref?: string;
   secondaryActionLabel?: string;
+  // Slot livre pra acoes que nao se encaixam no par accao-primaria/
+  // secundaria de baixo (ex.: barra de exportacao) - renderizado antes
+  // delas.
+  extra?: ReactNode;
 }) {
   return (
     <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -23,6 +29,7 @@ export default function PageHeader({
         {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
       </div>
       <div className="flex items-center gap-2">
+        {extra}
         {secondaryActionHref && secondaryActionLabel && (
           <Link
             href={secondaryActionHref}
