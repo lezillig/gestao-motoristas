@@ -11,6 +11,22 @@ export type ProximaViagemEmRisco = {
   clientName: string | null;
 };
 
+// So os campos que essa funcao realmente usa — o chamador (dashboard/
+// page.tsx) ja buscou os motoristas ativos da empresa pra montar os cards
+// e a lista de alertas; aceitar esses dados prontos em vez de um
+// `companyId` evita repetir a MESMA consulta (`Driver.findMany` com
+// `active: true`) que ja tinha acabado de rodar segundos antes na mesma
+// requisicao — confirmado real (2026-09-08): essa era uma viagem a mais
+// ao banco no carregamento do Painel, pra TODO usuario, sem necessidade.
+export type CnhVigiaDriverInput = {
+  id: string;
+  name: string;
+  funcao: string | null;
+  departamento: string | null;
+  cnhCategory: string | null;
+  cnhExpiration: Date | null;
+};
+
 export type CnhRisco = {
   driverId: string;
   driverName: string;
@@ -40,12 +56,12 @@ export type CnhRisco = {
 // substituto alguem que a mesma tela ja sabe que nao esta disponivel —
 // confirmado real, 2026-09-06: sem isso o vigia podia sugerir um motorista
 // de ferias ou ja desligado).
-export async function buildCnhVigia(companyId: string, indisponiveis: Set<string>, now = new Date()): Promise<CnhRisco[]> {
-  const drivers = await prisma.driver.findMany({
-    where: { companyId, active: true },
-    select: { id: true, name: true, funcao: true, departamento: true, cnhCategory: true, cnhExpiration: true },
-  });
-
+export async function buildCnhVigia(
+  companyId: string,
+  drivers: CnhVigiaDriverInput[],
+  indisponiveis: Set<string>,
+  now = new Date()
+): Promise<CnhRisco[]> {
   // Calcula o nivel de CNH uma vez por motorista (nao 2-3x) — reaproveitado
   // no filtro de risco, no filtro do pool de candidatos e no `nivel` final.
   const levelByDriverId = new Map<string, CnhAlertLevel>(

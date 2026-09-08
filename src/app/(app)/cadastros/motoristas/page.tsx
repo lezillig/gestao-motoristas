@@ -2,7 +2,6 @@ import Link from "next/link";
 import { format } from "date-fns";
 import { Pencil, Search } from "lucide-react";
 import { requireRole } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass, inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import SortableTh from "@/components/ui/SortableTh";
@@ -15,6 +14,8 @@ import {
   CNH_STATUS_OPTIONS,
   MOTORISTA_SORT_FIELDS,
   fetchMotoristasList,
+  fetchDriverFilterOptions,
+  fetchSindicatoOptions,
   type MotoristaSortField,
 } from "@/lib/motoristasList";
 import MotoristasExportBar from "./MotoristasExportBar";
@@ -51,39 +52,17 @@ export default async function MotoristasPage({
 
   const sortLinkParams = { q, sindicatoId, status, empregador, departamento, cargo, escala, cnhStatus };
 
-  const [drivers, sindicatos, empregadorRows, departamentoRows, cargoRows] = await Promise.all([
+  const [drivers, sindicatos, filterOptions] = await Promise.all([
     fetchMotoristasList(
       session.companyId,
       { q, sindicatoId, status, empregador, departamento, cargo, escala, cnhStatus },
       sortField,
       sortDir
     ),
-    prisma.sindicato.findMany({
-      where: { companyId: session.companyId, active: true },
-      orderBy: { nome: "asc" },
-    }),
-    prisma.driver.findMany({
-      where: { companyId: session.companyId, empregador: { not: null } },
-      select: { empregador: true },
-      distinct: ["empregador"],
-      orderBy: { empregador: "asc" },
-    }),
-    prisma.driver.findMany({
-      where: { companyId: session.companyId, departamento: { not: null } },
-      select: { departamento: true },
-      distinct: ["departamento"],
-      orderBy: { departamento: "asc" },
-    }),
-    prisma.driver.findMany({
-      where: { companyId: session.companyId, funcao: { not: null } },
-      select: { funcao: true },
-      distinct: ["funcao"],
-      orderBy: { funcao: "asc" },
-    }),
+    fetchSindicatoOptions(session.companyId),
+    fetchDriverFilterOptions(session.companyId),
   ]);
-  const empregadores = empregadorRows.map((r) => r.empregador!).sort((a, b) => a.localeCompare(b));
-  const departamentos = departamentoRows.map((r) => r.departamento!).sort((a, b) => a.localeCompare(b));
-  const cargos = cargoRows.map((r) => r.funcao!).sort((a, b) => a.localeCompare(b));
+  const { empregadores, departamentos, cargos } = filterOptions;
 
   return (
     <div className="max-w-full">
@@ -92,8 +71,6 @@ export default async function MotoristasPage({
         subtitle="Cadastro base do motorista, com vínculo sindical para o motor de conformidade."
         actionHref="/cadastros/motoristas/novo"
         actionLabel="Novo motorista"
-        secondaryActionHref="/cadastros/motoristas/importar"
-        secondaryActionLabel="Importar planilha"
         extra={<MotoristasExportBar searchParams={sortLinkParams} />}
       />
 

@@ -10,6 +10,7 @@ import { toArray } from "@/lib/searchParams";
 import { parseLocalDate } from "@/lib/date";
 import { PONTUALIDADE_TOLERANCIA_MINUTOS } from "@/lib/pontoCompliance";
 import { toMinutes } from "@/lib/time";
+import { fetchDriverFilterOptions } from "@/lib/motoristasList";
 import PontoEscalaTable from "./PontoEscalaTable";
 import type { PontoEscalaRow } from "./types";
 
@@ -110,30 +111,13 @@ export default async function PontoEscalaPage({
     ...(unidade.length > 0 ? { departamento: { in: unidade } } : {}),
   };
 
-  const [drivers, empregadorRows, cargoRows, unidadeRows, escalas, entries] = await Promise.all([
+  const [drivers, filterOptions, escalas, entries] = await Promise.all([
     prisma.driver.findMany({
       where: { companyId: session.companyId, active: true },
       orderBy: { name: "asc" },
       select: { id: true, name: true, departamento: true },
     }),
-    prisma.driver.findMany({
-      where: { companyId: session.companyId, empregador: { not: null } },
-      select: { empregador: true },
-      distinct: ["empregador"],
-      orderBy: { empregador: "asc" },
-    }),
-    prisma.driver.findMany({
-      where: { companyId: session.companyId, funcao: { not: null } },
-      select: { funcao: true },
-      distinct: ["funcao"],
-      orderBy: { funcao: "asc" },
-    }),
-    prisma.driver.findMany({
-      where: { companyId: session.companyId, departamento: { not: null } },
-      select: { departamento: true },
-      distinct: ["departamento"],
-      orderBy: { departamento: "asc" },
-    }),
+    fetchDriverFilterOptions(session.companyId),
     prisma.escala.findMany({
       where: {
         companyId: session.companyId,
@@ -160,9 +144,7 @@ export default async function PontoEscalaPage({
     }),
   ]);
 
-  const empregadores = empregadorRows.map((r) => r.empregador!).sort((a, b) => a.localeCompare(b));
-  const cargos = cargoRows.map((r) => r.funcao!).sort((a, b) => a.localeCompare(b));
-  const unidades = unidadeRows.map((r) => r.departamento!).sort((a, b) => a.localeCompare(b));
+  const { empregadores, cargos, departamentos: unidades } = filterOptions;
   const driverById = new Map(drivers.map((d) => [d.id, d]));
 
   // Junta escala e ponto por dia num "outer join": um dia entra na lista se

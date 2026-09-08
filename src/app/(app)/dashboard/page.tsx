@@ -111,7 +111,7 @@ export default async function DashboardPage() {
       .filter((d) => afastamentoByDriverId.has(d.id) || tiquetaqueByDriverId.has(d.id))
       .map((d) => d.id)
   );
-  const vigiaCnh = await buildCnhVigia(session.companyId, indisponiveisParaSubstituicao, now);
+  const vigiaCnh = await buildCnhVigia(session.companyId, activeDrivers, indisponiveisParaSubstituicao, now);
   const vigiaByDriverId = new Map(vigiaCnh.map((v) => [v.driverId, v]));
 
   return (

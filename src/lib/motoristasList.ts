@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { cnhAlertLevel, type CnhAlertLevel } from "@/lib/driverAlerts";
 import type { Prisma } from "@prisma/client";
@@ -98,3 +99,62 @@ export async function fetchMotoristasList(
   if (filters.cnhStatus.length === 0) return drivers;
   return drivers.filter((d) => filters.cnhStatus.includes(cnhAlertLevel(d.cnhExpiration, d.funcao, d.departamento)));
 }
+
+export type DriverFilterOptions = { empregadores: string[]; departamentos: string[]; cargos: string[] };
+
+// Empregador/departamento/cargo dos dropdowns de filtro (Motoristas E
+// Ponto x Escala usam exatamente as mesmas 3 consultas "distinct" sobre
+// Driver) — esses valores só mudam quando alguém importa uma planilha
+// nova ou edita um cadastro, então repetir as 3 consultas em toda visita
+// a qualquer uma das duas telas era trabalho refeito à toa. 5 minutos de
+// cache: folgado o bastante pra eliminar quase toda repetição, curto o
+// bastante pra um cargo novo aparecer no filtro logo depois de importado.
+export const fetchDriverFilterOptions = unstable_cache(
+  async (companyId: string): Promise<DriverFilterOptions> => {
+    const [empregadorRows, departamentoRows, cargoRows] = await Promise.all([
+      prisma.driver.findMany({
+        where: { companyId, empregador: { not: null } },
+        select: { empregador: true },
+        distinct: ["empregador"],
+        orderBy: { empregador: "asc" },
+      }),
+      prisma.driver.findMany({
+        where: { companyId, departamento: { not: null } },
+        select: { departamento: true },
+        distinct: ["departamento"],
+        orderBy: { departamento: "asc" },
+      }),
+      prisma.driver.findMany({
+        where: { companyId, funcao: { not: null } },
+        select: { funcao: true },
+        distinct: ["funcao"],
+        orderBy: { funcao: "asc" },
+      }),
+    ]);
+    return {
+      empregadores: empregadorRows.map((r) => r.empregador!).sort((a, b) => a.localeCompare(b)),
+      departamentos: departamentoRows.map((r) => r.departamento!).sort((a, b) => a.localeCompare(b)),
+      cargos: cargoRows.map((r) => r.funcao!).sort((a, b) => a.localeCompare(b)),
+    };
+  },
+  ["driver-filter-options"],
+  { revalidate: 300 }
+);
+
+export type SindicatoOption = { id: string; nome: string };
+
+// Só a lista pro dropdown de filtro (id+nome) — não confundir com a
+// consulta do Painel, que traz _count de motoristas por sindicato e por
+// isso NÃO pode usar esse cache (contagem precisa estar sempre atual).
+export const fetchSindicatoOptions = unstable_cache(
+  async (companyId: string): Promise<SindicatoOption[]> => {
+    const rows = await prisma.sindicato.findMany({
+      where: { companyId, active: true },
+      select: { id: true, nome: true },
+      orderBy: { nome: "asc" },
+    });
+    return rows;
+  },
+  ["sindicato-options"],
+  { revalidate: 300 }
+);
