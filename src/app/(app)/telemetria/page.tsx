@@ -114,22 +114,27 @@ export default async function TelemetriaPage({
     <div className="max-w-6xl">
       <PageHeader title="Telemetria" subtitle="Velocidade e comportamento de direção por veículo." />
 
-      <div className={`${cardClass} mb-6 flex flex-wrap items-center justify-between gap-3`}>
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
-            <Satellite className="h-4 w-4" />
+      {/* Com Ituran configurada, a leitura ja vem sozinha pelo cron (e o
+          botao manual de gerar leituras vive em /integracoes) - esse card so
+          faz sentido no fallback simulado, onde nao ha nenhuma outra forma
+          de gerar dado nenhum pra ver a tela funcionando. */}
+      {provider.name !== "Ituran" && (
+        <div className={`${cardClass} mb-6 flex flex-wrap items-center justify-between gap-3`}>
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+              <Satellite className="h-4 w-4" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-slate-800">Fornecedor ativo: {provider.name}</p>
+              <p className="text-xs text-slate-500">
+                Sem credenciais da Ituran ainda — leituras simuladas por um adapter que segue a mesma interface do
+                fornecedor real, então trocar para a API da Ituran não muda o resto do produto.
+              </p>
+            </div>
           </div>
-          <div>
-            <p className="text-sm font-medium text-slate-800">Fornecedor ativo: {provider.name}</p>
-            <p className="text-xs text-slate-500">
-              {provider.name === "Ituran"
-                ? "Posição, velocidade, odômetro e limite de velocidade real vindos da Ituran."
-                : "Sem credenciais da Ituran ainda — leituras simuladas por um adapter que segue a mesma interface do fornecedor real, então trocar para a API da Ituran não muda o resto do produto."}
-            </p>
-          </div>
+          <GerarLeiturasButton label="Gerar leituras simuladas" />
         </div>
-        {provider.name !== "Ituran" && <GerarLeiturasButton label="Gerar leituras simuladas" />}
-      </div>
+      )}
 
       <form className={`${cardClass} mb-6 flex flex-wrap items-end gap-3`} method="get">
         <div>

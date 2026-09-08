@@ -7,8 +7,6 @@ import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass, inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import SortableTh from "@/components/ui/SortableTh";
-import { isTiqueTaqueAvailable } from "@/lib/tiquetaque/client";
-import LeaveImportButton from "./LeaveImportButton";
 import KpiCard, { type KpiDetailRow } from "@/components/ui/KpiCard";
 import { checkFolgaCompensada, findFeriasVencidas, folgaIssueLabel, parseDataReferencia } from "@/lib/afastamentoCompliance";
 import type { Prisma } from "@prisma/client";
@@ -187,12 +185,6 @@ export default async function AfastamentosPage({
         title="Afastamentos"
         subtitle="Folgas, atestados, férias e abonos dos motoristas, importados do TiqueTaque."
       />
-
-      {isTiqueTaqueAvailable() && (
-        <div className={`${cardClass} mb-6`}>
-          <LeaveImportButton />
-        </div>
-      )}
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <KpiCard

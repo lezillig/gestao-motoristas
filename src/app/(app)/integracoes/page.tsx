@@ -22,6 +22,7 @@ import { isTicketLogAvailable } from "@/lib/ticketlog/client";
 import { isIturanAvailable } from "@/lib/ituran/client";
 import AnpSyncButton from "../combustivel/AnpSyncButton";
 import SofitSyncButton from "../combustivel/SofitSyncButton";
+import LeaveImportButton from "../afastamentos/LeaveImportButton";
 
 function GoTo({ href, label }: { href: string; label: string }) {
   return (
@@ -94,10 +95,13 @@ export default async function IntegracoesPage() {
         <IntegrationCard
           icon={Clock}
           title="TiqueTaque"
-          description="Ponto eletrônico e cadastro de funcionários. Roda sozinho toda madrugada; dá pra importar/atualizar na hora também."
+          description="Ponto eletrônico, cadastro de funcionários e afastamentos (folgas/atestados/férias). Roda sozinho toda madrugada; dá pra importar/atualizar na hora também."
           unavailable={!isTiqueTaqueAvailable()}
         >
-          <GoTo href="/ponto/importar-tiquetaque" label="Importar agora" />
+          <div className="flex flex-col gap-3">
+            <GoTo href="/ponto/importar-tiquetaque" label="Importar ponto/funcionários" />
+            {isTiqueTaqueAvailable() && <LeaveImportButton />}
+          </div>
         </IntegrationCard>
 
         <IntegrationCard
