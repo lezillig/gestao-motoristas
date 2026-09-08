@@ -367,14 +367,9 @@ export default async function CombustivelPage({
           <p className="text-xs text-slate-500">acima da média da região (+10%)</p>
           <div className="mt-3 border-t border-slate-100 pt-3 text-sm">
             {weeksMissing > 0 ? (
-              <div>
-                <p className="mb-2 text-xs text-slate-500">
-                  {weeksMissing} de {weekStartsInMonth.length} semana(s) ainda não sincronizada(s)
-                </p>
-                <Link href="/integracoes" className="text-xs font-medium text-blue-700 hover:underline">
-                  Sincronizar em Integrações →
-                </Link>
-              </div>
+              <p className="text-xs text-slate-500">
+                {weeksMissing} de {weekStartsInMonth.length} semana(s) ainda não sincronizada(s)
+              </p>
             ) : (
               <p className="text-xs text-slate-500">Preços da ANP sincronizados para o período.</p>
             )}
