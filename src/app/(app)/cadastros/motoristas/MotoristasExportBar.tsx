@@ -8,11 +8,11 @@ function buildQuery(filters: MotoristasFilters, formato: "xlsx" | "csv" | "pdf")
   if (filters.q) params.set("q", filters.q);
   if (filters.status) params.set("status", filters.status);
   if (filters.escala) params.set("escala", filters.escala);
-  if (filters.cnhStatus) params.set("cnhStatus", filters.cnhStatus);
   for (const v of filters.sindicatoId) params.append("sindicatoId", v);
   for (const v of filters.empregador) params.append("empregador", v);
   for (const v of filters.departamento) params.append("departamento", v);
   for (const v of filters.cargo) params.append("cargo", v);
+  for (const v of filters.cnhStatus) params.append("cnhStatus", v);
   params.set("formato", formato);
   return params.toString();
 }

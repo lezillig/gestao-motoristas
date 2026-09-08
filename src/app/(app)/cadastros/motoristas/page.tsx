@@ -7,6 +7,7 @@ import { cardClass, badgeClass, inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import SortableTh from "@/components/ui/SortableTh";
 import ComboboxFilter from "@/components/ui/ComboboxFilter";
+import CheckboxDropdownFilter from "@/components/ui/CheckboxDropdownFilter";
 import { toArray } from "@/lib/searchParams";
 import MergeFieldForm from "./MergeFieldForm";
 import { cnhAlertLevel, daysUntil } from "@/lib/driverAlerts";
@@ -33,17 +34,18 @@ export default async function MotoristasPage({
     departamento?: string | string[];
     cargo?: string | string[];
     escala?: string;
-    cnhStatus?: string;
+    cnhStatus?: string | string[];
     sort?: string;
     dir?: string;
   }>;
 }) {
   const session = await requireRole("ADMIN", "GESTOR");
-  const { q, status, escala, cnhStatus, sort, dir, ...rawFilters } = await searchParams;
+  const { q, status, escala, sort, dir, ...rawFilters } = await searchParams;
   const sindicatoId = toArray(rawFilters.sindicatoId);
   const empregador = toArray(rawFilters.empregador);
   const departamento = toArray(rawFilters.departamento);
   const cargo = toArray(rawFilters.cargo);
+  const cnhStatus = toArray(rawFilters.cnhStatus);
 
   const sortField: SortField = SORT_FIELDS.includes(sort as SortField) ? (sort as SortField) : "name";
   const sortDir = dir === "desc" ? "desc" : "asc";
@@ -165,15 +167,7 @@ export default async function MotoristasPage({
           </select>
         </div>
         <div className="w-48">
-          <label className="mb-1 block text-xs font-medium text-slate-600">Situação da CNH</label>
-          <select name="cnhStatus" defaultValue={cnhStatus ?? ""} className={inputClass}>
-            <option value="">Todas</option>
-            {CNH_STATUS_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
+          <CheckboxDropdownFilter name="cnhStatus" label="Situação da CNH" options={CNH_STATUS_OPTIONS} defaultValue={cnhStatus} />
         </div>
         <button type="submit" className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
           Filtrar
@@ -182,7 +176,14 @@ export default async function MotoristasPage({
 
       <p className="mb-3 text-sm text-slate-500">
         {drivers.length} motorista{drivers.length === 1 ? "" : "s"} encontrado{drivers.length === 1 ? "" : "s"}
-        {q || sindicatoId.length > 0 || status || empregador.length > 0 || departamento.length > 0 || cargo.length > 0 || escala || cnhStatus
+        {q ||
+        sindicatoId.length > 0 ||
+        status ||
+        empregador.length > 0 ||
+        departamento.length > 0 ||
+        cargo.length > 0 ||
+        escala ||
+        cnhStatus.length > 0
           ? " com os filtros aplicados"
           : ""}
         .

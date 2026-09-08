@@ -33,8 +33,9 @@ export type MotoristasFilters = {
   escala?: string;
   // Nao e coluna do banco (cnhAlertLevel depende de funcao/departamento pra
   // decidir se o cargo exige CNH, ver driverAlerts.ts) — filtrado em memoria
-  // depois da query, nao no `where` do Prisma.
-  cnhStatus?: string;
+  // depois da query, nao no `where` do Prisma. Multi-selecao (filtro estilo
+  // Excel), por isso lista em vez de valor unico.
+  cnhStatus: string[];
 };
 
 export function buildMotoristasWhere(companyId: string, filters: MotoristasFilters): Prisma.DriverWhereInput {
@@ -94,6 +95,6 @@ export async function fetchMotoristasList(
     include: { sindicato: true },
     orderBy: buildMotoristasOrderBy(sortField, sortDir),
   });
-  if (!filters.cnhStatus) return drivers;
-  return drivers.filter((d) => cnhAlertLevel(d.cnhExpiration, d.funcao, d.departamento) === filters.cnhStatus);
+  if (filters.cnhStatus.length === 0) return drivers;
+  return drivers.filter((d) => filters.cnhStatus.includes(cnhAlertLevel(d.cnhExpiration, d.funcao, d.departamento)));
 }

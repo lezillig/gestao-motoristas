@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
     departamento: toArray(searchParams.getAll("departamento")),
     cargo: toArray(searchParams.getAll("cargo")),
     escala: searchParams.get("escala") ?? undefined,
-    cnhStatus: searchParams.get("cnhStatus") ?? undefined,
+    cnhStatus: toArray(searchParams.getAll("cnhStatus")),
   };
   const sortParam = searchParams.get("sort") ?? "";
   const sortField: MotoristaSortField = (MOTORISTA_SORT_FIELDS as readonly string[]).includes(sortParam)
