@@ -23,7 +23,15 @@ export function isIturanAvailable(): boolean {
 // vez de guardar/renovar entre invocacoes (mesmo espirito de simplicidade
 // do cliente SIAT, que nem token tem). app_id e opcional — confirmado real
 // (2026-08-21): a conta da AzulMob autentica normalmente sem ele.
-async function getAccessToken(): Promise<string> {
+//
+// Retry com backoff so em 5xx (falha passageira do lado da Ituran,
+// confirmado real 2026-09-08: um "500 Internal Server Error" isolado no
+// /oauth/token que sumiu no proximo teste, segundos depois) — nunca em
+// 4xx, que e credencial errada/invalida e insistir so atrasa mostrar o
+// erro real pro usuario.
+const MAX_AUTH_RETRIES = 2;
+
+async function getAccessToken(attempt = 0): Promise<string> {
   const username = process.env.ITURAN_USERNAME;
   const password = process.env.ITURAN_PASSWORD;
   const appId = process.env.ITURAN_APP_ID;
@@ -42,6 +50,10 @@ async function getAccessToken(): Promise<string> {
     }),
   });
   if (!res.ok) {
+    if (res.status >= 500 && attempt < MAX_AUTH_RETRIES) {
+      await new Promise((resolve) => setTimeout(resolve, 1500 * 2 ** attempt));
+      return getAccessToken(attempt + 1);
+    }
     const body = await res.text().catch(() => "");
     throw new Error(`Ituran respondeu ${res.status} ao autenticar: ${body.slice(0, 200)}`);
   }
