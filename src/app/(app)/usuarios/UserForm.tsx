@@ -31,7 +31,7 @@ export default function UserForm({ action }: { action: (formData: FormData) => v
           ))}
         </select>
         <p className="mt-1 text-xs text-slate-500">
-          Folha vê apenas o menu Folha (Afastamentos, Relatórios, Histórico de correções).
+          Folha vê apenas o menu Gestão de Pessoas (Afastamentos, Relatórios, Histórico de correções).
         </p>
       </div>
       <div className="mt-2 flex gap-3">

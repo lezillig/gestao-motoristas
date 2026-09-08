@@ -64,14 +64,8 @@ const NAV: NavItem[] = [
     roles: ["ADMIN", "GESTOR"],
   },
   {
-    href: "/escalas",
-    label: "Escalas",
-    icon: CalendarDays,
-    roles: ["ADMIN", "GESTOR"],
-  },
-  {
     href: "/ponto",
-    label: "Folha",
+    label: "Gestão de Pessoas",
     icon: Clock,
     roles: ["ADMIN", "GESTOR", "FOLHA"],
     // Ordem alfabética por label — mais fácil de achar um item específico
@@ -80,6 +74,7 @@ const NAV: NavItem[] = [
       { href: "/afastamentos", label: "Afastamentos", icon: CalendarOff },
       { href: "/ponto/analise", label: "Análise de riscos", icon: ShieldAlert, roles: ["ADMIN", "GESTOR"] },
       { href: "/convencoes", label: "Convenção coletiva", icon: FileText, roles: ["ADMIN", "GESTOR"] },
+      { href: "/escalas", label: "Escalas", icon: CalendarDays, roles: ["ADMIN", "GESTOR"] },
       { href: "/ponto/correcoes", label: "Histórico de correções", icon: History },
       { href: "/ponto/passivo", label: "Passivo trabalhista", icon: Scale },
       { href: "/ponto/escala", label: "Ponto x Escala", icon: AlarmClockOff, roles: ["ADMIN", "GESTOR"] },
@@ -158,8 +153,9 @@ export default function Sidebar({ role }: { role: Role }) {
         // prefixo — senao um item pai com href "/ponto" ficaria marcado
         // (via isActive's startsWith) em qualquer rota "/ponto/*", inclusive
         // uma que e outro item TOP-LEVEL irmao (ex.: "/ponto/analise", que
-        // depois de promovido a item proprio nao e mais filho de "Folha",
-        // mas ainda comeca com "/ponto/" — bug real visto em producao: os
+        // depois de promovido a item proprio nao e mais filho de "Gestão de
+        // Pessoas", mas ainda comeca com "/ponto/" — bug real visto em produ-
+        // cao: os
         // dois itens ficavam destacados ao mesmo tempo).
         const childActive = item.children?.some((c) => isActive(pathname, c.href)) ?? false;
         const selfMatches = hasChildren ? pathname === item.href : isActive(pathname, item.href);
