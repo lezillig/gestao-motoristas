@@ -1,4 +1,4 @@
-import type { LwCondutorDTO, LwMultaDTO, LwVeiculoDTO } from "./types";
+import type { LwCondutorDTO, LwImagemDTO, LwMultaDTO, LwVeiculoDTO } from "./types";
 
 const LW_BASE_URL = "https://api.lwtecnologia.com.br/api";
 
@@ -112,4 +112,16 @@ export async function statusIndicacao(
   idMulta: string
 ): Promise<{ status: number; status_descricao: string; mensagens_erro: unknown[] } | null> {
   return lwGet(token, `/indicacao/statusIndicacao/${encodeURIComponent(idMulta)}`);
+}
+
+// Imagem da notificacao oficial da multa. Prioriza o endpoint especifico de
+// notificacao ("N") e cai pro endpoint mais generico (que tambem cobre
+// "NS" — notificacao generica — e outras referencias) so se o primeiro nao
+// trouxer nada — confirmado real 2026-09-09 que os dois podem coexistir com
+// referencias diferentes pra mesma multa.
+export async function buscarPrimeiraImagemMulta(token: string, idMulta: string): Promise<LwImagemDTO | null> {
+  const notificacao = await lwGet<LwImagemDTO[]>(token, `/multas/buscarImagemNotificacao/${encodeURIComponent(idMulta)}`);
+  if (notificacao && notificacao.length > 0) return notificacao[0];
+  const outras = await lwGet<LwImagemDTO[]>(token, `/multas/buscarImagensMulta/${encodeURIComponent(idMulta)}`);
+  return outras?.[0] ?? null;
 }

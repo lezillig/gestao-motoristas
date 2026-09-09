@@ -37,6 +37,18 @@ export interface LwVeiculoDTO {
   [key: string]: unknown;
 }
 
+// GET /multas/buscarImagemNotificacao/{id_multa} e /multas/buscarImagensMulta/{id_multa}
+// (MultaImagemDTO) — imagem vem em base64 puro (sem prefixo "data:"),
+// imagemTipo ja da o MIME certo pra servir direto (confirmado real
+// 2026-09-09: "image/jpeg").
+export interface LwImagemDTO {
+  id_multa: number;
+  referencia: string;
+  referencia_descricao: string;
+  imagemTipo: string;
+  imagem: string;
+}
+
 export interface LwCondutorDTO {
   cpf: string;
   nome: string;

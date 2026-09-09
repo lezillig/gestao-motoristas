@@ -214,7 +214,17 @@ export default async function MultasPage({
                   {m.dataInfracao ? format(m.dataInfracao, "dd/MM/yyyy") : "—"}
                   {m.horaInfracao ? ` ${m.horaInfracao}` : ""}
                 </td>
-                <td className="whitespace-nowrap px-4 py-3 text-slate-600">{m.ait ?? "—"}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                  {m.ait ?? "—"}
+                  <a
+                    href={`/api/multas/${m.id}/imagem`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ml-2 text-[11px] font-medium text-blue-700 hover:underline"
+                  >
+                    Ver notificação
+                  </a>
+                </td>
                 <td className="whitespace-nowrap px-4 py-3">
                   <span className={`${badgeClass} ${SITUACAO_BADGE[m.situacaoLw ?? ""] ?? "bg-slate-100 text-slate-600"}`}>
                     {m.situacaoLw ?? "—"}

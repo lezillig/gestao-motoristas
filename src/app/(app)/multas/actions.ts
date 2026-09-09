@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { isLwAvailable, getLwToken, buscarCondutorPorCpfEMulta, indicarCondutorLw } from "@/lib/lw/client";
+import { isLwAvailable, getLwToken, buscarCondutorPorCpfEMulta, indicarCondutorLw, statusIndicacao } from "@/lib/lw/client";
 import { prepareMultasSyncPlan, syncMultasForVehicle, type MultasSyncPlan } from "@/lib/lw/sync";
 import { resolveCondutorParaMulta } from "@/lib/lw/resolveCondutor";
 
@@ -138,4 +138,51 @@ export async function enviarIndicacaoCondutor(multaId: string): Promise<EnviarIn
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Falha ao enviar indicação para a LW." };
   }
+}
+
+export type VerificarStatusState = { error?: string; descricao?: string };
+
+// So consulta e guarda a descricao textual que a LW devolve (ver
+// observacao) — nao muda o status ENVIADA sozinho pra VALIDADA/REJEITADA,
+// porque o significado exato dos valores desse endpoint nao foi confirmado
+// contra um caso real ainda (nenhuma indicacao foi validada de verdade
+// nesta integracao ate agora). Fica a cargo de quem le a descricao marcar
+// manualmente (ver marcarIndicacaoResultado abaixo) — mais seguro que
+// adivinhar o mapeamento e classificar errado sozinho.
+export async function verificarStatusIndicacao(multaId: string): Promise<VerificarStatusState> {
+  const session = await requireRole("ADMIN", "GESTOR");
+  const multa = await prisma.multa.findUnique({ where: { id: multaId, companyId: session.companyId } });
+  if (!multa) return { error: "Multa não encontrada." };
+
+  try {
+    const token = await getLwToken();
+    const resultado = await statusIndicacao(token, multa.lwId);
+    const descricao = resultado
+      ? `${resultado.status_descricao}${resultado.mensagens_erro?.length ? ` — ${JSON.stringify(resultado.mensagens_erro)}` : ""}`
+      : "LW não retornou informação de status para esta indicação ainda.";
+
+    await prisma.indicacaoCondutor.update({ where: { multaId }, data: { observacao: descricao } });
+    revalidatePath("/multas");
+    return { descricao };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Falha ao consultar status na LW." };
+  }
+}
+
+export type MarcarResultadoState = { error?: string; ok?: boolean };
+
+// Confirmacao manual de leitura humana da descricao trazida por
+// verificarStatusIndicacao (ver comentario acima sobre por que nao e
+// automatico).
+export async function marcarIndicacaoResultado(multaId: string, resultado: "VALIDADA" | "REJEITADA"): Promise<MarcarResultadoState> {
+  const session = await requireRole("ADMIN", "GESTOR");
+  const indicacao = await prisma.indicacaoCondutor.findFirst({ where: { multaId, companyId: session.companyId } });
+  if (!indicacao) return { error: "Indicação não encontrada." };
+
+  await prisma.indicacaoCondutor.update({
+    where: { multaId },
+    data: { status: resultado, validadaEm: resultado === "VALIDADA" ? new Date() : indicacao.validadaEm },
+  });
+  revalidatePath("/multas");
+  return { ok: true };
 }

@@ -2,15 +2,16 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Send } from "lucide-react";
+import { CheckCircle2, Loader2, RefreshCw, Send, XCircle } from "lucide-react";
 import { badgeClass, secondaryButtonClass } from "@/lib/ui";
-import { definirCondutorManual, enviarIndicacaoCondutor } from "./actions";
+import { definirCondutorManual, enviarIndicacaoCondutor, verificarStatusIndicacao, marcarIndicacaoResultado } from "./actions";
 
 type Driver = { id: string; name: string; cpf: string };
 type Indicacao = {
   status: "PENDENTE_MANUAL" | "SUGERIDA" | "ENVIADA" | "VALIDADA" | "REJEITADA";
   driverId: string | null;
   origemResolucao: string | null;
+  observacao: string | null;
   driver: { id: string; name: string; cpf: string; cnh: string | null } | null;
 } | null;
 
@@ -52,6 +53,7 @@ export default function IndicacaoCell({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [descricaoLw, setDescricaoLw] = useState<string | null>(indicacao?.observacao ?? null);
 
   const status = indicacao?.status ?? "PENDENTE_MANUAL";
   const isAuto = indicacao?.origemResolucao && indicacao.origemResolucao !== "MANUAL";
@@ -75,8 +77,27 @@ export default function IndicacaoCell({
     });
   }
 
+  function handleVerificarStatus() {
+    setError(null);
+    startTransition(async () => {
+      const r = await verificarStatusIndicacao(multaId);
+      if (r.error) setError(r.error);
+      else setDescricaoLw(r.descricao ?? null);
+    });
+  }
+
+  function handleMarcarResultado(resultado: "VALIDADA" | "REJEITADA") {
+    setError(null);
+    startTransition(async () => {
+      const r = await marcarIndicacaoResultado(multaId, resultado);
+      if (r.error) setError(r.error);
+      else router.refresh();
+    });
+  }
+
   const podeEditar = status === "PENDENTE_MANUAL" || status === "SUGERIDA";
   const podeEnviar = status === "SUGERIDA" && indicacao?.driverId;
+  const podeVerificarEClassificar = status === "ENVIADA";
 
   return (
     <div className="flex flex-col items-start gap-1.5">
@@ -117,6 +138,43 @@ export default function IndicacaoCell({
           {pending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
           Enviar indicação
         </button>
+      )}
+
+      {podeVerificarEClassificar && (
+        <>
+          <button
+            type="button"
+            onClick={handleVerificarStatus}
+            disabled={pending}
+            className={`${secondaryButtonClass} inline-flex items-center gap-1.5 px-2 py-1 text-[11px] disabled:opacity-60`}
+          >
+            {pending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+            Verificar status na LW
+          </button>
+          {descricaoLw && <p className="max-w-[220px] text-[11px] text-slate-500">{descricaoLw}</p>}
+          {/* A LW nao confirma um formato fixo pra "validado"/"rejeitado" nesse
+              retorno (nunca testado contra um caso real) — por isso e a
+              pessoa que le a descricao acima quem classifica, em vez do
+              sistema adivinhar sozinho. */}
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              onClick={() => handleMarcarResultado("VALIDADA")}
+              disabled={pending}
+              className="inline-flex items-center gap-1 rounded-md border border-emerald-200 px-2 py-1 text-[11px] font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
+            >
+              <CheckCircle2 className="h-3 w-3" /> Marcar validado
+            </button>
+            <button
+              type="button"
+              onClick={() => handleMarcarResultado("REJEITADA")}
+              disabled={pending}
+              className="inline-flex items-center gap-1 rounded-md border border-red-200 px-2 py-1 text-[11px] font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
+            >
+              <XCircle className="h-3 w-3" /> Marcar rejeitado
+            </button>
+          </div>
+        </>
       )}
 
       {error && <p className="max-w-[220px] text-[11px] text-red-600">{error}</p>}
