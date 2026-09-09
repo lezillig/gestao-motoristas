@@ -18,7 +18,8 @@ const INITIAL_BACKFILL_SINCE = new Date("2026-01-01T00:00:00.000Z");
 
 export async function syncSofitFuelCore(
   companyId: string,
-  deadline?: number
+  deadline?: number,
+  sinceOverride?: Date
 ): Promise<{ created: number; skipped: number; hasMore: boolean }> {
   const [lastSync, vehicles, drivers, existingCodigos] = await Promise.all([
     prisma.fuelTransaction.findFirst({
@@ -34,7 +35,12 @@ export async function syncSofitFuelCore(
     }),
   ]);
 
-  const since = lastSync?.dataHora ?? INITIAL_BACKFILL_SINCE;
+  // sinceOverride: backfill manual de uma lacuna especifica (ver
+  // Integrações) — sempre mais antigo que o normal "desde a ultima
+  // sincronizacao", entao refaz um trecho ja coberto tambem, mas o
+  // dedupe por codigoTransacao acima (`codigosVistos`) ja garante que so
+  // o que realmente falta vira INSERT novo.
+  const since = sinceOverride ?? lastSync?.dataHora ?? INITIAL_BACKFILL_SINCE;
   const vehicleByPlate = new Map(vehicles.map((v) => [v.plate, v.id]));
   const driverByCpf = new Map(drivers.map((d) => [d.cpf.replace(/\D/g, ""), d.id]));
   const driverByName = new Map(drivers.map((d) => [d.name.trim().toLowerCase(), d.id]));
@@ -105,6 +111,21 @@ export async function syncSofitFuel(_prevState: SofitSyncState): Promise<SofitSy
     // 45s de orcamento pro fetch em si, deixando folga pro resto da acao
     // (queries, createMany) dentro do teto real da funcao serverless.
     const result = await syncSofitFuelCore(session.companyId, Date.now() + 45_000);
+    revalidatePath("/combustivel");
+    return { result };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Falha ao sincronizar com a Sofit." };
+  }
+}
+
+// Backfill manual de uma lacuna especifica (ver painel de lacunas em
+// Integrações) — mesma logica do botao normal, so que comeca no dia da
+// lacuna em vez de "desde a ultima sincronizacao". `since` no formato
+// yyyy-MM-dd.
+export async function backfillSofitFuel(since: string): Promise<SofitSyncState> {
+  const session = await requireRole("ADMIN", "GESTOR");
+  try {
+    const result = await syncSofitFuelCore(session.companyId, Date.now() + 45_000, new Date(`${since}T00:00:00.000Z`));
     revalidatePath("/combustivel");
     return { result };
   } catch (e) {

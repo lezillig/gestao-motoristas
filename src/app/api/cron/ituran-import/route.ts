@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { endOfDay, format, startOfDay, subDays } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import { fetchTrips, fetchVehiclesRealtime, isIturanAvailable } from "@/lib/ituran/client";
-import { matchEscalaForVehicleTrips } from "@/lib/vehicleTripEscala";
+import { syncVehicleTripsForCompany } from "@/lib/ituran/tripSync";
 
 // Agendado no vercel.json pra rodar as 06:00 UTC (= 03:00 horario de
 // Brasilia), depois do cron do TiqueTaque (02:00 BRT). Busca o snapshot de
@@ -54,13 +54,7 @@ export async function GET(req: NextRequest) {
   const errors: string[] = [];
 
   for (const company of companies) {
-    const [vehicles, escalas] = await Promise.all([
-      prisma.vehicle.findMany({ where: { companyId: company.id }, select: { id: true, plate: true } }),
-      prisma.escala.findMany({
-        where: { companyId: company.id, date: { gte: dateFrom, lte: dateTo } },
-        select: { id: true, vehicleId: true, date: true },
-      }),
-    ]);
+    const vehicles = await prisma.vehicle.findMany({ where: { companyId: company.id }, select: { id: true, plate: true } });
     const vehicleIdByPlate = new Map(vehicles.map((v) => [v.plate.trim().toUpperCase(), v.id]));
     if (vehicleIdByPlate.size === 0) continue;
 
@@ -83,56 +77,10 @@ export async function GET(req: NextRequest) {
       readingsCreated += readingsData.length;
     }
 
-    const companyTrips = trips.filter((t) => vehicleIdByPlate.has(t.plate));
-    const tripVehicleIds = companyTrips.map((t) => ({ vehicleId: vehicleIdByPlate.get(t.plate) as string, startAt: t.startAt }));
-    const matches = matchEscalaForVehicleTrips(tripVehicleIds, escalas);
-
-    for (let i = 0; i < companyTrips.length; i++) {
-      const t = companyTrips[i];
-      const vehicleId = vehicleIdByPlate.get(t.plate) as string;
-      const escalaId = matches.get(i) ?? null;
-      if (!escalaId) tripsSemEscala++;
-      try {
-        await prisma.vehicleTrip.upsert({
-          where: { iturarTripId: t.iturarTripId },
-          create: {
-            companyId: company.id,
-            vehicleId,
-            iturarTripId: t.iturarTripId,
-            startAt: t.startAt,
-            endAt: t.endAt,
-            distanceKm: t.distanceKm,
-            maxSpeedKmh: t.maxSpeedKmh,
-            idleMinutes: t.idleMinutes,
-            driverNameRaw: t.driverNameRaw,
-            startLat: t.startLat,
-            startLon: t.startLon,
-            startAddress: t.startAddress,
-            endLat: t.endLat,
-            endLon: t.endLon,
-            endAddress: t.endAddress,
-            escalaId,
-          },
-          update: {
-            endAt: t.endAt,
-            distanceKm: t.distanceKm,
-            maxSpeedKmh: t.maxSpeedKmh,
-            idleMinutes: t.idleMinutes,
-            driverNameRaw: t.driverNameRaw,
-            startLat: t.startLat,
-            startLon: t.startLon,
-            startAddress: t.startAddress,
-            endLat: t.endLat,
-            endLon: t.endLon,
-            endAddress: t.endAddress,
-            escalaId,
-          },
-        });
-        tripsUpserted++;
-      } catch (e) {
-        errors.push(`viagem ${t.iturarTripId} (${t.plate}): ${e instanceof Error ? e.message : "erro desconhecido"}`);
-      }
-    }
+    const tripResult = await syncVehicleTripsForCompany(company.id, trips, dateFrom, dateTo);
+    tripsUpserted += tripResult.upserted;
+    tripsSemEscala += tripResult.semEscala;
+    errors.push(...tripResult.errors);
   }
 
   return NextResponse.json({
