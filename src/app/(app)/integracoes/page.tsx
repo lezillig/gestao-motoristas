@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { format } from "date-fns";
+import { addDays, format, min as minDate } from "date-fns";
 import type { ComponentType } from "react";
 import {
   Clock,
@@ -13,6 +13,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { requireRole } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { cardClass, secondaryButtonClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import { isTiqueTaqueAvailable } from "@/lib/tiquetaque/client";
@@ -23,6 +24,7 @@ import { isIturanAvailable } from "@/lib/ituran/client";
 import AnpSyncButton from "../combustivel/AnpSyncButton";
 import SofitSyncButton from "../combustivel/SofitSyncButton";
 import LeaveImportButton from "../afastamentos/LeaveImportButton";
+import SyncAllButton from "./SyncAllButton";
 
 function GoTo({ href, label }: { href: string; label: string }) {
   return (
@@ -81,14 +83,50 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 // organiza a navegação, não substitui os atalhos contextuais que já
 // existiam em cada tela.
 export default async function IntegracoesPage() {
-  await requireRole("ADMIN", "GESTOR");
+  const session = await requireRole("ADMIN", "GESTOR");
   const mesAtual = format(new Date(), "yyyy-MM");
+  const today = new Date();
+
+  // Mesmo calculo de "desde a ultima vez" ja usado em /ponto/importar-
+  // tiquetaque e /escalas/importar-siat — reaproveitado aqui pra alimentar
+  // o botao "Sincronizar tudo" com o mesmo intervalo padrao que cada tela
+  // já usaria sozinha.
+  const [lastImported, lastSynced] = await Promise.all([
+    prisma.timeClockEntry.findFirst({
+      where: { companyId: session.companyId, fonte: { in: ["TIQUETAQUE", "TIQUETAQUE_CSV"] } },
+      orderBy: { date: "desc" },
+      select: { date: true },
+    }),
+    prisma.escala.findFirst({
+      where: { companyId: session.companyId, fonte: "SIAT" },
+      orderBy: { date: "desc" },
+      select: { date: true },
+    }),
+  ]);
+  const pontoRange = {
+    start: format(lastImported ? minDate([addDays(lastImported.date, 1), today]) : today, "yyyy-MM-dd"),
+    end: format(today, "yyyy-MM-dd"),
+  };
+  const siatRange = {
+    start: format(lastSynced ? minDate([addDays(lastSynced.date, 1), today]) : today, "yyyy-MM-dd"),
+    end: format(today, "yyyy-MM-dd"),
+  };
 
   return (
     <div className="max-w-5xl">
       <PageHeader
         title="Integrações"
         subtitle="Sincronizações automáticas e uploads manuais, organizados por sistema."
+      />
+
+      <SyncAllButton
+        tiquetaqueAvailable={isTiqueTaqueAvailable()}
+        siatAvailable={isSiatAvailable()}
+        sofitAvailable={isSofitAvailable()}
+        ticketLogAvailable={isTicketLogAvailable()}
+        pontoRange={pontoRange}
+        siatRange={siatRange}
+        mesAtual={mesAtual}
       />
 
       <Section title="Sistemas externos">
