@@ -30,6 +30,16 @@ const STATUS_BADGE: Record<string, string> = {
   REJEITADA: "bg-red-100 text-red-700",
 };
 
+// Rotulo por origem da resolucao automatica (ver src/lib/lw/resolveCondutor.ts)
+// — o usuario pediu pra deixar explicito quando a sugestao veio da Escala
+// planejada (SIAT) em vez do uso real do veiculo, ja que sao fontes com
+// confiabilidade diferente (uso real reflete quem de fato pegou o veiculo;
+// escala e so o planejado, pode ter sido trocado na hora).
+const ORIGEM_LABEL: Record<string, string> = {
+  USO_VEICULO_AUTOMATICO: "sugestão automática (uso real do veículo)",
+  ESCALA_AUTOMATICA: "sugestão automática (escala no SIAT)",
+};
+
 export default function IndicacaoCell({
   multaId,
   indicacao,
@@ -72,7 +82,11 @@ export default function IndicacaoCell({
     <div className="flex flex-col items-start gap-1.5">
       <div className="flex items-center gap-2">
         <span className={`${badgeClass} ${STATUS_BADGE[status]}`}>{STATUS_LABEL[status]}</span>
-        {isAuto && status === "SUGERIDA" && <span className="text-[11px] text-slate-400">sugestão automática</span>}
+        {isAuto && status === "SUGERIDA" && (
+          <span className="text-[11px] text-slate-400">
+            {ORIGEM_LABEL[indicacao!.origemResolucao!] ?? "sugestão automática"}
+          </span>
+        )}
       </div>
 
       {indicacao?.driver && <p className="text-xs text-slate-600">{indicacao.driver.name}</p>}

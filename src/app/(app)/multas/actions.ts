@@ -36,6 +36,10 @@ export async function syncMultasVehicle(vehicleId: string, placaParaConsulta: st
       include: { indicacao: true },
     });
     for (const multa of multas) {
+      // Toda multa ganha uma linha de IndicacaoCondutor (mesmo sem sugestao
+      // automatica, status fica PENDENTE_MANUAL) — sem isso, filtrar/ordenar
+      // por status de indicacao na listagem teria que tratar "sem linha" e
+      // "PENDENTE_MANUAL" como o mesmo caso em dois lugares diferentes.
       const podeAutoResolver =
         !multa.indicacao || (multa.indicacao.origemResolucao !== "MANUAL" && multa.indicacao.status === "PENDENTE_MANUAL");
       if (!podeAutoResolver) continue;
@@ -45,19 +49,24 @@ export async function syncMultasVehicle(vehicleId: string, placaParaConsulta: st
         dataInfracao: multa.dataInfracao,
         horaInfracao: multa.horaInfracao,
       });
-      if (!resolved.driverId) continue;
 
-      await prisma.indicacaoCondutor.upsert({
-        where: { multaId: multa.id },
-        create: {
-          companyId: session.companyId,
-          multaId: multa.id,
-          driverId: resolved.driverId,
-          status: "SUGERIDA",
-          origemResolucao: resolved.origem,
-        },
-        update: { driverId: resolved.driverId, status: "SUGERIDA", origemResolucao: resolved.origem },
-      });
+      if (resolved.driverId) {
+        await prisma.indicacaoCondutor.upsert({
+          where: { multaId: multa.id },
+          create: {
+            companyId: session.companyId,
+            multaId: multa.id,
+            driverId: resolved.driverId,
+            status: "SUGERIDA",
+            origemResolucao: resolved.origem,
+          },
+          update: { driverId: resolved.driverId, status: "SUGERIDA", origemResolucao: resolved.origem },
+        });
+      } else if (!multa.indicacao) {
+        await prisma.indicacaoCondutor.create({
+          data: { companyId: session.companyId, multaId: multa.id, status: "PENDENTE_MANUAL" },
+        });
+      }
     }
 
     revalidatePath("/multas");
