@@ -25,6 +25,8 @@ import AnpSyncButton from "../combustivel/AnpSyncButton";
 import SofitSyncButton from "../combustivel/SofitSyncButton";
 import LeaveImportButton from "../afastamentos/LeaveImportButton";
 import SyncAllButton from "./SyncAllButton";
+import GapStatusPanel from "./GapStatusPanel";
+import { checkAllGaps, RECURRING_GAP_WINDOW_DAYS } from "@/lib/integrationGaps";
 
 function GoTo({ href, label }: { href: string; label: string }) {
   return (
@@ -112,6 +114,8 @@ export default async function IntegracoesPage() {
     end: format(today, "yyyy-MM-dd"),
   };
 
+  const gaps = await checkAllGaps(session.companyId, RECURRING_GAP_WINDOW_DAYS);
+
   return (
     <div className="max-w-5xl">
       <PageHeader
@@ -128,6 +132,8 @@ export default async function IntegracoesPage() {
         siatRange={siatRange}
         mesAtual={mesAtual}
       />
+
+      <GapStatusPanel initial={gaps} />
 
       <Section title="Sistemas externos">
         <IntegrationCard
