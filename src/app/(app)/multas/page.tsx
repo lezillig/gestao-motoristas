@@ -74,11 +74,24 @@ export default async function MultasPage({
       : Promise.resolve([]),
   ]);
 
+  // "Vencendo" e "vencido" sao situacoes diferentes — muita multa aqui e
+  // historico antigo (2024/2025) com prazo ja passado ha muito tempo, entao
+  // um filtro so "dias <= 5" (sem exigir dias >= 0) conta esses casos
+  // vencidos ha meses junto com os que realmente vencem em breve, inflando
+  // o numero (bug real confirmado 2026-09-09: 532 de 561 multas apareciam
+  // como "vencendo" so por causa disso).
   const agora = new Date().getTime();
+  const semIndicacaoConfirmada = (m: (typeof multas)[number]) =>
+    m.indicacao?.status !== "ENVIADA" && m.indicacao?.status !== "VALIDADA";
+  const diasPrazo = (m: (typeof multas)[number]) =>
+    m.dataLimiteIndicacao ? (m.dataLimiteIndicacao.getTime() - agora) / 86_400_000 : null;
+  const prazoVencido = multas.filter((m) => {
+    const dias = diasPrazo(m);
+    return dias !== null && dias < 0 && semIndicacaoConfirmada(m);
+  });
   const prazoVencendo = multas.filter((m) => {
-    if (!m.dataLimiteIndicacao || m.indicacao?.status === "ENVIADA" || m.indicacao?.status === "VALIDADA") return false;
-    const dias = (m.dataLimiteIndicacao.getTime() - agora) / 86_400_000;
-    return dias <= 5;
+    const dias = diasPrazo(m);
+    return dias !== null && dias >= 0 && dias <= 5 && semIndicacaoConfirmada(m);
   });
 
   const temFiltro =
@@ -109,11 +122,20 @@ export default async function MultasPage({
         </div>
       )}
 
-      {prazoVencendo.length > 0 && (
-        <div className={`${cardClass} mb-6 flex items-start gap-3 border-red-200 bg-red-50`}>
+      {prazoVencido.length > 0 && (
+        <div className={`${cardClass} mb-3 flex items-start gap-3 border-red-200 bg-red-50`}>
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
           <p className="text-sm text-red-800">
-            {prazoVencendo.length} multa(s) com prazo de indicação de condutor vencendo em até 5 dias.
+            {prazoVencido.length} multa(s) com prazo de indicação de condutor já vencido, sem indicação enviada.
+          </p>
+        </div>
+      )}
+
+      {prazoVencendo.length > 0 && (
+        <div className={`${cardClass} mb-6 flex items-start gap-3 border-amber-200 bg-amber-50`}>
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+          <p className="text-sm text-amber-800">
+            {prazoVencendo.length} multa(s) com prazo de indicação de condutor vencendo nos próximos 5 dias.
           </p>
         </div>
       )}
