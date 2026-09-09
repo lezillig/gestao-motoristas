@@ -42,3 +42,33 @@ export function utcInstantToLocalParts(iso: string): { dateISO: string; time: st
   const mm = String(shifted.getUTCMinutes()).padStart(2, "0");
   return { dateISO: `${y}-${m}-${d}`, time: `${hh}:${mm}` };
 }
+
+// Instante UTC exato da meia-noite em Brasilia de "hoje + daysFromToday" —
+// pra filtrar colunas de TIMESTAMP REAL (ex.: VehicleTrip.startAt,
+// FuelTransaction.dataHora) por dia-calendario brasileiro. Nunca usa a
+// hora local do PROCESSO (a Vercel roda em UTC, nao Brasilia) — sem isso,
+// um evento real do fim da noite em Brasilia (ex. 23h30 BRT = 02h30 UTC do
+// dia seguinte) cai no dia UTC errado e o dia certo aparece como "sem
+// dado" mesmo tendo dado (confirmado real, 2026-09-09, no check de
+// lacunas da Ituran — ver lib/integrationGaps.ts). Diferente de
+// Escala.date/TimeClockEntry.date, que ja sao um "rotulo" de data sem
+// hora real (ver parseLocalDate) e nao sofrem desse problema.
+export function brazilMidnightUtc(daysFromToday = 0): Date {
+  const shifted = new Date(Date.now() - BRAZIL_UTC_OFFSET_HOURS * 60 * 60 * 1000);
+  const y = shifted.getUTCFullYear();
+  const m = shifted.getUTCMonth();
+  const d = shifted.getUTCDate() + daysFromToday;
+  return new Date(Date.UTC(y, m, d) + BRAZIL_UTC_OFFSET_HOURS * 60 * 60 * 1000);
+}
+
+// Inverso de utcInstantToLocalParts: converte um "yyyy-MM-dd" (rotulo de
+// dia-calendario de Brasilia, ex.: um dia que o usuario escolheu
+// reimportar em Integrações) no instante UTC exato da meia-noite REAL em
+// Brasilia desse dia — pra montar o intervalo de busca de uma API externa
+// (Ituran, Sofit) que espera limites em UTC.
+export function brazilDateStringToUtc(dateISO: string): Date {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateISO);
+  if (!match) return new Date(NaN);
+  const [, y, m, d] = match;
+  return new Date(Date.UTC(Number(y), Number(m) - 1, Number(d)) + BRAZIL_UTC_OFFSET_HOURS * 60 * 60 * 1000);
+}

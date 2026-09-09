@@ -4,13 +4,13 @@ import { useState } from "react";
 import { format } from "date-fns";
 import { CheckCircle2, AlertTriangle, Loader2, Search, DownloadCloud } from "lucide-react";
 import { secondaryButtonClass } from "@/lib/ui";
-import { checkDeepGaps } from "./actions";
+import { checkDeepGaps, checkGapsFor } from "./actions";
 import { prepareTiqueTaqueImport, importDriverFromTiqueTaque } from "../ponto/actions";
 import { syncFromSiat } from "../escalas/siatActions";
 import { backfillSofitFuel } from "../combustivel/sofitActions";
 import { backfillIturanTrips } from "../telemetria/actions";
 import { sleep, TIQUETAQUE_IMPORT_PACE_MS } from "@/lib/tiquetaque/pace";
-import type { AllGapChecks, GapCheck } from "@/lib/integrationGaps";
+import { RECURRING_GAP_WINDOW_DAYS, DEEP_GAP_WINDOW_DAYS, type AllGapChecks, type GapCheck } from "@/lib/integrationGaps";
 
 type SystemKey = keyof AllGapChecks;
 type ImportState = { status: "idle" | "running" | "done" | "error"; message?: string; progress?: { done: number; total: number } };
@@ -50,29 +50,28 @@ function GapRow({
               {check.missingDays.length} dia(s) sem dado:{" "}
               {check.missingDays.map((d) => format(new Date(`${d}T00:00:00`), "dd/MM")).join(", ")}
             </p>
-            {importState.status === "done" ? (
-              <p className="mt-1 text-emerald-700">{importState.message}</p>
-            ) : importState.status === "error" ? (
-              <p className="mt-1 text-red-600">{importState.message}</p>
-            ) : (
-              <button
-                type="button"
-                onClick={onImport}
-                disabled={importState.status === "running"}
-                className={`${secondaryButtonClass} mt-1.5 inline-flex items-center gap-1.5 px-2 py-1 text-[11px] disabled:opacity-60`}
-              >
-                {importState.status === "running" ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <DownloadCloud className="h-3 w-3" />
-                )}
-                {importState.status === "running"
-                  ? importState.progress
-                    ? `Importando... ${importState.progress.done}/${importState.progress.total}`
-                    : "Importando..."
-                  : "Importar todas datas faltantes"}
-              </button>
-            )}
+            {/* Mensagem do ultimo import fica visivel MESMO com o botao —
+                se a lacuna nao fechou de vez (ex.: Sofit com hasMore),
+                precisa poder clicar de novo sem recarregar a pagina. */}
+            {importState.status === "done" && <p className="mt-1 text-emerald-700">{importState.message}</p>}
+            {importState.status === "error" && <p className="mt-1 text-red-600">{importState.message}</p>}
+            <button
+              type="button"
+              onClick={onImport}
+              disabled={importState.status === "running"}
+              className={`${secondaryButtonClass} mt-1.5 inline-flex items-center gap-1.5 px-2 py-1 text-[11px] disabled:opacity-60`}
+            >
+              {importState.status === "running" ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <DownloadCloud className="h-3 w-3" />
+              )}
+              {importState.status === "running"
+                ? importState.progress
+                  ? `Importando... ${importState.progress.done}/${importState.progress.total}`
+                  : "Importando..."
+                : "Importar todas datas faltantes"}
+            </button>
           </>
         )}
       </div>
@@ -90,7 +89,7 @@ function GapRow({
 // cada tela e montar esse intervalo manualmente.
 export default function GapStatusPanel({ initial }: { initial: AllGapChecks }) {
   const [gaps, setGaps] = useState<AllGapChecks>(initial);
-  const [windowLabel, setWindowLabel] = useState("últimos 7 dias");
+  const [windowDays, setWindowDays] = useState(RECURRING_GAP_WINDOW_DAYS);
   const [checking, setChecking] = useState(false);
   const [imports, setImports] = useState<Record<SystemKey, ImportState>>({
     tiquetaquePonto: { status: "idle" },
@@ -103,12 +102,21 @@ export default function GapStatusPanel({ initial }: { initial: AllGapChecks }) {
     setImports((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
   }
 
+  // Reconfere so ESSE sistema, na mesma janela que estava sendo exibida —
+  // sem isso, depois de um "Importar todas datas faltantes" bem-sucedido a
+  // lacuna corrigida continuava aparecendo na tela (o `gaps` state so era
+  // atualizado pelas duas checagens manuais, nunca depois de um import).
+  async function refreshGapsFor(key: SystemKey) {
+    const fresh = await checkGapsFor(key, windowDays);
+    setGaps((prev) => ({ ...prev, [key]: fresh }));
+  }
+
   async function handleDeepCheck() {
     setChecking(true);
     try {
       const result = await checkDeepGaps();
       setGaps(result);
-      setWindowLabel("últimos 60 dias");
+      setWindowDays(DEEP_GAP_WINDOW_DAYS);
     } finally {
       setChecking(false);
     }
@@ -139,6 +147,7 @@ export default function GapStatusPanel({ initial }: { initial: AllGapChecks }) {
         corrected += r.corrected;
       }
       patchImport("tiquetaquePonto", { status: "done", message: `${created} novo(s), ${corrected} corrigido(s).` });
+      await refreshGapsFor("tiquetaquePonto");
     } catch (e) {
       patchImport("tiquetaquePonto", { status: "error", message: e instanceof Error ? e.message : "Falha inesperada." });
     }
@@ -154,6 +163,7 @@ export default function GapStatusPanel({ initial }: { initial: AllGapChecks }) {
         status: "done",
         message: `${r.vehicles.created + r.drivers.created + r.escalas.created} novo(s), ${r.vehicles.updated + r.drivers.updated + r.escalas.updated} atualizado(s).`,
       });
+      await refreshGapsFor("siat");
     } catch (e) {
       patchImport("siat", { status: "error", message: e instanceof Error ? e.message : "Falha inesperada." });
     }
@@ -165,12 +175,15 @@ export default function GapStatusPanel({ initial }: { initial: AllGapChecks }) {
     patchImport("sofit", { status: "running" });
     try {
       const r = await backfillSofitFuel(range.min);
-      if (r.error) patchImport("sofit", { status: "error", message: r.error });
-      else
+      if (r.error) {
+        patchImport("sofit", { status: "error", message: r.error });
+      } else {
         patchImport("sofit", {
           status: "done",
           message: `${r.result?.created ?? 0} novo(s) importado(s).${r.result?.hasMore ? " Ainda tem período mais antigo — clique de novo depois." : ""}`,
         });
+        await refreshGapsFor("sofit");
+      }
     } catch (e) {
       patchImport("sofit", { status: "error", message: e instanceof Error ? e.message : "Falha inesperada." });
     }
@@ -182,8 +195,12 @@ export default function GapStatusPanel({ initial }: { initial: AllGapChecks }) {
     patchImport("ituran", { status: "running" });
     try {
       const r = await backfillIturanTrips(range.min, range.max);
-      if (r.error) patchImport("ituran", { status: "error", message: r.error });
-      else patchImport("ituran", { status: "done", message: `${r.result?.upserted ?? 0} viagem(ns) importada(s)/atualizada(s).` });
+      if (r.error) {
+        patchImport("ituran", { status: "error", message: r.error });
+      } else {
+        patchImport("ituran", { status: "done", message: `${r.result?.upserted ?? 0} viagem(ns) importada(s)/atualizada(s).` });
+        await refreshGapsFor("ituran");
+      }
     } catch (e) {
       patchImport("ituran", { status: "error", message: e instanceof Error ? e.message : "Falha inesperada." });
     }
@@ -193,7 +210,7 @@ export default function GapStatusPanel({ initial }: { initial: AllGapChecks }) {
     <div className="mb-8 rounded-2xl border border-slate-200 bg-white p-5">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-slate-900">Última importação e lacunas ({windowLabel})</p>
+          <p className="text-sm font-semibold text-slate-900">Última importação e lacunas (últimos {windowDays} dias)</p>
           <p className="text-xs text-slate-500">
             Dias sem nenhum dado da fonte — pode indicar uma sincronização que falhou.
           </p>

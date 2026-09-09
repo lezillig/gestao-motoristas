@@ -5,6 +5,7 @@ import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { matchVehicleAndDriver } from "@/lib/fuelMatching";
 import { fetchFuelTransactionsSince } from "@/lib/sofit/client";
+import { brazilDateStringToUtc } from "@/lib/date";
 import type { Prisma } from "@prisma/client";
 
 // Sem sincronizacao anterior (1a vez): comeca em 2026-01-01 (pedido
@@ -125,7 +126,7 @@ export async function syncSofitFuel(_prevState: SofitSyncState): Promise<SofitSy
 export async function backfillSofitFuel(since: string): Promise<SofitSyncState> {
   const session = await requireRole("ADMIN", "GESTOR");
   try {
-    const result = await syncSofitFuelCore(session.companyId, Date.now() + 45_000, new Date(`${since}T00:00:00.000Z`));
+    const result = await syncSofitFuelCore(session.companyId, Date.now() + 45_000, brazilDateStringToUtc(since));
     revalidatePath("/combustivel");
     return { result };
   } catch (e) {

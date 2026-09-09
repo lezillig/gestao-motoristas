@@ -1,5 +1,6 @@
 import { format, addDays, startOfDay } from "date-fns";
 import { prisma } from "@/lib/prisma";
+import { brazilMidnightUtc, utcInstantToLocalParts } from "@/lib/date";
 
 export type GapCheck = { lastDate: Date | null; missingDays: string[] };
 
@@ -14,11 +15,28 @@ export type GapCheck = { lastDate: Date | null; missingDays: string[] };
 export const RECURRING_GAP_WINDOW_DAYS = 7;
 export const DEEP_GAP_WINDOW_DAYS = 60;
 
+// Pra Escala.date/TimeClockEntry.date — ja sao um "rotulo" de data sem
+// hora real (ver parseLocalDate), entao formatar com o timezone do
+// PROCESSO (UTC na Vercel) sempre bate com o dia que foi gravado.
 function missingDaysFromDates(dates: Date[], start: Date, endExclusive: Date): string[] {
   const present = new Set(dates.map((d) => format(d, "yyyy-MM-dd")));
   const missing: string[] = [];
   for (let d = start; d < endExclusive; d = addDays(d, 1)) {
     const key = format(d, "yyyy-MM-dd");
+    if (!present.has(key)) missing.push(key);
+  }
+  return missing;
+}
+
+// Pra VehicleTrip.startAt/FuelTransaction.dataHora — TIMESTAMP real (nao
+// um rotulo de data), entao precisa converter pro dia-calendario de
+// Brasilia antes de agrupar (ver brazilMidnightUtc em lib/date.ts pro
+// porque). `start`/`endExclusive` aqui ja devem vir de brazilMidnightUtc.
+function missingDaysFromTimestamps(dates: Date[], start: Date, endExclusive: Date): string[] {
+  const present = new Set(dates.map((d) => utcInstantToLocalParts(d.toISOString())?.dateISO).filter((v): v is string => !!v));
+  const missing: string[] = [];
+  for (let d = start; d < endExclusive; d = addDays(d, 1)) {
+    const key = utcInstantToLocalParts(d.toISOString())!.dateISO;
     if (!present.has(key)) missing.push(key);
   }
   return missing;
@@ -65,8 +83,8 @@ export async function checkSiatGaps(companyId: string, days: number): Promise<Ga
 }
 
 export async function checkSofitGaps(companyId: string, days: number): Promise<GapCheck> {
-  const today = startOfDay(new Date());
-  const windowStart = addDays(today, -days);
+  const today = brazilMidnightUtc(0);
+  const windowStart = brazilMidnightUtc(-days);
   const [last, txs] = await Promise.all([
     prisma.fuelTransaction.findFirst({
       where: { companyId },
@@ -80,13 +98,13 @@ export async function checkSofitGaps(companyId: string, days: number): Promise<G
   ]);
   return {
     lastDate: last?.dataHora ?? null,
-    missingDays: missingDaysFromDates(txs.map((t) => t.dataHora), windowStart, today),
+    missingDays: missingDaysFromTimestamps(txs.map((t) => t.dataHora), windowStart, today),
   };
 }
 
 export async function checkIturanGaps(companyId: string, days: number): Promise<GapCheck> {
-  const today = startOfDay(new Date());
-  const windowStart = addDays(today, -days);
+  const today = brazilMidnightUtc(0);
+  const windowStart = brazilMidnightUtc(-days);
   const [last, trips] = await Promise.all([
     prisma.vehicleTrip.findFirst({
       where: { companyId },
@@ -100,7 +118,7 @@ export async function checkIturanGaps(companyId: string, days: number): Promise<
   ]);
   return {
     lastDate: last?.startAt ?? null,
-    missingDays: missingDaysFromDates(trips.map((t) => t.startAt), windowStart, today),
+    missingDays: missingDaysFromTimestamps(trips.map((t) => t.startAt), windowStart, today),
   };
 }
 
