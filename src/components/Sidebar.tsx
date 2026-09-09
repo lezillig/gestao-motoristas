@@ -29,6 +29,7 @@ import {
   SearchCheck,
   AlertTriangle,
   Plug,
+  Gavel,
 } from "lucide-react";
 
 type NavItem = {
@@ -111,6 +112,12 @@ const NAV: NavItem[] = [
     href: "/combustivel",
     label: "Combustível",
     icon: Fuel,
+    roles: ["ADMIN", "GESTOR"],
+  },
+  {
+    href: "/multas",
+    label: "Multas",
+    icon: Gavel,
     roles: ["ADMIN", "GESTOR"],
   },
   {

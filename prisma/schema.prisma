@@ -74,6 +74,22 @@ enum EscalaSemanal {
   CINCO_DOIS
 }
 
+// Status do fluxo de indicacao de condutor (integracao LW Tecnologia,
+// ver src/lib/lw/). PENDENTE_MANUAL = a resolucao automatica por
+// Escala/VehicleUsageLog nao achou candidato unico, alguem precisa decidir
+// na tela. SUGERIDA = achou candidato unico, mas ainda nao foi enviado pra
+// LW (precisa de confirmacao humana antes do envio, nunca automatico —
+// indicar condutor tem efeito juridico real). ENVIADA = POST /indicacao/
+// indicar_condutor feito, aguardando validacao do orgao. VALIDADA/REJEITADA
+// refletem processoIndicacaoValidado.
+enum StatusIndicacaoCondutor {
+  PENDENTE_MANUAL
+  SUGERIDA
+  ENVIADA
+  VALIDADA
+  REJEITADA
+}
+
 // ---------- Multi-tenant: empresa/cliente ----------
 // Mesmo desenho do Sistema Agendamento (ver memoria design-system-agendamento):
 // cada empresa e um tenant isolado. Fase 2 roda com uma unica empresa, mas o
@@ -86,23 +102,25 @@ model Company {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users             User[]
-  sindicatos        Sindicato[]
-  drivers           Driver[]
-  vehicles          Vehicle[]
-  escalas           Escala[]
-  timeClockEntries  TimeClockEntry[]
-  convencoes        ConvencaoColetiva[]
-  regrasConvencao   RegraConvencao[]
-  usageLogs         VehicleUsageLog[]
-  telemetryReadings TelemetryReading[]
-  vehicleTrips      VehicleTrip[]
-  fuelTransactions  FuelTransaction[]
-  fuelCardStatuses  FuelCardStatus[]
+  users                User[]
+  sindicatos           Sindicato[]
+  drivers              Driver[]
+  vehicles             Vehicle[]
+  escalas              Escala[]
+  timeClockEntries     TimeClockEntry[]
+  convencoes           ConvencaoColetiva[]
+  regrasConvencao      RegraConvencao[]
+  usageLogs            VehicleUsageLog[]
+  telemetryReadings    TelemetryReading[]
+  vehicleTrips         VehicleTrip[]
+  fuelTransactions     FuelTransaction[]
+  fuelCardStatuses     FuelCardStatus[]
   consumptionSummaries FuelConsumptionSummary[]
   timeClockCorrections TimeClockCorrection[]
-  driverLeaves      DriverLeave[]
-  clientes          Cliente[]
+  driverLeaves         DriverLeave[]
+  clientes             Cliente[]
+  multas               Multa[]
+  indicacaoCondutors   IndicacaoCondutor[]
 }
 
 model User {
@@ -151,10 +169,10 @@ model Sindicato {
 // planilha financeira de centro de custo, nunca tocado pelo sync do
 // TiqueTaque, para não arriscar perder o vínculo silenciosamente.
 model Cliente {
-  id        String   @id @default(cuid())
-  companyId String
-  company   Company  @relation(fields: [companyId], references: [id])
-  nome      String
+  id                      String   @id @default(cuid())
+  companyId               String
+  company                 Company  @relation(fields: [companyId], references: [id])
+  nome                    String
   // Janela de horario contratada (HH:mm, texto igual TimeClockEntry.clockIn)
   // — a maioria dos contratos define inicio/fim estimados de operacao, nao
   // um total de horas/mes nem numero de motoristas fixos (confirmado com o
@@ -168,10 +186,10 @@ model Cliente {
   // vinculados a este cliente (ver src/lib/pontoCompliance.ts:findClientLocationDivergences).
   // Nenhum motorista/turno e obrigado a ter isso preenchido; sem lat/lon, o
   // cliente so fica de fora dessa checagem especifica, sem quebrar nada.
-  latitude  Float?
-  longitude Float?
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
+  latitude                Float?
+  longitude               Float?
+  active                  Boolean  @default(true)
+  createdAt               DateTime @default(now())
 
   drivers Driver[]
 
@@ -180,33 +198,33 @@ model Cliente {
 
 // ---------- Motorista ----------
 model Driver {
-  id            String    @id @default(cuid())
-  companyId     String
-  company       Company   @relation(fields: [companyId], references: [id])
-  userId        String?   @unique
-  user          User?     @relation(fields: [userId], references: [id])
-  sindicatoId   String?
-  sindicato     Sindicato? @relation(fields: [sindicatoId], references: [id])
+  id                  String         @id @default(cuid())
+  companyId           String
+  company             Company        @relation(fields: [companyId], references: [id])
+  userId              String?        @unique
+  user                User?          @relation(fields: [userId], references: [id])
+  sindicatoId         String?
+  sindicato           Sindicato?     @relation(fields: [sindicatoId], references: [id])
   // Cliente/centro de custo — ver comentário no model Cliente sobre por que
   // isto é separado de `departamento`.
-  clienteId     String?
-  cliente       Cliente?  @relation(fields: [clienteId], references: [id])
-  name          String
-  cpf           String    @unique
+  clienteId           String?
+  cliente             Cliente?       @relation(fields: [clienteId], references: [id])
+  name                String
+  cpf                 String         @unique
   // Opcionais: motoristas importados do TiqueTaque (sem dado de CNH) ficam
   // com esses tres campos nulos ate serem completados manualmente — ver
   // src/lib/driverAlerts.ts ("pendente") em vez de tratar como vencida.
-  cnh           String?
-  cnhCategory   String?
-  cnhExpiration DateTime?
+  cnh                 String?
+  cnhCategory         String?
+  cnhExpiration       DateTime?
   // Data de admissao — opcional (nao vem do TiqueTaque, so cadastro manual).
   // Sem isso o sistema nao consegue calcular periodo aquisitivo/concessivo
   // de ferias, ferias em dobro (art. 137 CLT) nem aviso previo proporcional
   // (Lei 12.506/2011) — motoristas sem esse campo ficam de fora desses
   // calculos especificos, sem travar o resto do cadastro.
-  admissao      DateTime?
-  phone         String?
-  photoUrl      String?
+  admissao            DateTime?
+  phone               String?
+  photoUrl            String?
   // Empregador (razao social, resolvida de contract_data.payment_source via
   // GET /payment-sources) e unidade de alocacao/centro de custos do
   // motorista (campo `departamento`, vem de contract_data.department —
@@ -218,19 +236,19 @@ model Driver {
   // DIFERENTE, que nao existe na API publica v2.1 — investigado e
   // confirmado ausente em /employees e em varios endpoints candidatos
   // (todos 404), ver src/lib/tiquetaque/client.ts.
-  empregador    String?
-  departamento  String?
+  empregador          String?
+  departamento        String?
   // Cargo/funcao real do funcionario no TiqueTaque (contract_data.job_role,
   // ex. "MOTORISTA DE MICRO ONIBUS", "VIGILANTE", "AJUDANTE DE MOTORISTA") —
   // ja era buscado pela integracao (TiqueTaqueEmployee.jobRole, usado so
   // pra filtrar quem importar) mas nao ficava salvo no cadastro.
-  funcao        String?
-  regimeHoras   RegimeHoras?
-  escalaSemanal EscalaSemanal?
+  funcao              String?
+  regimeHoras         RegimeHoras?
+  escalaSemanal       EscalaSemanal?
   // Valor-hora em centavos (evita float) — usado so para o card de custo
   // de hora extra em /ponto/analise. Nulo = motorista fica de fora da
   // soma de custo (nao trava o calculo dos demais).
-  valorHoraCents Int?
+  valorHoraCents      Int?
   // Integracao SIAT (sistema de despacho, fonte oficial das escalas — ver
   // model Escala). O Driver do SIAT nao expoe CPF, entao o 1o casamento e
   // por nome (normalizado); daqui pra frente usa siatId, mais confiavel.
@@ -238,18 +256,19 @@ model Driver {
   // `funcao` (que e cargo, nao tipo de contratacao). CNH vinda do SIAT so
   // preenche os campos abaixo quando estao vazios aqui — nunca sobrescreve
   // dado ja cadastrado (sensivel, usado em alerta de vencimento).
-  siatId              String? @unique
+  siatId              String?        @unique
   tipoContratacaoSiat String?
-  active        Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  active              Boolean        @default(true)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
 
-  escalas          Escala[]
-  timeClockEntries TimeClockEntry[]
+  escalas              Escala[]
+  timeClockEntries     TimeClockEntry[]
   timeClockCorrections TimeClockCorrection[]
-  usageLogs        VehicleUsageLog[]
-  fuelTransactions FuelTransaction[]
-  leaves           DriverLeave[]
+  usageLogs            VehicleUsageLog[]
+  fuelTransactions     FuelTransaction[]
+  leaves               DriverLeave[]
+  indicacoesCondutor   IndicacaoCondutor[]
 
   // Toda listagem de motorista filtra por empresa, e a maioria tambem por
   // ativo — sem indice em FK o Postgres nao cria um automatico.
@@ -288,38 +307,39 @@ model DriverLeave {
 
 // ---------- Veiculo ----------
 model Vehicle {
-  id        String        @id @default(cuid())
-  companyId String
-  company   Company       @relation(fields: [companyId], references: [id])
-  plate     String        @unique
-  brand     String
-  model     String
-  year      Int?
-  type      String
-  status    VehicleStatus @default(ATIVO)
+  id                     String        @id @default(cuid())
+  companyId              String
+  company                Company       @relation(fields: [companyId], references: [id])
+  plate                  String        @unique
+  brand                  String
+  model                  String
+  year                   Int?
+  type                   String
+  status                 VehicleStatus @default(ATIVO)
   // Atualizado a cada encerramento de VehicleUsageLog (checkout com km final).
-  currentMileage         Int @default(0)
+  currentMileage         Int           @default(0)
   // Marca o km em que a ultima manutencao foi registrada; a diferenca para
   // currentMileage alimenta o alerta de manutencao pendente em /utilizacao.
-  lastMaintenanceMileage Int @default(0)
+  lastMaintenanceMileage Int           @default(0)
   // Integracao SIAT — casamento inicial por `plate` (ja unico aqui), depois
   // por siatId. color/capacity/ownership/licensingMonth so existem no SIAT,
   // enriquecimento puro (nunca mexe em status/currentMileage, geridos aqui).
-  siatId         String? @unique
-  color          String?
-  capacity       Int?
-  ownership      String?
-  licensingMonth String?
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
+  siatId                 String?       @unique
+  color                  String?
+  capacity               Int?
+  ownership              String?
+  licensingMonth         String?
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
 
-  escalas           Escala[]
-  usageLogs         VehicleUsageLog[]
-  telemetryReadings TelemetryReading[]
-  fuelTransactions  FuelTransaction[]
-  fuelCardStatuses  FuelCardStatus[]
+  escalas              Escala[]
+  usageLogs            VehicleUsageLog[]
+  telemetryReadings    TelemetryReading[]
+  fuelTransactions     FuelTransaction[]
+  fuelCardStatuses     FuelCardStatus[]
   consumptionSummaries FuelConsumptionSummary[]
-  vehicleTrips      VehicleTrip[]
+  vehicleTrips         VehicleTrip[]
+  multas               Multa[]
 
   @@index([companyId])
 }
@@ -329,26 +349,26 @@ model Vehicle {
 // checagem de conflito (mesmo motorista ou mesmo veiculo com horario
 // sobreposto) roda em src/lib/escalaConflicts.ts antes de criar/editar.
 model Escala {
-  id        String   @id @default(cuid())
-  companyId String
-  company   Company  @relation(fields: [companyId], references: [id])
-  driverId  String
-  driver    Driver   @relation(fields: [driverId], references: [id])
+  id              String    @id @default(cuid())
+  companyId       String
+  company         Company   @relation(fields: [companyId], references: [id])
+  driverId        String
+  driver          Driver    @relation(fields: [driverId], references: [id])
   // Opcional (2026-09-04): Plantao sincronizado do SIAT (ScaleAssignment
   // com driver_id preenchido, ver siatActions.ts) e um turno de
   // disponibilidade sem viagem especifica — frequentemente SEM veiculo
   // ainda definido. Cadastro manual continua exigindo veiculo (EscalaForm),
   // so a sincronizacao automatica pode criar Escala sem ele.
-  vehicleId String?
-  vehicle   Vehicle? @relation(fields: [vehicleId], references: [id])
-  date      DateTime
-  startTime String // HH:mm
+  vehicleId       String?
+  vehicle         Vehicle?  @relation(fields: [vehicleId], references: [id])
+  date            DateTime
+  startTime       String // HH:mm
   // Nulo quando a reserva do SIAT nao informa trip_end_time (confirmado
   // real: ~45% das reservas com motorista atribuido no periodo 01-20/08 —
   // ver siatActions.ts). Antes o sync pulava essas reservas inteiras;
   // agora cria a Escala so com o inicio em vez de descartar um turno real.
-  endTime   String? // HH:mm
-  notes     String?
+  endTime         String? // HH:mm
+  notes           String?
   // Integracao SIAT (fonte oficial das escalas, 2026-08-19): siatId e a
   // chave de sincronizacao idempotente — ID da Reservation (viagem com
   // origem/destino) OU do ScaleAssignment (Plantao, turno sem viagem
@@ -378,8 +398,8 @@ model Escala {
   // verdadeiro da rota fixa por aqui) — usado pra avisar na UI (ver
   // /ponto/escala), nunca pra esconder a linha.
   requestType     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   usageLogs    VehicleUsageLog[]
   vehicleTrips VehicleTrip[]
@@ -393,14 +413,14 @@ model Escala {
 // checagens de hora extra e interjornada (Lei 13.103/2015, art. 235-C/235-D)
 // rodam em src/lib/pontoCompliance.ts a partir destes registros.
 model TimeClockEntry {
-  id        String   @id @default(cuid())
-  companyId String
-  company   Company  @relation(fields: [companyId], references: [id])
-  driverId  String
-  driver    Driver   @relation(fields: [driverId], references: [id])
-  date      DateTime
-  clockIn   String // HH:mm
-  clockOut  String? // HH:mm, nulo enquanto o turno esta aberto
+  id              String   @id @default(cuid())
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id])
+  driverId        String
+  driver          Driver   @relation(fields: [driverId], references: [id])
+  date            DateTime
+  clockIn         String // HH:mm
+  clockOut        String? // HH:mm, nulo enquanto o turno esta aberto
   // Pausa dentro do turno (intervalo intrajornada, art. 71 CLT). Opcionais
   // para nao invalidar registros antigos — ausencia dos dois em turnos
   // longos e o que alimenta o alerta de "intervalo nao registrado".
@@ -412,8 +432,8 @@ model TimeClockEntry {
   // minimo legal 30%). Opcionais, so lancamento manual (a API do TiqueTaque
   // nao distingue esse tipo de pausa das demais) — ver
   // src/lib/pontoCompliance.ts:waitingMinutes.
-  esperaInicio String? // HH:mm
-  esperaFim    String? // HH:mm
+  esperaInicio    String? // HH:mm
+  esperaFim       String? // HH:mm
   // Lista ordenada de pares {entrada, saida} do dia — so populado pra
   // importacao TiqueTaque (a API devolve batidas avulsas, sem rotulo de
   // entrada/saida, so pareaveis por ordem cronologica; um dia pode ter mais
@@ -422,7 +442,7 @@ model TimeClockEntry {
   // (soma de cada par fechado) em vez do span bruto clockIn->clockOut — ver
   // src/lib/pontoCompliance.ts:workedMinutes. Nulo para lancamento manual
   // (um unico intervalo, os campos acima bastam).
-  punches   Json?
+  punches         Json?
   // Origem do registro: nulo para lancamento manual, "TIQUETAQUE" quando
   // veio da importacao via API de batidas avulsas (pareamento heuristico,
   // ver src/lib/tiquetaque/pairing.ts), "TIQUETAQUE_CSV" quando veio da
@@ -432,8 +452,8 @@ model TimeClockEntry {
   // manual; entre as duas fontes automaticas, CSV pode corrigir API mas
   // API nunca sobrescreve CSV — ver overwritableFontes em
   // src/lib/tiquetaque/importCore.ts:reconcileDriverDays.
-  fonte     String?
-  notes     String?
+  fonte           String?
+  notes           String?
   // Hash SHA-256 (hex) do conteudo atual do registro (horarios, intervalo,
   // espera, punches) — ver src/lib/integrity.ts:hashPontoState. Atualizado
   // a cada escrita feita pelo app (criacao/edicao). Permite ao "dossie"
@@ -441,9 +461,9 @@ model TimeClockEntry {
   // dos campos atuais e comparar com este valor: uma divergencia indica que
   // o registro foi alterado por fora do fluxo normal do app (ex.: script
   // direto no banco), sem passar pelo log de TimeClockCorrection abaixo.
-  hashAtual String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  hashAtual       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   corrections TimeClockCorrection[]
 
@@ -466,11 +486,11 @@ model TimeClockEntry {
 // depois de criada — e a base do relatorio /ponto/correcoes e do "dossie"
 // de defesa por motorista.
 model TimeClockCorrection {
-  id        String   @id @default(cuid())
+  id        String          @id @default(cuid())
   companyId String
-  company   Company  @relation(fields: [companyId], references: [id])
+  company   Company         @relation(fields: [companyId], references: [id])
   driverId  String
-  driver    Driver   @relation(fields: [driverId], references: [id])
+  driver    Driver          @relation(fields: [driverId], references: [id])
   entryId   String?
   entry     TimeClockEntry? @relation(fields: [entryId], references: [id], onDelete: SetNull)
   date      DateTime // data do turno corrigido, para listar/filtrar sem join
@@ -479,7 +499,7 @@ model TimeClockCorrection {
   // "EXCLUSAO_MANUAL" — texto livre (nao enum) pra nao precisar de
   // migration toda vez que uma nova origem for adicionada, mesmo padrao ja
   // usado em TimeClockEntry.fonte.
-  origem           String @default("TIQUETAQUE_REIMPORT")
+  origem           String  @default("TIQUETAQUE_REIMPORT")
   // Quem fez a alteracao — so preenchido pra edicao/exclusao manual (a
   // reimportacao do TiqueTaque reflete uma mudanca feita por outra pessoa,
   // fora deste sistema; nao ha um usuario "daqui" pra atribuir).
@@ -487,7 +507,7 @@ model TimeClockCorrection {
   motivo           String?
 
   clockInAntes         String
-  clockOutAntes         String?
+  clockOutAntes        String?
   intervaloInicioAntes String?
   intervaloFimAntes    String?
   punchesAntes         Json?
@@ -495,7 +515,7 @@ model TimeClockCorrection {
   // Nulos na linha de EXCLUSAO_MANUAL — nao ha um "depois", o registro foi
   // removido.
   clockInDepois         String?
-  clockOutDepois         String?
+  clockOutDepois        String?
   intervaloInicioDepois String?
   intervaloFimDepois    String?
   punchesDepois         Json?
@@ -506,7 +526,7 @@ model TimeClockCorrection {
   // hashAtual do TimeClockEntry se for a mais recente. Nulo em linhas
   // antigas, criadas antes deste campo existir — tratado como "nao
   // verificavel", nunca como "violado".
-  hashAntes String?
+  hashAntes  String?
   hashDepois String?
 
   corrigidoEm DateTime @default(now())
@@ -522,21 +542,21 @@ model TimeClockCorrection {
 // formulario estruturado manual; a extracao assistida por IA fica para a
 // Fase 3, apos termos volume real de CCTs cadastradas.
 model ConvencaoColetiva {
-  id             String   @id @default(cuid())
+  id             String        @id @default(cuid())
   companyId      String
-  company        Company  @relation(fields: [companyId], references: [id])
+  company        Company       @relation(fields: [companyId], references: [id])
   sindicatoId    String
-  sindicato      Sindicato @relation(fields: [sindicatoId], references: [id])
+  sindicato      Sindicato     @relation(fields: [sindicatoId], references: [id])
   tipo           TipoConvencao @default(CCT)
   fileName       String
   fileUrl        String
   vigenciaInicio DateTime
   vigenciaFim    DateTime?
   uploadedById   String
-  uploadedBy     User     @relation(fields: [uploadedById], references: [id])
-  uploadedAt     DateTime @default(now())
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  uploadedBy     User          @relation(fields: [uploadedById], references: [id])
+  uploadedAt     DateTime      @default(now())
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
   regras RegraConvencao[]
 
@@ -561,22 +581,22 @@ model RegraConvencao {
 // alimenta o alerta de divergencia em /utilizacao. Ao encerrar (checkOutAt +
 // kmFinal preenchidos), a action atualiza Vehicle.currentMileage.
 model VehicleUsageLog {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   companyId  String
-  company    Company  @relation(fields: [companyId], references: [id])
+  company    Company   @relation(fields: [companyId], references: [id])
   driverId   String
-  driver     Driver   @relation(fields: [driverId], references: [id])
+  driver     Driver    @relation(fields: [driverId], references: [id])
   vehicleId  String
-  vehicle    Vehicle  @relation(fields: [vehicleId], references: [id])
+  vehicle    Vehicle   @relation(fields: [vehicleId], references: [id])
   escalaId   String?
-  escala     Escala?  @relation(fields: [escalaId], references: [id])
+  escala     Escala?   @relation(fields: [escalaId], references: [id])
   checkInAt  DateTime
   checkOutAt DateTime?
   kmInicial  Int
   kmFinal    Int?
   notes      String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   @@index([companyId, checkInAt])
 }
@@ -589,22 +609,22 @@ model VehicleUsageLog {
 // calculado em runtime (src/lib/speedCompliance.ts), nao persistido, no
 // mesmo padrao do motor de conformidade de ponto.
 model TelemetryReading {
-  id         String   @id @default(cuid())
-  companyId  String
-  company    Company  @relation(fields: [companyId], references: [id])
-  vehicleId  String
-  vehicle    Vehicle  @relation(fields: [vehicleId], references: [id])
-  speedKmh   Float
-  latitude   Float
-  longitude  Float
+  id            String   @id @default(cuid())
+  companyId     String
+  company       Company  @relation(fields: [companyId], references: [id])
+  vehicleId     String
+  vehicle       Vehicle  @relation(fields: [vehicleId], references: [id])
+  speedKmh      Float
+  latitude      Float
+  longitude     Float
   // Novos (integracao Ituran), nulos pra leituras antigas/mock que nao
   // informam. speedLimitKmh e o limite real do local da leitura — quando
   // presente, sobrepoe o SPEED_LIMIT_KMH generico em src/lib/speedCompliance.ts.
   odometerKm    Float?
   speedLimitKmh Int?
-  provider   String
-  recordedAt DateTime
-  createdAt  DateTime @default(now())
+  provider      String
+  recordedAt    DateTime
+  createdAt     DateTime @default(now())
 
   @@index([vehicleId, recordedAt])
 }
@@ -657,45 +677,45 @@ model VehicleTrip {
 // placaOriginal/motoristaOriginal preservam o texto cru pra auditoria mesmo
 // sem match.
 model FuelTransaction {
-  id                String   @id @default(cuid())
-  companyId         String
-  company           Company  @relation(fields: [companyId], references: [id])
-  vehicleId         String?
-  vehicle           Vehicle? @relation(fields: [vehicleId], references: [id])
-  driverId          String?
-  driver            Driver?  @relation(fields: [driverId], references: [id])
-  dataHora          DateTime
-  valorCents        Int
-  volumeLitros      Float
-  combustivel       String?
-  posto             String?
-  cidade            String?
-  uf                String?
-  hodometro         Int?
-  kmRodados         Int?
-  numeroAutorizacao String?
+  id                      String   @id @default(cuid())
+  companyId               String
+  company                 Company  @relation(fields: [companyId], references: [id])
+  vehicleId               String?
+  vehicle                 Vehicle? @relation(fields: [vehicleId], references: [id])
+  driverId                String?
+  driver                  Driver?  @relation(fields: [driverId], references: [id])
+  dataHora                DateTime
+  valorCents              Int
+  volumeLitros            Float
+  combustivel             String?
+  posto                   String?
+  cidade                  String?
+  uf                      String?
+  hodometro               Int?
+  kmRodados               Int?
+  numeroAutorizacao       String?
   // Codigo real e estavel do sistema de origem (coluna "CODIGO TRANSACAO"
   // do extrato real RFCV) — quando presente, e o criterio de duplicata
   // (muito mais confiavel que a heuristica de tempo+valor usada pro
   // template manual, que nao tem esse codigo).
-  codigoTransacao   String?  @unique
-  placaOriginal     String
-  motoristaOriginal String?
+  codigoTransacao         String?  @unique
+  placaOriginal           String
+  motoristaOriginal       String?
   // Texto cru da coluna "MODELO VEICULO" do extrato real (RFCV) — mesma
   // filosofia de placaOriginal/motoristaOriginal: a maioria das transacoes
   // nao tem vehicleId vinculado ainda (cadastro de veiculos local incompleto
   // frente a frota real), entao a UI usa vehicle?.model ?? modeloOriginal.
-  modeloOriginal    String?
+  modeloOriginal          String?
   // Fonte do registro: "SOFIT" quando veio da sincronizacao automatica via
   // API (ver src/lib/sofit/client.ts); null pra tudo importado por planilha
   // manual ou extrato RFCV — mesma convencao de Escala.fonte.
-  fonte             String?
+  fonte                   String?
   // So a Sofit preenche (ja vem calculado por ela, com base no odometro real
   // do cartao): km/l real do abastecimento e desvio percentual sobre o
   // consumo padrao do veiculo — util pra detectar abastecimento suspeito.
-  realConsumoKmL         Float?
+  realConsumoKmL          Float?
   desvioConsumoPercentual Float?
-  createdAt         DateTime @default(now())
+  createdAt               DateTime @default(now())
 
   @@index([companyId, dataHora])
   @@index([vehicleId, dataHora])
@@ -808,4 +828,90 @@ model FuelConsumptionSummary {
 
   @@unique([companyId, placaOriginal, contrato, tipoCombustivel, periodoInicio, periodoFim, ultimoKmOuHora])
   @@index([companyId, periodoInicio])
+}
+
+// ---------- Multas (integracao LW Tecnologia) ----------
+// Espelho das multas encontradas na LW (GET /multas/buscarMulta/{placa}) —
+// sincronizado, nunca criado/editado manualmente aqui. `placaConsultada` e a
+// placa EXATA que retornou esta multa na LW (pode diferir da grafia correta
+// do nosso Vehicle.plate — confirmado real 2026-09-09: a LW guarda algumas
+// placas com o mesmo erro de digitacao que a Ituran, ver
+// src/lib/lw/plateMatch.ts) — guardada pra poder re-consultar/atualizar
+// exatamente essa multa depois sem precisar redescobrir a variante certa.
+// vehicleId fica nulo se nenhuma placa/variante bateu com nosso cadastro
+// (mesma filosofia de FuelTransaction.vehicleId: visibilidade financeira
+// antes de vinculo estrito).
+model Multa {
+  id                  String    @id @default(cuid())
+  companyId           String
+  company             Company   @relation(fields: [companyId], references: [id])
+  vehicleId           String?
+  vehicle             Vehicle?  @relation(fields: [vehicleId], references: [id])
+  lwId                String    @unique
+  placaConsultada     String
+  ait                 String?
+  descricao           String?
+  artigo              String?
+  orgao               String?
+  cidade              String?
+  uf                  String?
+  renavam             String?
+  dataInfracao        DateTime?
+  horaInfracao        String?
+  dataVencimento      DateTime?
+  // Prazo pra indicar o condutor responsavel (apCondutorDataVencimento da
+  // LW) — alimenta o alerta de prazo vencendo, mesmo padrao do alerta de
+  // CNH vencida (ver src/lib/driverAlerts.ts).
+  dataLimiteIndicacao DateTime?
+  valorCents          Int?
+  pontuacao           Int?
+  // Texto cru da LW ("IMPOSTO", "NOTIFICADO", "Encerrado", "Devedora",
+  // "Cancelada", confirmado real 2026-09-09) — nao normalizado pra enum de
+  // proposito, mesma filosofia de Escala.status/DriverLeave.leaveType (a
+  // LW pode introduzir novos valores sem exigir migration aqui).
+  situacaoLw          String?
+  statusPagamento     Int?
+  pagoLw              Boolean   @default(false)
+  // Payload completo retornado pela LW pra esta multa — cobre os 30+ campos
+  // de MultasBusca/MultaBuscaPeriodo que nao viraram coluna propria (mesmo
+  // espirito de nao modelar campo a campo o que ainda nao tem uso na UI).
+  rawJson             Json?
+  syncedAt            DateTime  @default(now())
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  indicacao IndicacaoCondutor?
+
+  @@index([companyId, dataInfracao])
+  @@index([companyId, situacaoLw])
+  @@index([vehicleId])
+}
+
+// Fluxo de indicacao do condutor responsavel por uma Multa (integracao LW,
+// modulo /indicacao/*). Resolucao automatica cruza dataInfracao/horaInfracao
+// do veiculo com Escala/VehicleUsageLog (mesma logica de divergencia ja
+// usada em /utilizacao) pra sugerir um candidato — mas o envio pra LW
+// (POST indicar_condutor) sempre exige confirmacao humana explicita, nunca
+// dispara sozinho: tem efeito juridico real (fica em nome de uma pessoa
+// real perante o orgao de transito).
+model IndicacaoCondutor {
+  id              String                  @id @default(cuid())
+  companyId       String
+  company         Company                 @relation(fields: [companyId], references: [id])
+  multaId         String                  @unique
+  multa           Multa                   @relation(fields: [multaId], references: [id], onDelete: Cascade)
+  driverId        String?
+  driver          Driver?                 @relation(fields: [driverId], references: [id])
+  status          StatusIndicacaoCondutor @default(PENDENTE_MANUAL)
+  // "ESCALA_AUTOMATICA" quando driverId veio da resolucao automatica,
+  // "MANUAL" quando alguem escolheu/trocou na tela.
+  origemResolucao String?
+  observacao      String?
+  enviadaEm       DateTime?
+  validadaEm      DateTime?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  @@index([companyId, status])
+  @@index([driverId])
 }

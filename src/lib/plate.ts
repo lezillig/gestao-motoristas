@@ -12,3 +12,34 @@ export function extractPlate(text: string | null | undefined): string | null {
   const match = text.toUpperCase().match(PLATE_PATTERN);
   return match ? `${match[1]}${match[2]}` : null;
 }
+
+// Conversao oficial Mercosul do 5o caractere (o antigo 2o digito da dezena
+// de placa): 0-9 -> A-J. Usado pra gerar as duas grafias possiveis da MESMA
+// placa fisica (antiga toda-digito vs Mercosul com letra na 5a posicao) —
+// necessario porque fontes externas variam qual formato guardam pro mesmo
+// veiculo (confirmado real 2026-09-09: a LW Tecnologia tem varios veiculos
+// cadastrados no formato antigo enquanto a Ituran/SIAT ja reportam Mercosul,
+// ver src/lib/lw/plateMatch.ts).
+const MERCOSUL_DIGIT_TO_LETTER = "ABCDEFGHIJ";
+
+export function toOldFormatPlate(plate: string): string {
+  if (plate.length !== 7) return plate;
+  const pos5 = plate[4];
+  const digit = MERCOSUL_DIGIT_TO_LETTER.indexOf(pos5);
+  if (digit < 0) return plate; // ja e formato antigo (5a posicao ja e digito)
+  return plate.slice(0, 4) + digit + plate.slice(5);
+}
+
+export function toMercosulFormatPlate(plate: string): string {
+  if (plate.length !== 7) return plate;
+  const pos5 = plate[4];
+  if (!/[0-9]/.test(pos5)) return plate; // ja e Mercosul (5a posicao ja e letra)
+  return plate.slice(0, 4) + MERCOSUL_DIGIT_TO_LETTER[Number(pos5)] + plate.slice(5);
+}
+
+// Todas as grafias plausiveis da mesma placa fisica, pra comparar/consultar
+// contra uma fonte externa sem assumir qual formato ela guarda.
+export function platePhysicalVariants(plate: string): string[] {
+  const upper = plate.trim().toUpperCase();
+  return [...new Set([upper, toOldFormatPlate(upper), toMercosulFormatPlate(upper)])];
+}
