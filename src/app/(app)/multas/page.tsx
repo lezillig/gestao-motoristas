@@ -3,7 +3,7 @@ import Link from "next/link";
 import { AlertTriangle, ShieldAlert } from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { cardClass, badgeClass, secondaryButtonClass } from "@/lib/ui";
+import { cardClass, secondaryButtonClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import SortableTh from "@/components/ui/SortableTh";
 import CheckboxDropdownFilter from "@/components/ui/CheckboxDropdownFilter";
@@ -31,14 +31,6 @@ function formatBRL(cents: number | null): string {
   if (cents == null) return "—";
   return (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
-
-const SITUACAO_BADGE: Record<string, string> = {
-  IMPOSTO: "bg-amber-100 text-amber-800",
-  NOTIFICADO: "bg-amber-100 text-amber-800",
-  Encerrado: "bg-slate-100 text-slate-600",
-  Cancelada: "bg-slate-100 text-slate-600",
-  Devedora: "bg-red-100 text-red-700",
-};
 
 export default async function MultasPage({
   searchParams,
@@ -199,7 +191,6 @@ export default async function MultasPage({
               <SortableTh label="Placa" field="placa" basePath="/multas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="whitespace-nowrap px-4 py-3" />
               <SortableTh label="Data" field="dataInfracao" basePath="/multas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="whitespace-nowrap px-4 py-3" />
               <th className="whitespace-nowrap px-4 py-3">AIT</th>
-              <SortableTh label="Situação" field="situacaoLw" basePath="/multas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="whitespace-nowrap px-4 py-3" />
               <SortableTh label="Valor" field="valorCents" basePath="/multas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="whitespace-nowrap px-4 py-3" />
               <SortableTh label="Prazo indicação" field="dataLimiteIndicacao" basePath="/multas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="whitespace-nowrap px-4 py-3" />
               <SortableTh label="Condutor" field="indicacaoStatus" basePath="/multas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="whitespace-nowrap px-4 py-3" />
@@ -226,11 +217,6 @@ export default async function MultasPage({
                     Ver notificação
                   </a>
                 </td>
-                <td className="whitespace-nowrap px-4 py-3">
-                  <span className={`${badgeClass} ${SITUACAO_BADGE[m.situacaoLw ?? ""] ?? "bg-slate-100 text-slate-600"}`}>
-                    {m.situacaoLw ?? "—"}
-                  </span>
-                </td>
                 <td className="whitespace-nowrap px-4 py-3 text-slate-600">{formatBRL(m.valorCents)}</td>
                 <td className="whitespace-nowrap px-4 py-3 text-slate-600">
                   {m.dataLimiteIndicacao ? format(m.dataLimiteIndicacao, "dd/MM/yyyy") : "—"}
@@ -242,7 +228,7 @@ export default async function MultasPage({
             ))}
             {multas.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
+                <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">
                   {!available ? "Integração não configurada." : temFiltro ? "Nenhuma multa encontrada com os filtros aplicados." : "Nenhuma multa sincronizada ainda."}
                 </td>
               </tr>

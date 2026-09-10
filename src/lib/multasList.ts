@@ -4,7 +4,6 @@ import type { Prisma, StatusIndicacaoCondutor } from "@prisma/client";
 export const MULTA_SORT_FIELDS = [
   "placa",
   "dataInfracao",
-  "situacaoLw",
   "valorCents",
   "dataLimiteIndicacao",
   "indicacaoStatus",
@@ -45,8 +44,6 @@ export function buildMultasOrderBy(sortField: MultaSortField, sortDir: "asc" | "
   switch (sortField) {
     case "placa":
       return { vehicle: { plate: sortDir } };
-    case "situacaoLw":
-      return { situacaoLw: { sort: sortDir, nulls: "last" } };
     case "valorCents":
       return { valorCents: { sort: sortDir, nulls: "last" } };
     case "dataLimiteIndicacao":
