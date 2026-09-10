@@ -19,6 +19,16 @@ function parseLwDateLabel(value: string | null | undefined): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+// Pedido explicito do usuario (2026-09-10): so importar multas com
+// infracao a partir de 2026-01-01 — a LW nao tem um parametro de data no
+// endpoint por placa (so no endpoint por periodo, que exigiria trocar a
+// estrategia de sync de "por veiculo" pra "por periodo", perdendo a
+// tolerancia a placa mal cadastrada que o cruzamento por veiculo da, ver
+// plateMatch.ts), entao o corte acontece aqui, depois de buscar — a
+// chamada em si ainda traz o historico completo do veiculo, so nao vira
+// linha na nossa tabela.
+const MULTAS_SYNC_CUTOFF = parseLocalDate("2026-01-01");
+
 function parseValorCents(value: string | null | undefined): number | null {
   if (!value) return null;
   const n = parseFloat(value);
@@ -83,7 +93,14 @@ export async function syncMultasForVehicle(
   placaParaConsulta: string
 ): Promise<MultasSyncVehicleResult> {
   const token = await getLwToken();
-  const multas = await buscarMultasPorPlaca(token, placaParaConsulta);
+  const todasMultas = await buscarMultasPorPlaca(token, placaParaConsulta);
+  // So a partir de MULTAS_SYNC_CUTOFF (ver comentario acima) — uma multa
+  // sem dataInfracao reconhecivel tambem fica de fora, nao da pra confirmar
+  // que e recente.
+  const multas = todasMultas.filter((m) => {
+    const data = parseLwDateLabel(m.dataInfracao);
+    return data !== null && data >= MULTAS_SYNC_CUTOFF;
+  });
 
   let criadas = 0;
   let atualizadas = 0;
