@@ -11,11 +11,23 @@ import type { LwMultaDTO } from "./types";
 // src/lib/date.ts), nao um timestamp real. Por isso usa parseLocalDate no
 // prefixo "yyyy-MM-dd", nao new Date() na string inteira (que sofreria o
 // mesmo bug de rollback de fuso ja documentado neste projeto).
+//
+// Confirmado real (2026-09-10): a LW usa a convencao "zero-date" do MySQL
+// ("0000-00-00 00:00:00.0") pra dizer "esse prazo ainda nao foi definido"
+// (ex.: apCondutorDataVencimento antes da multa ser imposta). O regex
+// antigo so validava o FORMATO (4-2-2 digitos), entao "0000-00-00" batia
+// e virava parseLocalDate("0000-00-00") = new Date(0,-1,0) — o
+// construtor de Date do JS trata ano 0 como 1900 e "rola" mes -1/dia 0
+// pra tras, resultando em 30/11/1899 (visto real na tela de Multas,
+// coluna Prazo indicacao). Preciso rejeitar essa sentinela antes de
+// parsear, nao so validar o formato.
 function parseLwDateLabel(value: string | null | undefined): Date | null {
   if (!value) return null;
-  const match = /^(\d{4}-\d{2}-\d{2})/.exec(value);
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
   if (!match) return null;
-  const parsed = parseLocalDate(match[1]);
+  const [, y, m, d] = match;
+  if (y === "0000" || m === "00" || d === "00") return null; // "sem data" da LW
+  const parsed = parseLocalDate(`${y}-${m}-${d}`);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
