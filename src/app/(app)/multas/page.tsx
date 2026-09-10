@@ -1,8 +1,9 @@
 import { format } from "date-fns";
+import Link from "next/link";
 import { AlertTriangle, ShieldAlert } from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { cardClass, badgeClass } from "@/lib/ui";
+import { cardClass, badgeClass, secondaryButtonClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import SortableTh from "@/components/ui/SortableTh";
 import CheckboxDropdownFilter from "@/components/ui/CheckboxDropdownFilter";
@@ -10,9 +11,12 @@ import { toArray } from "@/lib/searchParams";
 import { isLwAvailable } from "@/lib/lw/client";
 import {
   MULTA_SORT_FIELDS,
+  MULTAS_PAGE_SIZE,
   INDICACAO_STATUS_OPTIONS,
   fetchMultasList,
+  fetchMultasCount,
   fetchMultasFilterOptions,
+  fetchPrazoAlertCounts,
   type MultaSortField,
   type MultasFilters,
 } from "@/lib/multasList";
@@ -46,11 +50,12 @@ export default async function MultasPage({
     driverId?: string | string[];
     sort?: string;
     dir?: string;
+    page?: string;
   }>;
 }) {
   const session = await requireRole("ADMIN", "GESTOR");
   const available = isLwAvailable();
-  const { sort, dir, ...rawFilters } = await searchParams;
+  const { sort, dir, page: pageParam, ...rawFilters } = await searchParams;
 
   const filters: MultasFilters = {
     situacaoLw: toArray(rawFilters.situacaoLw),
@@ -61,9 +66,21 @@ export default async function MultasPage({
   const sortField: SortField = SORT_FIELDS.includes(sort as SortField) ? (sort as SortField) : "dataInfracao";
   const sortDir = dir === "asc" ? "asc" : "desc";
   const sortLinkParams = { ...filters, sort: sortField, dir: sortDir };
+  const page = Math.max(1, Number(pageParam) || 1);
 
-  const [multas, filterOptions, drivers] = await Promise.all([
-    available ? fetchMultasList(session.companyId, filters, sortField, sortDir) : Promise.resolve([]),
+  // "Vencendo" e "vencido" sao situacoes diferentes — muita multa aqui e
+  // historico antigo (2024/2025) com prazo ja passado ha muito tempo, entao
+  // um filtro so "dias <= 5" (sem exigir dias >= 0) conta esses casos
+  // vencidos ha meses junto com os que realmente vencem em breve, inflando
+  // o numero (bug real confirmado 2026-09-09: 532 de 561 multas apareciam
+  // como "vencendo" so por causa disso). Contado direto no banco (nao sobre
+  // `multas` abaixo, que agora e so 1 pagina) — o aviso e sobre a empresa
+  // inteira, nao so sobre o que esta visivel na tela.
+  const agora = new Date();
+
+  const [multas, totalMultas, filterOptions, drivers, prazoAlertas] = await Promise.all([
+    available ? fetchMultasList(session.companyId, filters, sortField, sortDir, page) : Promise.resolve([]),
+    available ? fetchMultasCount(session.companyId, filters) : Promise.resolve(0),
     available ? fetchMultasFilterOptions(session.companyId) : Promise.resolve({ situacoes: [], veiculos: [], condutores: [] }),
     available
       ? prisma.driver.findMany({
@@ -72,27 +89,10 @@ export default async function MultasPage({
           orderBy: { name: "asc" },
         })
       : Promise.resolve([]),
+    available ? fetchPrazoAlertCounts(session.companyId, agora) : Promise.resolve({ vencido: 0, vencendoEm5Dias: 0 }),
   ]);
 
-  // "Vencendo" e "vencido" sao situacoes diferentes — muita multa aqui e
-  // historico antigo (2024/2025) com prazo ja passado ha muito tempo, entao
-  // um filtro so "dias <= 5" (sem exigir dias >= 0) conta esses casos
-  // vencidos ha meses junto com os que realmente vencem em breve, inflando
-  // o numero (bug real confirmado 2026-09-09: 532 de 561 multas apareciam
-  // como "vencendo" so por causa disso).
-  const agora = new Date().getTime();
-  const semIndicacaoConfirmada = (m: (typeof multas)[number]) =>
-    m.indicacao?.status !== "ENVIADA" && m.indicacao?.status !== "VALIDADA";
-  const diasPrazo = (m: (typeof multas)[number]) =>
-    m.dataLimiteIndicacao ? (m.dataLimiteIndicacao.getTime() - agora) / 86_400_000 : null;
-  const prazoVencido = multas.filter((m) => {
-    const dias = diasPrazo(m);
-    return dias !== null && dias < 0 && semIndicacaoConfirmada(m);
-  });
-  const prazoVencendo = multas.filter((m) => {
-    const dias = diasPrazo(m);
-    return dias !== null && dias >= 0 && dias <= 5 && semIndicacaoConfirmada(m);
-  });
+  const totalPaginas = Math.max(1, Math.ceil(totalMultas / MULTAS_PAGE_SIZE));
 
   const temFiltro =
     filters.situacaoLw.length > 0 || filters.indicacaoStatus.length > 0 || filters.vehicleId.length > 0 || filters.driverId.length > 0;
@@ -122,20 +122,20 @@ export default async function MultasPage({
         </div>
       )}
 
-      {prazoVencido.length > 0 && (
+      {prazoAlertas.vencido > 0 && (
         <div className={`${cardClass} mb-3 flex items-start gap-3 border-red-200 bg-red-50`}>
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
           <p className="text-sm text-red-800">
-            {prazoVencido.length} multa(s) com prazo de indicação de condutor já vencido, sem indicação enviada.
+            {prazoAlertas.vencido} multa(s) com prazo de indicação de condutor já vencido, sem indicação enviada.
           </p>
         </div>
       )}
 
-      {prazoVencendo.length > 0 && (
+      {prazoAlertas.vencendoEm5Dias > 0 && (
         <div className={`${cardClass} mb-6 flex items-start gap-3 border-amber-200 bg-amber-50`}>
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
           <p className="text-sm text-amber-800">
-            {prazoVencendo.length} multa(s) com prazo de indicação de condutor vencendo nos próximos 5 dias.
+            {prazoAlertas.vencendoEm5Dias} multa(s) com prazo de indicação de condutor vencendo nos próximos 5 dias.
           </p>
         </div>
       )}
@@ -186,8 +186,9 @@ export default async function MultasPage({
 
       {available && (
         <p className="mb-3 text-sm text-slate-500">
-          {multas.length} multa{multas.length === 1 ? "" : "s"} encontrada{multas.length === 1 ? "" : "s"}
-          {temFiltro ? " com os filtros aplicados" : ""}.
+          {totalMultas} multa{totalMultas === 1 ? "" : "s"} encontrada{totalMultas === 1 ? "" : "s"}
+          {temFiltro ? " com os filtros aplicados" : ""}
+          {totalPaginas > 1 ? ` — página ${page} de ${totalPaginas}` : ""}.
         </p>
       )}
 
@@ -249,6 +250,45 @@ export default async function MultasPage({
           </tbody>
         </table>
       </div>
+
+      {available && totalPaginas > 1 && (
+        <div className="mt-4 flex items-center justify-between">
+          <p className="text-xs text-slate-500">
+            Página {page} de {totalPaginas}
+          </p>
+          <div className="flex gap-2">
+            {page > 1 && (
+              <Link
+                href={buildPageHref(sortLinkParams, page - 1)}
+                className={`${secondaryButtonClass} px-3 py-1.5 text-xs`}
+              >
+                Anterior
+              </Link>
+            )}
+            {page < totalPaginas && (
+              <Link
+                href={buildPageHref(sortLinkParams, page + 1)}
+                className={`${secondaryButtonClass} px-3 py-1.5 text-xs`}
+              >
+                Próxima
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+function buildPageHref(params: Record<string, string | string[] | undefined>, page: number): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (Array.isArray(value)) {
+      for (const v of value) search.append(key, v);
+    } else if (value) {
+      search.set(key, value);
+    }
+  }
+  search.set("page", String(page));
+  return `/multas?${search.toString()}`;
 }

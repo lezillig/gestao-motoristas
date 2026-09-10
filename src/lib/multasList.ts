@@ -58,10 +58,20 @@ export function buildMultasOrderBy(sortField: MultaSortField, sortDir: "asc" | "
   }
 }
 
-// Usado tanto pela tela quanto pela exportacao, mesmo espirito de
-// fetchMotoristasList — garante que o arquivo exportado reflita
-// exatamente os mesmos filtros/ordenacao vistos na tela.
-export async function fetchMultasList(companyId: string, filters: MultasFilters, sortField: MultaSortField, sortDir: "asc" | "desc") {
+export const MULTAS_PAGE_SIZE = 50;
+
+// Usado tanto pela tela (paginado) quanto pela exportacao (pagina inteira,
+// ver page abaixo) — mesmo espirito de fetchMotoristasList, garante que o
+// arquivo exportado reflita exatamente os mesmos filtros/ordenacao vistos
+// na tela. `page` e 1-based; omitido = sem paginacao (usado na exportacao,
+// que precisa de todas as linhas filtradas, nao so uma pagina).
+export async function fetchMultasList(
+  companyId: string,
+  filters: MultasFilters,
+  sortField: MultaSortField,
+  sortDir: "asc" | "desc",
+  page?: number
+) {
   return prisma.multa.findMany({
     where: buildMultasWhere(companyId, filters),
     include: {
@@ -69,7 +79,33 @@ export async function fetchMultasList(companyId: string, filters: MultasFilters,
       indicacao: { include: { driver: { select: { id: true, name: true, cpf: true, cnh: true } } } },
     },
     orderBy: buildMultasOrderBy(sortField, sortDir),
+    ...(page ? { skip: (page - 1) * MULTAS_PAGE_SIZE, take: MULTAS_PAGE_SIZE } : {}),
   });
+}
+
+export async function fetchMultasCount(companyId: string, filters: MultasFilters): Promise<number> {
+  return prisma.multa.count({ where: buildMultasWhere(companyId, filters) });
+}
+
+// Contagem pro alerta de prazo (vencido / vencendo em breve) — sempre sobre
+// TODAS as multas da empresa, independente de filtro/pagina atual (e um
+// aviso geral, nao um resumo da tela). Contado direto no banco (nao busca
+// as linhas) pra nao repetir o mesmo problema de custo que motivou a
+// paginacao da listagem.
+export async function fetchPrazoAlertCounts(companyId: string, agora: Date): Promise<{ vencido: number; vencendoEm5Dias: number }> {
+  const em5Dias = new Date(agora.getTime() + 5 * 86_400_000);
+  const semIndicacaoConfirmadaWhere: Prisma.MultaWhereInput["indicacao"] = {
+    status: { notIn: ["ENVIADA", "VALIDADA"] as StatusIndicacaoCondutor[] },
+  };
+  const [vencido, vencendoEm5Dias] = await Promise.all([
+    prisma.multa.count({
+      where: { companyId, dataLimiteIndicacao: { lt: agora }, indicacao: semIndicacaoConfirmadaWhere },
+    }),
+    prisma.multa.count({
+      where: { companyId, dataLimiteIndicacao: { gte: agora, lte: em5Dias }, indicacao: semIndicacaoConfirmadaWhere },
+    }),
+  ]);
+  return { vencido, vencendoEm5Dias };
 }
 
 export type MultasFilterOptions = {

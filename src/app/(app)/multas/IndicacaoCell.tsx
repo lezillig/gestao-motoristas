@@ -2,9 +2,10 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Loader2, RefreshCw, Send, XCircle } from "lucide-react";
+import { CheckCircle2, Loader2, Pencil, RefreshCw, Send, XCircle } from "lucide-react";
 import { badgeClass, secondaryButtonClass } from "@/lib/ui";
 import { definirCondutorManual, enviarIndicacaoCondutor, verificarStatusIndicacao, marcarIndicacaoResultado } from "./actions";
+import DriverPicker from "./DriverPicker";
 
 type Driver = { id: string; name: string; cpf: string };
 type Indicacao = {
@@ -54,6 +55,12 @@ export default function IndicacaoCell({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [descricaoLw, setDescricaoLw] = useState<string | null>(indicacao?.observacao ?? null);
+  // So monta o DriverPicker (com sua lista de ~170 motoristas) quando a
+  // pessoa realmente pede pra editar — com centenas de multas na tela ao
+  // mesmo tempo, montar um combobox de busca em TODA linha de uma vez
+  // ainda e caro o bastante pra travar a interacao (confirmado real
+  // 2026-09-10, mesmo motivo que tirou o <select> nativo daqui).
+  const [editando, setEditando] = useState(false);
 
   const status = indicacao?.status ?? "PENDENTE_MANUAL";
   const isAuto = indicacao?.origemResolucao && indicacao.origemResolucao !== "MANUAL";
@@ -64,7 +71,10 @@ export default function IndicacaoCell({
     startTransition(async () => {
       const r = await definirCondutorManual(multaId, driverId);
       if (r.error) setError(r.error);
-      else router.refresh();
+      else {
+        setEditando(false);
+        router.refresh();
+      }
     });
   }
 
@@ -110,22 +120,21 @@ export default function IndicacaoCell({
         )}
       </div>
 
-      {indicacao?.driver && <p className="text-xs text-slate-600">{indicacao.driver.name}</p>}
+      {indicacao?.driver && !editando && <p className="text-xs text-slate-600">{indicacao.driver.name}</p>}
 
-      {podeEditar && (
-        <select
-          disabled={pending}
-          defaultValue={indicacao?.driverId ?? ""}
-          onChange={(e) => handleSelectDriver(e.target.value)}
-          className="rounded-md border border-slate-300 px-2 py-1 text-xs disabled:opacity-60"
+      {podeEditar && !editando && (
+        <button
+          type="button"
+          onClick={() => setEditando(true)}
+          className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-700 hover:underline"
         >
-          <option value="">Selecionar motorista...</option>
-          {drivers.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
+          <Pencil className="h-3 w-3" />
+          {indicacao?.driver ? "Editar" : "Selecionar motorista"}
+        </button>
+      )}
+
+      {podeEditar && editando && (
+        <DriverPicker drivers={drivers} selectedId={indicacao?.driverId ?? null} onSelect={handleSelectDriver} disabled={pending} />
       )}
 
       {podeEnviar && (
