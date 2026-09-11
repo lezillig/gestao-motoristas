@@ -3,6 +3,7 @@ import { endOfDay, format, startOfDay, subDays } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import { fetchTrips, fetchVehiclesRealtime, isIturanAvailable } from "@/lib/ituran/client";
 import { syncVehicleTripsForCompany } from "@/lib/ituran/tripSync";
+import { updateVehicleMileageFromReadings } from "@/lib/maintenance";
 
 // Agendado no vercel.json pra rodar as 06:00 UTC (= 03:00 horario de
 // Brasilia), depois do cron do TiqueTaque (02:00 BRT). Busca o snapshot de
@@ -75,6 +76,7 @@ export async function GET(req: NextRequest) {
     if (readingsData.length > 0) {
       await prisma.telemetryReading.createMany({ data: readingsData });
       readingsCreated += readingsData.length;
+      await updateVehicleMileageFromReadings(readingsData);
     }
 
     const tripResult = await syncVehicleTripsForCompany(company.id, trips, dateFrom, dateTo);

@@ -1,6 +1,7 @@
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getActiveTelemetryProvider } from "@/lib/telemetry";
+import { updateVehicleMileageFromReadings } from "@/lib/maintenance";
 
 // Stream de progresso (SSE) do botao "Gerar leituras" — a busca na Ituran e
 // paginada (ver fetchVehiclesRealtime) e antes rodava sem nenhum feedback
@@ -42,6 +43,7 @@ export async function POST() {
             })),
           });
           count = readings.length;
+          await updateVehicleMileageFromReadings(readings);
         }
         send({ status: "concluido", count });
       } catch (e) {

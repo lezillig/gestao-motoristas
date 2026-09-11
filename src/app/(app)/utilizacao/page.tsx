@@ -78,9 +78,9 @@ export default async function UtilizacaoPage({
     <div className="max-w-6xl">
       <PageHeader
         title="Utilização de veículos"
-        subtitle="Uso real do veículo por motorista, cruzado com a escala planejada."
+        subtitle="Registro manual de uso do veículo. Hodômetro e manutenção já são atualizados sozinhos pela Ituran — use o check-in aqui só pra anotar quem pegou o veículo fora da escala do SIAT."
         actionHref="/utilizacao/novo"
-        actionLabel="Novo check-in"
+        actionLabel="Novo check-in manual"
       />
 
       <div className="mb-6 flex justify-end gap-2">
