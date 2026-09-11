@@ -26,6 +26,7 @@ import { isLwAvailable } from "@/lib/lw/client";
 import AnpSyncButton from "../combustivel/AnpSyncButton";
 import SofitSyncButton from "../combustivel/SofitSyncButton";
 import LeaveImportButton from "../afastamentos/LeaveImportButton";
+import MultasSyncButton from "../multas/MultasSyncButton";
 import SyncAllButton from "./SyncAllButton";
 import GapStatusPanel from "./GapStatusPanel";
 import { checkAllGaps, RECURRING_GAP_WINDOW_DAYS } from "@/lib/integrationGaps";
@@ -202,10 +203,13 @@ export default async function IntegracoesPage() {
         <IntegrationCard
           icon={Gavel}
           title="Multas"
-          description="Multas de trânsito da frota e indicação do condutor responsável, direto da LW Tecnologia. Sem sincronização automática ainda; roda na hora aqui ou na própria tela."
+          description="Multas de trânsito da frota e indicação do condutor responsável, direto da LW Tecnologia. Sem sincronização automática ainda; roda na hora aqui."
           unavailable={!isLwAvailable()}
         >
-          <GoTo href="/multas" label="Ir pra Multas" />
+          <div className="flex flex-col gap-3">
+            {isLwAvailable() ? <MultasSyncButton /> : <p className="text-xs text-slate-400">Configure LW_API_LOGIN/LW_API_SENHA pra habilitar.</p>}
+            <GoTo href="/multas" label="Ver multas" />
+          </div>
         </IntegrationCard>
       </Section>
 

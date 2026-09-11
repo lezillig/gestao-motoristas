@@ -24,7 +24,6 @@ import {
   type EscalaDoDia,
   type IturanCruzamento,
 } from "@/lib/multasList";
-import MultasSyncButton from "./MultasSyncButton";
 import IndicacaoCell from "./IndicacaoCell";
 import MultasExportBar from "./MultasExportBar";
 
@@ -104,14 +103,7 @@ export default async function MultasPage({
       <PageHeader
         title="Multas"
         subtitle="Multas de trânsito da frota (LW Tecnologia) e indicação do condutor responsável."
-        extra={
-          available ? (
-            <div className="flex items-center gap-2">
-              <MultasExportBar searchParams={{ ...filters, sort: sortField, dir: sortDir }} />
-              <MultasSyncButton />
-            </div>
-          ) : undefined
-        }
+        extra={available ? <MultasExportBar searchParams={{ ...filters, sort: sortField, dir: sortDir }} /> : undefined}
       />
 
       {!available && (
