@@ -208,7 +208,15 @@ export async function fetchIturanCruzamentoPorMultas(
       }
       if (dentro) break;
     }
-    result.set(v.id, melhor ?? { enderecoViagem: null, distanciaMinutos: Infinity, dentroDaViagem: false });
+    // Uma viagem a mais de 3h de distancia nao e evidencia util de nada —
+    // so confunde (visto real 2026-09-11: "6211 min de diferenca" exibido
+    // como se fosse um cruzamento, quando na verdade so achou a viagem mais
+    // proxima entre varias longe demais pra significar algo). "Dentro da
+    // viagem" sempre conta, mesmo se a viagem for longa, ja que o instante
+    // realmente caiu dentro do intervalo registrado.
+    const MAX_DISTANCIA_MINUTOS = 180;
+    const valido = melhor && (melhor.dentroDaViagem || melhor.distanciaMinutos <= MAX_DISTANCIA_MINUTOS);
+    result.set(v.id, valido ? melhor! : { enderecoViagem: null, distanciaMinutos: Infinity, dentroDaViagem: false });
   }
   return result;
 }
