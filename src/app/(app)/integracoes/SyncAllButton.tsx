@@ -9,9 +9,10 @@ import { syncFromSiat } from "../escalas/siatActions";
 import { syncSofitFuel } from "../combustivel/sofitActions";
 import { syncAnpPrices } from "../combustivel/actions";
 import { syncTicketLogCardStatuses } from "../combustivel/cartoes/actions";
+import { prepareMultasSync, syncMultasVehicle } from "../multas/actions";
 import { sleep, TIQUETAQUE_IMPORT_PACE_MS } from "@/lib/tiquetaque/pace";
 
-type SystemKey = "tiquetaquePonto" | "tiquetaqueAfastamentos" | "siat" | "sofit" | "ticketlog" | "anp";
+type SystemKey = "tiquetaquePonto" | "tiquetaqueAfastamentos" | "siat" | "sofit" | "ticketlog" | "anp" | "multas";
 type SystemStatus = "idle" | "running" | "done" | "error" | "indisponivel";
 type SystemState = { status: SystemStatus; message?: string; progress?: { done: number; total: number } };
 
@@ -22,9 +23,26 @@ const LABELS: Record<SystemKey, string> = {
   sofit: "Sofit — Combustível",
   ticketlog: "Ticket Log — Cartões",
   anp: "ANP — Preços de referência",
+  multas: "Multas — LW Tecnologia",
 };
 
-const ORDER: SystemKey[] = ["tiquetaquePonto", "tiquetaqueAfastamentos", "siat", "sofit", "ticketlog", "anp"];
+// Unidade usada na mensagem de progresso "X/Y ..." — a maioria pausa por
+// motorista (limite da API do TiqueTaque), Multas pausa por veiculo (ver
+// src/lib/lw/sync.ts).
+const PROGRESS_UNIT: Record<SystemKey, string> = {
+  tiquetaquePonto: "motorista(s)",
+  tiquetaqueAfastamentos: "motorista(s)",
+  siat: "motorista(s)",
+  sofit: "motorista(s)",
+  ticketlog: "motorista(s)",
+  anp: "motorista(s)",
+  multas: "veículo(s)",
+};
+
+// Multas nao compartilha limite de taxa com o TiqueTaque (fornecedor
+// diferente, LW Tecnologia) — roda em paralelo com tudo o resto, mesmo
+// espirito de SIAT/Sofit/Ticket Log/ANP.
+const ORDER: SystemKey[] = ["tiquetaquePonto", "tiquetaqueAfastamentos", "siat", "sofit", "ticketlog", "anp", "multas"];
 
 function StatusIcon({ status }: { status: SystemStatus }) {
   if (status === "running") return <Loader2 className="h-4 w-4 shrink-0 animate-spin text-blue-600" />;
@@ -48,11 +66,17 @@ function StatusIcon({ status }: { status: SystemStatus }) {
 // sincronizar so desde a ultima vez (intervalo pequeno), a maioria das
 // chamadas por motorista nao encontra nada novo e volta rapido, mas o
 // tempo total ainda depende do tamanho da frota, nao só do que mudou.
+// Mesmo espacamento entre chamadas ja usado no botao dedicado de Multas
+// (ver src/app/(app)/multas/MultasSyncButton.tsx) — testado sem 429 numa
+// varredura da frota inteira.
+const MULTAS_SYNC_PACE_MS = 250;
+
 export default function SyncAllButton({
   tiquetaqueAvailable,
   siatAvailable,
   sofitAvailable,
   ticketLogAvailable,
+  multasAvailable,
   pontoRange,
   siatRange,
   mesAtual,
@@ -61,6 +85,7 @@ export default function SyncAllButton({
   siatAvailable: boolean;
   sofitAvailable: boolean;
   ticketLogAvailable: boolean;
+  multasAvailable: boolean;
   pontoRange: { start: string; end: string };
   siatRange: { start: string; end: string };
   mesAtual: string;
@@ -73,6 +98,7 @@ export default function SyncAllButton({
     sofit: { status: sofitAvailable ? "idle" : "indisponivel" },
     ticketlog: { status: ticketLogAvailable ? "idle" : "indisponivel" },
     anp: { status: "idle" },
+    multas: { status: multasAvailable ? "idle" : "indisponivel" },
   });
 
   function patch(key: SystemKey, patch: Partial<SystemState>) {
@@ -202,6 +228,37 @@ export default function SyncAllButton({
     }
   }
 
+  async function runMultas() {
+    patch("multas", { status: "running" });
+    try {
+      const plan = await prepareMultasSync();
+      let criadas = 0;
+      let atualizadas = 0;
+      let erros = 0;
+      for (let i = 0; i < plan.itens.length; i++) {
+        const item = plan.itens[i];
+        patch("multas", { progress: { done: i, total: plan.itens.length } });
+        if (i > 0) await sleep(MULTAS_SYNC_PACE_MS);
+        const r = await syncMultasVehicle(item.vehicleId, item.placaParaConsulta);
+        if ("error" in r) erros++;
+        else {
+          criadas += r.criadas;
+          atualizadas += r.atualizadas;
+        }
+      }
+      patch("multas", {
+        progress: { done: plan.itens.length, total: plan.itens.length },
+        status: erros > 0 ? "error" : "done",
+        message:
+          `${criadas} nova(s), ${atualizadas} atualizada(s).` +
+          (plan.semCorrespondenciaNaLw.length > 0 ? ` ${plan.semCorrespondenciaNaLw.length} veículo(s) sem cadastro na LW.` : "") +
+          (erros > 0 ? ` ${erros} erro(s).` : ""),
+      });
+    } catch (e) {
+      patch("multas", { status: "error", message: e instanceof Error ? e.message : "Falha inesperada." });
+    }
+  }
+
   async function handleClick() {
     setRunning(true);
     const tasks: Promise<void>[] = [runAnp()];
@@ -209,6 +266,7 @@ export default function SyncAllButton({
     if (ticketLogAvailable) tasks.push(runTicketLog());
     if (siatAvailable) tasks.push(runSiat());
     if (tiquetaqueAvailable) tasks.push(runTiqueTaqueSequencial());
+    if (multasAvailable) tasks.push(runMultas());
     await Promise.allSettled(tasks);
     setRunning(false);
   }
@@ -219,8 +277,8 @@ export default function SyncAllButton({
         <div>
           <p className="text-sm font-semibold text-slate-900">Sincronizar tudo agora</p>
           <p className="text-xs text-slate-500">
-            Dispara os 6 fluxos manuais de uma vez (TiqueTaque, SIAT, Sofit, Ticket Log, ANP). Pode levar alguns
-            minutos — o TiqueTaque processa um motorista de cada vez pra respeitar o limite da API dele.
+            Dispara os 7 fluxos manuais de uma vez (TiqueTaque, SIAT, Sofit, Ticket Log, ANP, Multas). Pode levar
+            alguns minutos — TiqueTaque e Multas processam um item de cada vez pra respeitar o limite das APIs.
           </p>
         </div>
         <button
@@ -244,7 +302,7 @@ export default function SyncAllButton({
                 {s.status === "indisponivel" && <p className="text-slate-400">Não configurado.</p>}
                 {s.status === "running" && s.progress && s.progress.total > 0 && (
                   <p className="text-slate-500">
-                    {s.progress.done}/{s.progress.total} motorista(s)…
+                    {s.progress.done}/{s.progress.total} {PROGRESS_UNIT[key]}…
                   </p>
                 )}
                 {s.status === "running" && !s.progress && <p className="text-slate-500">Rodando…</p>}

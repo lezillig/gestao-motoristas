@@ -11,6 +11,7 @@ import {
   FileSpreadsheet,
   FileText,
   ArrowRight,
+  Gavel,
 } from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -21,6 +22,7 @@ import { isSiatAvailable } from "@/lib/siat/client";
 import { isSofitAvailable } from "@/lib/sofit/client";
 import { isTicketLogAvailable } from "@/lib/ticketlog/client";
 import { isIturanAvailable } from "@/lib/ituran/client";
+import { isLwAvailable } from "@/lib/lw/client";
 import AnpSyncButton from "../combustivel/AnpSyncButton";
 import SofitSyncButton from "../combustivel/SofitSyncButton";
 import LeaveImportButton from "../afastamentos/LeaveImportButton";
@@ -128,6 +130,7 @@ export default async function IntegracoesPage() {
         siatAvailable={isSiatAvailable()}
         sofitAvailable={isSofitAvailable()}
         ticketLogAvailable={isTicketLogAvailable()}
+        multasAvailable={isLwAvailable()}
         pontoRange={pontoRange}
         siatRange={siatRange}
         mesAtual={mesAtual}
@@ -194,6 +197,15 @@ export default async function IntegracoesPage() {
           unavailable={!isIturanAvailable()}
         >
           <GoTo href="/telemetria" label="Ir pra Telemetria" />
+        </IntegrationCard>
+
+        <IntegrationCard
+          icon={Gavel}
+          title="Multas"
+          description="Multas de trânsito da frota e indicação do condutor responsável, direto da LW Tecnologia. Sem sincronização automática ainda; roda na hora aqui ou na própria tela."
+          unavailable={!isLwAvailable()}
+        >
+          <GoTo href="/multas" label="Ir pra Multas" />
         </IntegrationCard>
       </Section>
 

@@ -105,6 +105,38 @@ export async function fetchPrazoAlertCounts(companyId: string, agora: Date): Pro
   return { vencido, vencendoEm5Dias };
 }
 
+export type EscalaDoDia = { driverName: string; startTime: string; endTime: string | null };
+
+// Motorista(s) escalado(s) no SIAT pro veiculo, no dia da infracao — mostra
+// TODA escala do dia (nao so a que bate o horario, ao contrario da
+// resolucao automatica em resolveCondutor.ts), pra dar visibilidade
+// completa de diagnostico: usuario pediu isso depois de duvidar se a
+// sugestao automatica realmente cruzou com o SIAT ou nao (2026-09-11).
+// 1 query batch pra pagina inteira, nao 1 por linha.
+export async function fetchEscalasDoDiaPorMultas(
+  companyId: string,
+  multas: { vehicleId: string | null; dataInfracao: Date | null }[]
+): Promise<Map<string, EscalaDoDia[]>> {
+  const pares = multas.filter(
+    (m): m is { vehicleId: string; dataInfracao: Date } => m.vehicleId !== null && m.dataInfracao !== null
+  );
+  if (pares.length === 0) return new Map();
+
+  const escalas = await prisma.escala.findMany({
+    where: { companyId, OR: pares.map((p) => ({ vehicleId: p.vehicleId, date: p.dataInfracao })) },
+    select: { vehicleId: true, date: true, startTime: true, endTime: true, driver: { select: { name: true } } },
+  });
+
+  const map = new Map<string, EscalaDoDia[]>();
+  for (const e of escalas) {
+    const key = `${e.vehicleId}|${e.date.getTime()}`;
+    const lista = map.get(key) ?? [];
+    lista.push({ driverName: e.driver.name, startTime: e.startTime, endTime: e.endTime });
+    map.set(key, lista);
+  }
+  return map;
+}
+
 export type MultasFilterOptions = {
   situacoes: string[];
   veiculos: { id: string; plate: string }[];

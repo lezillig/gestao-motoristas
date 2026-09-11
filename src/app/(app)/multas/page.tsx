@@ -17,8 +17,10 @@ import {
   fetchMultasCount,
   fetchMultasFilterOptions,
   fetchPrazoAlertCounts,
+  fetchEscalasDoDiaPorMultas,
   type MultaSortField,
   type MultasFilters,
+  type EscalaDoDia,
 } from "@/lib/multasList";
 import MultasSyncButton from "./MultasSyncButton";
 import IndicacaoCell from "./IndicacaoCell";
@@ -85,6 +87,9 @@ export default async function MultasPage({
   ]);
 
   const totalPaginas = Math.max(1, Math.ceil(totalMultas / MULTAS_PAGE_SIZE));
+  const escalasPorMulta: Map<string, EscalaDoDia[]> = available
+    ? await fetchEscalasDoDiaPorMultas(session.companyId, multas)
+    : new Map();
 
   const temFiltro =
     filters.situacaoLw.length > 0 || filters.indicacaoStatus.length > 0 || filters.vehicleId.length > 0 || filters.driverId.length > 0;
@@ -193,6 +198,7 @@ export default async function MultasPage({
               <th className="whitespace-nowrap px-4 py-3">AIT</th>
               <SortableTh label="Valor" field="valorCents" basePath="/multas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="whitespace-nowrap px-4 py-3" />
               <SortableTh label="Prazo indicação" field="dataLimiteIndicacao" basePath="/multas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="whitespace-nowrap px-4 py-3" />
+              <th className="whitespace-nowrap px-4 py-3">Escalado no SIAT</th>
               <SortableTh label="Condutor" field="indicacaoStatus" basePath="/multas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="whitespace-nowrap px-4 py-3" />
             </tr>
           </thead>
@@ -221,6 +227,20 @@ export default async function MultasPage({
                 <td className="whitespace-nowrap px-4 py-3 text-slate-600">
                   {m.dataLimiteIndicacao ? format(m.dataLimiteIndicacao, "dd/MM/yyyy") : "—"}
                 </td>
+                <td className="px-4 py-3 text-slate-600">
+                  {(() => {
+                    const escalas = m.vehicleId && m.dataInfracao
+                      ? escalasPorMulta.get(`${m.vehicleId}|${m.dataInfracao.getTime()}`)
+                      : undefined;
+                    if (!escalas || escalas.length === 0) return "—";
+                    return escalas.map((e, i) => (
+                      <p key={i} className="whitespace-nowrap text-xs">
+                        {e.driverName} ({e.startTime}
+                        {e.endTime ? `–${e.endTime}` : ""})
+                      </p>
+                    ));
+                  })()}
+                </td>
                 <td className="px-4 py-3">
                   <IndicacaoCell multaId={m.id} indicacao={m.indicacao} drivers={drivers} />
                 </td>
@@ -228,7 +248,7 @@ export default async function MultasPage({
             ))}
             {multas.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">
+                <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
                   {!available ? "Integração não configurada." : temFiltro ? "Nenhuma multa encontrada com os filtros aplicados." : "Nenhuma multa sincronizada ainda."}
                 </td>
               </tr>
