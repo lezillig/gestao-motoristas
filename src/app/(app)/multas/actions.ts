@@ -4,8 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { isLwAvailable, getLwToken, buscarCondutorPorCpfEMulta, indicarCondutorLw, statusIndicacao } from "@/lib/lw/client";
-import { prepareMultasSyncPlan, syncMultasForVehicle, type MultasSyncPlan } from "@/lib/lw/sync";
-import { resolveCondutorParaMulta } from "@/lib/lw/resolveCondutor";
+import { prepareMultasSyncPlan, syncMultasForVehicle, resolveCondutoresPendentes, type MultasSyncPlan } from "@/lib/lw/sync";
 
 export { isLwAvailable };
 
@@ -30,44 +29,7 @@ export async function syncMultasVehicle(vehicleId: string, placaParaConsulta: st
     if (!vehicle) return { error: "Veículo não encontrado." };
 
     const result = await syncMultasForVehicle(session.companyId, vehicleId, placaParaConsulta);
-
-    const multas = await prisma.multa.findMany({
-      where: { vehicleId, companyId: session.companyId },
-      include: { indicacao: true },
-    });
-    for (const multa of multas) {
-      // Toda multa ganha uma linha de IndicacaoCondutor (mesmo sem sugestao
-      // automatica, status fica PENDENTE_MANUAL) — sem isso, filtrar/ordenar
-      // por status de indicacao na listagem teria que tratar "sem linha" e
-      // "PENDENTE_MANUAL" como o mesmo caso em dois lugares diferentes.
-      const podeAutoResolver =
-        !multa.indicacao || (multa.indicacao.origemResolucao !== "MANUAL" && multa.indicacao.status === "PENDENTE_MANUAL");
-      if (!podeAutoResolver) continue;
-
-      const resolved = await resolveCondutorParaMulta({
-        vehicleId: multa.vehicleId,
-        dataInfracao: multa.dataInfracao,
-        horaInfracao: multa.horaInfracao,
-      });
-
-      if (resolved.driverId) {
-        await prisma.indicacaoCondutor.upsert({
-          where: { multaId: multa.id },
-          create: {
-            companyId: session.companyId,
-            multaId: multa.id,
-            driverId: resolved.driverId,
-            status: "SUGERIDA",
-            origemResolucao: resolved.origem,
-          },
-          update: { driverId: resolved.driverId, status: "SUGERIDA", origemResolucao: resolved.origem },
-        });
-      } else if (!multa.indicacao) {
-        await prisma.indicacaoCondutor.create({
-          data: { companyId: session.companyId, multaId: multa.id, status: "PENDENTE_MANUAL" },
-        });
-      }
-    }
+    await resolveCondutoresPendentes(session.companyId, vehicleId);
 
     revalidatePath("/multas");
     return result;

@@ -207,7 +207,7 @@ export default async function IntegracoesPage() {
         <IntegrationCard
           icon={Gavel}
           title="Multas"
-          description="Multas de trânsito da frota e indicação do condutor responsável, direto da LW Tecnologia. Sem sincronização automática ainda; roda na hora aqui."
+          description="Multas de trânsito da frota e indicação do condutor responsável, direto da LW Tecnologia. Roda sozinho toda madrugada; dá pra sincronizar na hora também."
           unavailable={!isLwAvailable()}
         >
           <div className="flex flex-col gap-3">
