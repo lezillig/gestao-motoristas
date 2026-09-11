@@ -231,7 +231,8 @@ export default async function MultasPage({
                     </a>
                   </p>
                   {typeof (m.rawJson as { endereco?: unknown } | null)?.endereco === "string" && (
-                    <p className="max-w-[200px] text-[11px] text-slate-400">
+                    <p className="max-w-[220px] text-[11px] text-slate-400">
+                      {m.horaInfracao ? `${m.horaInfracao} — ` : ""}
                       {(m.rawJson as { endereco: string }).endereco}
                     </p>
                   )}
