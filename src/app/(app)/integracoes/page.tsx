@@ -121,7 +121,7 @@ export default async function IntegracoesPage() {
   const gaps = await checkAllGaps(session.companyId, RECURRING_GAP_WINDOW_DAYS);
 
   return (
-    <div className="max-w-5xl">
+    <div>
       <PageHeader
         title="Integrações"
         subtitle="Sincronizações automáticas e uploads manuais, organizados por sistema."

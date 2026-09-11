@@ -147,7 +147,7 @@ export default async function PontoCorrecoesPage({
         : `últimos ${DEFAULT_LOOKBACK_MONTHS} meses`;
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <PageHeader
         title="Histórico de correções"
         subtitle="Trilha de auditoria de toda alteração em registros de ponto — reimportação do TiqueTaque, edição manual e exclusão manual, todas com quem/quando/o que mudou."

@@ -229,7 +229,7 @@ export default async function AuditoriaDiaPage({
   })();
 
   return (
-    <div className="max-w-5xl">
+    <div>
       <div className="mb-4" data-print-hide>
         <Link href="/utilizacao" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-700">
           <ArrowLeft className="h-4 w-4" /> Voltar pra Utilização de veículos

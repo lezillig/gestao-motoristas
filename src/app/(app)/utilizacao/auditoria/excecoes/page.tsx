@@ -82,7 +82,7 @@ export default async function ExcecoesDoDiaPage({
   const nextDay = format(addDays(dayStart, 1), "yyyy-MM-dd");
 
   return (
-    <div className="max-w-4xl">
+    <div>
       <div className="mb-4" data-print-hide>
         <Link href="/utilizacao/auditoria" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-700">
           <ArrowLeft className="h-4 w-4" /> Ir pra auditoria motorista a motorista

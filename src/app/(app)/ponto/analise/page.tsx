@@ -623,7 +623,7 @@ export default async function AnaliseDeRiscosPage({
     .sort((a, b) => b.clientCount + b.entradaSaidaCount + b.outlierCount - (a.clientCount + a.entradaSaidaCount + a.outlierCount));
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <PageHeader
         title="Análise de riscos"
         subtitle="Marcações de ponto avaliadas sob três eixos: CLT, Convenção/Acordo Coletivo e decisões trabalhistas."

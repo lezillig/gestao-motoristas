@@ -83,7 +83,7 @@ export default async function PontoAnualPage({
   };
 
   return (
-    <div className="max-w-7xl">
+    <div>
       <PageHeader
         title="Relatório anual de horas extras"
         subtitle="Horas extras ou horas totais por mês e total do ano, por motorista — para identificar os casos que mais se repetem."

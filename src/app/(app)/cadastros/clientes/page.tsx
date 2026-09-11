@@ -31,7 +31,7 @@ export default async function ClientesPage({
   });
 
   return (
-    <div className="max-w-4xl">
+    <div>
       <PageHeader
         title="Clientes"
         subtitle="Cliente/centro de custo de cada motorista ou funcionário — base para análise de custo por contrato."

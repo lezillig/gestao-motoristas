@@ -274,7 +274,7 @@ export default async function CombustivelPage({
   };
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <PageHeader
         title="Combustível"
         subtitle="Abastecimentos do cartão Ticket Log (via Sofit ou extrato manual), cruzados com o cadastro de motoristas e veículos."

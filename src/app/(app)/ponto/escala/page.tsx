@@ -242,7 +242,7 @@ export default async function PontoEscalaPage({
   }
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <PageHeader
         title="Ponto x Escala"
         subtitle="Horário batido no ponto lado a lado com o horário programado na escala (SIAT), dia a dia por motorista."

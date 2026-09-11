@@ -22,7 +22,7 @@ export default async function UsuariosPage() {
   });
 
   return (
-    <div className="max-w-4xl">
+    <div>
       <PageHeader
         title="Usuários"
         subtitle="Contas de acesso ao sistema e seus tipos de permissão."

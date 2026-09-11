@@ -66,7 +66,7 @@ export default async function ViagensPage({
   const semEscala = trips.filter((t) => !t.escalaId);
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <PageHeader
         title="Viagens x escala"
         subtitle="Deslocamentos reais captados pela Ituran, cruzados com a escala planejada do veículo."

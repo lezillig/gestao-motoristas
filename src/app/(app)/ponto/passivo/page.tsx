@@ -51,7 +51,7 @@ export default async function PassivoTrabalhistaPage({
   const gridTemplateColumns = `1fr ${"110px ".repeat(report.monthKeys.length)}130px`;
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <PageHeader
         title="Passivo trabalhista estimado"
         subtitle="Exposição financeira acumulada por motorista, projetada a partir das violações já detectadas — para acompanhar tendência e priorizar decisão, não para cálculo pericial."

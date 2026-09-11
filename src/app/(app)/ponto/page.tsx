@@ -205,7 +205,7 @@ export default async function PontoPage({
   const sortLinkParams = { semana: format(weekStart, "yyyy-MM-dd"), motorista };
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <PageHeader
         title="Ponto"
         subtitle="Registro de jornada e checagem automática de hora extra e interjornada (Lei 13.103/2015)."

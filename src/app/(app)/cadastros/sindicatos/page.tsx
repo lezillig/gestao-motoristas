@@ -35,7 +35,7 @@ export default async function SindicatosPage({
   });
 
   return (
-    <div className="max-w-4xl">
+    <div>
       <PageHeader
         title="Sindicatos"
         subtitle="Vínculo sindical dos motoristas — base para o motor de conformidade de convenção coletiva."

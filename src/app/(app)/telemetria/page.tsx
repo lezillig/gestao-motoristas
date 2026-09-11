@@ -111,7 +111,7 @@ export default async function TelemetriaPage({
   const ranking = [...leaderboard.values()].sort((a, b) => b.count - a.count);
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <PageHeader title="Telemetria" subtitle="Velocidade e comportamento de direção por veículo." />
 
       {/* Com Ituran configurada, a leitura ja vem sozinha pelo cron (e o

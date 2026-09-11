@@ -28,7 +28,7 @@ export default async function AuditoriaViagemPontoPage({
   );
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <PageHeader
         title="Auditoria: ponto x viagens"
         subtitle="Cruza o horário batido no ponto com o deslocamento real do veículo escalado — sinaliza ponto sem uso do veículo e viagem sem ponto correspondente."

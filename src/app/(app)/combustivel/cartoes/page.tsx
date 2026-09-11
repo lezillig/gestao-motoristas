@@ -35,7 +35,7 @@ export default async function CartoesCombustivelPage() {
   const saldoBaixo = ativos.filter((s) => s.limiteCents != null && s.limiteCents > 0 && s.saldoCents != null && s.saldoCents / s.limiteCents < 0.1);
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <PageHeader
         title="Cartões combustível (Ticket Log)"
         subtitle="Status de saldo e limite por veículo/cartão, direto da API da Ticket Log — não é o extrato de abastecimentos (isso continua em Combustível)."

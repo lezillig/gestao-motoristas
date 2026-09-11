@@ -115,7 +115,7 @@ export default async function DashboardPage() {
   const vigiaByDriverId = new Map(vigiaCnh.map((v) => [v.driverId, v]));
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-slate-900">Painel</h1>
         <p className="mt-1 text-sm text-slate-500">

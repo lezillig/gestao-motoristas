@@ -37,7 +37,7 @@ export default async function ConvencoesPage({
   });
 
   return (
-    <div className="max-w-4xl">
+    <div>
       <PageHeader
         title="Convenção coletiva"
         subtitle="CCT por sindicato, usada para checar automaticamente o ponto dos motoristas."

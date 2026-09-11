@@ -77,7 +77,7 @@ export default async function EscalasPage({
   const baseHref = `/escalas?semana=${format(weekStart, "yyyy-MM-dd")}${motorista ? `&motorista=${encodeURIComponent(motorista)}` : ""}${sort ? `&sort=${sort}&dir=${sortDir}` : ""}`;
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <PageHeader
         title="Escalas"
         subtitle="Vínculo motorista × veículo por turno."

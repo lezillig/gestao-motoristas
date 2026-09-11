@@ -63,7 +63,7 @@ export default async function VeiculosPage({
   const types = typeRows.map((r) => r.type);
 
   return (
-    <div className="max-w-4xl">
+    <div>
       <PageHeader
         title="Veículos"
         subtitle="Frota disponível para vínculo nas escalas."

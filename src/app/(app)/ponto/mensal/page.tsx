@@ -168,7 +168,7 @@ export default async function PontoMensalPage({
   };
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <PageHeader
         title="Relatório mensal"
         subtitle="Horas trabalhadas ou horas extras por motorista no mês, com detalhamento diário e exportação."

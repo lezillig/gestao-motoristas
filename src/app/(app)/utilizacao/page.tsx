@@ -75,7 +75,7 @@ export default async function UtilizacaoPage({
   const vehiclesDue = vehicles.filter(isMaintenanceDue);
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <PageHeader
         title="Utilização de veículos"
         subtitle="Registro manual de uso do veículo. Hodômetro e manutenção já são atualizados sozinhos pela Ituran — use o check-in aqui só pra anotar quem pegou o veículo fora da escala do SIAT."

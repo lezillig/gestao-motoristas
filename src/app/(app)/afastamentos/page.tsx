@@ -180,7 +180,7 @@ export default async function AfastamentosPage({
   const sortLinkParams = { mes: format(monthStart, "yyyy-MM"), tipo, driverId };
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <PageHeader
         title="Afastamentos"
         subtitle="Folgas, atestados, férias e abonos dos motoristas, importados do TiqueTaque."
