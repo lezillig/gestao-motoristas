@@ -1,4 +1,6 @@
+import { format } from "date-fns";
 import { prisma } from "@/lib/prisma";
+import { brazilDateTimeToUtc } from "@/lib/date";
 import type { Prisma, StatusIndicacaoCondutor } from "@prisma/client";
 
 export const MULTA_SORT_FIELDS = [
@@ -135,6 +137,80 @@ export async function fetchEscalasDoDiaPorMultas(
     map.set(key, lista);
   }
   return map;
+}
+
+export type IturanCruzamento = {
+  enderecoViagem: string | null;
+  distanciaMinutos: number;
+  dentroDaViagem: boolean;
+};
+
+// Cruza o horario da infracao com as viagens reais da Ituran (VehicleTrip)
+// do mesmo veiculo — pedido do usuario pra comparar o endereco da
+// notificacao com onde o rastreador realmente estava. Usa
+// brazilDateTimeToUtc (NAO combineLocalDateTime, usado em
+// resolveCondutor.ts pra VehicleUsageLog): VehicleTrip.startAt/endAt sao
+// timestamp real em UTC de verdade, vindo direto da API da Ituran, ao
+// contrario de VehicleUsageLog.checkInAt, que guarda a hora BRT "crua" como
+// se fosse UTC (convencao interna deste app onde os dois lados de toda
+// comparacao usam o mesmo deslocamento e por isso se cancelam) — cruzar
+// contra a Ituran exige a conversao correta, senao da uma diferenca de 3h.
+export async function fetchIturanCruzamentoPorMultas(
+  companyId: string,
+  multas: { id: string; vehicleId: string | null; dataInfracao: Date | null; horaInfracao: string | null }[]
+): Promise<Map<string, IturanCruzamento>> {
+  const validas = multas
+    .filter((m): m is { id: string; vehicleId: string; dataInfracao: Date; horaInfracao: string } =>
+      Boolean(m.vehicleId && m.dataInfracao && m.horaInfracao)
+    )
+    .map((m) => ({
+      id: m.id,
+      vehicleId: m.vehicleId,
+      instant: brazilDateTimeToUtc(format(m.dataInfracao, "yyyy-MM-dd"), m.horaInfracao),
+    }));
+  if (validas.length === 0) return new Map();
+
+  const vehicleIds = [...new Set(validas.map((v) => v.vehicleId))];
+  // Folga de 6h pra cada lado — o suficiente pra achar a viagem mais
+  // proxima mesmo quando a infracao aconteceu fora de qualquer viagem
+  // registrada (veiculo parado).
+  const FOLGA_MS = 6 * 60 * 60 * 1000;
+  const minInstant = new Date(Math.min(...validas.map((v) => v.instant.getTime())) - FOLGA_MS);
+  const maxInstant = new Date(Math.max(...validas.map((v) => v.instant.getTime())) + FOLGA_MS);
+
+  const trips = await prisma.vehicleTrip.findMany({
+    where: { companyId, vehicleId: { in: vehicleIds }, startAt: { lte: maxInstant }, endAt: { gte: minInstant } },
+    select: { vehicleId: true, startAt: true, endAt: true, startAddress: true, endAddress: true },
+  });
+
+  const tripsByVehicle = new Map<string, typeof trips>();
+  for (const t of trips) {
+    const lista = tripsByVehicle.get(t.vehicleId) ?? [];
+    lista.push(t);
+    tripsByVehicle.set(t.vehicleId, lista);
+  }
+
+  const result = new Map<string, IturanCruzamento>();
+  for (const v of validas) {
+    let melhor: IturanCruzamento | null = null;
+    for (const t of tripsByVehicle.get(v.vehicleId) ?? []) {
+      const dentro = v.instant >= t.startAt && v.instant <= t.endAt;
+      const distStart = Math.abs(v.instant.getTime() - t.startAt.getTime());
+      const distEnd = Math.abs(v.instant.getTime() - t.endAt.getTime());
+      const usarInicio = distStart <= distEnd;
+      const distMs = usarInicio ? distStart : distEnd;
+      if (!melhor || dentro || distMs < melhor.distanciaMinutos * 60_000) {
+        melhor = {
+          enderecoViagem: usarInicio ? t.startAddress : t.endAddress,
+          distanciaMinutos: Math.round(distMs / 60_000),
+          dentroDaViagem: dentro,
+        };
+      }
+      if (dentro) break;
+    }
+    result.set(v.id, melhor ?? { enderecoViagem: null, distanciaMinutos: Infinity, dentroDaViagem: false });
+  }
+  return result;
 }
 
 export type MultasFilterOptions = {

@@ -72,3 +72,23 @@ export function brazilDateStringToUtc(dateISO: string): Date {
   const [, y, m, d] = match;
   return new Date(Date.UTC(Number(y), Number(m) - 1, Number(d)) + BRAZIL_UTC_OFFSET_HOURS * 60 * 60 * 1000);
 }
+
+// Como brazilDateStringToUtc, mas com hora:minuto tambem — instante UTC
+// exato de um horario em Brasilia (ex.: horaInfracao de uma multa) pra
+// comparar contra um TIMESTAMP REAL independente (VehicleTrip.startAt/
+// endAt, da Ituran). Diferente de combineLocalDateTime (usado pra
+// VehicleUsageLog.checkInAt): aquele guarda a hora BRT "cru" como se fosse
+// UTC, uma convencao interna deste app onde os dois lados da comparacao
+// usam o mesmo deslocamento e por isso se cancelam — mas a Ituran nao seguiu
+// essa convencao (manda timestamp real, ja em UTC de verdade), entao
+// cruzar contra ela exige a conversao correta, nao a convencao interna.
+export function brazilDateTimeToUtc(dateISO: string, time: string): Date {
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateISO);
+  const timeMatch = /^(\d{2}):(\d{2})$/.exec(time);
+  if (!dateMatch || !timeMatch) return new Date(NaN);
+  const [, y, m, d] = dateMatch;
+  const [, hh, mm] = timeMatch;
+  return new Date(
+    Date.UTC(Number(y), Number(m) - 1, Number(d), Number(hh), Number(mm)) + BRAZIL_UTC_OFFSET_HOURS * 60 * 60 * 1000
+  );
+}

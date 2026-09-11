@@ -18,9 +18,11 @@ import {
   fetchMultasFilterOptions,
   fetchPrazoAlertCounts,
   fetchEscalasDoDiaPorMultas,
+  fetchIturanCruzamentoPorMultas,
   type MultaSortField,
   type MultasFilters,
   type EscalaDoDia,
+  type IturanCruzamento,
 } from "@/lib/multasList";
 import MultasSyncButton from "./MultasSyncButton";
 import IndicacaoCell from "./IndicacaoCell";
@@ -89,6 +91,9 @@ export default async function MultasPage({
   const totalPaginas = Math.max(1, Math.ceil(totalMultas / MULTAS_PAGE_SIZE));
   const escalasPorMulta: Map<string, EscalaDoDia[]> = available
     ? await fetchEscalasDoDiaPorMultas(session.companyId, multas)
+    : new Map();
+  const iturarPorMulta: Map<string, IturanCruzamento> = available
+    ? await fetchIturanCruzamentoPorMultas(session.companyId, multas)
     : new Map();
 
   const temFiltro =
@@ -199,6 +204,7 @@ export default async function MultasPage({
               <SortableTh label="Valor" field="valorCents" basePath="/multas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="whitespace-nowrap px-4 py-3" />
               <SortableTh label="Prazo indicação" field="dataLimiteIndicacao" basePath="/multas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="whitespace-nowrap px-4 py-3" />
               <th className="whitespace-nowrap px-4 py-3">Escalado no SIAT</th>
+              <th className="whitespace-nowrap px-4 py-3">Ituran (mais próximo)</th>
               <SortableTh label="Condutor" field="indicacaoStatus" basePath="/multas" currentParams={sortLinkParams} currentSort={sortField} currentDir={sortDir} className="whitespace-nowrap px-4 py-3" />
             </tr>
           </thead>
@@ -212,16 +218,23 @@ export default async function MultasPage({
                   {m.dataInfracao ? format(m.dataInfracao, "dd/MM/yyyy") : "—"}
                   {m.horaInfracao ? ` ${m.horaInfracao}` : ""}
                 </td>
-                <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                  {m.ait ?? "—"}
-                  <a
-                    href={`/api/multas/${m.id}/imagem`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="ml-2 text-[11px] font-medium text-blue-700 hover:underline"
-                  >
-                    Ver notificação
-                  </a>
+                <td className="px-4 py-3 text-slate-600">
+                  <p className="whitespace-nowrap">
+                    {m.ait ?? "—"}
+                    <a
+                      href={`/api/multas/${m.id}/imagem`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ml-2 text-[11px] font-medium text-blue-700 hover:underline"
+                    >
+                      Ver notificação
+                    </a>
+                  </p>
+                  {typeof (m.rawJson as { endereco?: unknown } | null)?.endereco === "string" && (
+                    <p className="max-w-[200px] text-[11px] text-slate-400">
+                      {(m.rawJson as { endereco: string }).endereco}
+                    </p>
+                  )}
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-slate-600">{formatBRL(m.valorCents)}</td>
                 <td className="whitespace-nowrap px-4 py-3 text-slate-600">
@@ -241,6 +254,22 @@ export default async function MultasPage({
                     ));
                   })()}
                 </td>
+                <td className="px-4 py-3 text-slate-600">
+                  {(() => {
+                    const cruzamento = iturarPorMulta.get(m.id);
+                    if (!cruzamento || !cruzamento.enderecoViagem) return "—";
+                    return (
+                      <div className="max-w-[220px]">
+                        <p className="text-xs">{cruzamento.enderecoViagem}</p>
+                        <p className="text-[11px] text-slate-400">
+                          {cruzamento.dentroDaViagem
+                            ? "durante uma viagem"
+                            : `${cruzamento.distanciaMinutos} min de diferença`}
+                        </p>
+                      </div>
+                    );
+                  })()}
+                </td>
                 <td className="px-4 py-3">
                   <IndicacaoCell multaId={m.id} indicacao={m.indicacao} drivers={drivers} />
                 </td>
@@ -248,7 +277,7 @@ export default async function MultasPage({
             ))}
             {multas.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
+                <td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-500">
                   {!available ? "Integração não configurada." : temFiltro ? "Nenhuma multa encontrada com os filtros aplicados." : "Nenhuma multa sincronizada ainda."}
                 </td>
               </tr>
