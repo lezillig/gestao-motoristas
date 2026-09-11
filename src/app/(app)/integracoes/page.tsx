@@ -27,6 +27,7 @@ import AnpSyncButton from "../combustivel/AnpSyncButton";
 import SofitSyncButton from "../combustivel/SofitSyncButton";
 import LeaveImportButton from "../afastamentos/LeaveImportButton";
 import MultasSyncButton from "../multas/MultasSyncButton";
+import BackfillTripsForm from "./BackfillTripsForm";
 import SyncAllButton from "./SyncAllButton";
 import GapStatusPanel from "./GapStatusPanel";
 import { checkAllGaps, RECURRING_GAP_WINDOW_DAYS } from "@/lib/integrationGaps";
@@ -194,10 +195,13 @@ export default async function IntegracoesPage() {
         <IntegrationCard
           icon={Satellite}
           title="Ituran"
-          description="GPS, velocidade e viagens da frota. Roda sozinho toda madrugada (D-1); dá pra gerar leituras na hora também."
+          description="GPS, velocidade e viagens da frota. Roda sozinho toda madrugada (D-1, só o que já existe no cadastro nesse dia — veículo cadastrado depois nunca é alcançado sozinho). Reimportar um intervalo cobre isso."
           unavailable={!isIturanAvailable()}
         >
-          <GoTo href="/telemetria" label="Ir pra Telemetria" />
+          <div className="flex flex-col gap-3">
+            <GoTo href="/telemetria" label="Ir pra Telemetria" />
+            {isIturanAvailable() && <BackfillTripsForm />}
+          </div>
         </IntegrationCard>
 
         <IntegrationCard
