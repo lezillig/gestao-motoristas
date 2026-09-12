@@ -32,6 +32,7 @@ import {
   Sun,
   Siren,
   Coins,
+  Sparkles,
 } from "lucide-react";
 
 type NavItem = {
@@ -47,6 +48,12 @@ const NAV: NavItem[] = [
     href: "/hoje",
     label: "Hoje",
     icon: Sun,
+    roles: ["ADMIN", "GESTOR"],
+  },
+  {
+    href: "/assistente",
+    label: "Assistente",
+    icon: Sparkles,
     roles: ["ADMIN", "GESTOR"],
   },
   {
