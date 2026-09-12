@@ -61,6 +61,19 @@ export function brazilMidnightUtc(daysFromToday = 0): Date {
   return new Date(Date.UTC(y, m, d) + BRAZIL_UTC_OFFSET_HOURS * 60 * 60 * 1000);
 }
 
+// "Rotulo" de data (meia-noite do PROCESSO, igual ao que parseLocalDate
+// grava em Escala.date/TimeClockEntry.date) do dia-calendario de Brasilia
+// de hoje + daysFromToday. Diferente de brazilMidnightUtc (instante real,
+// pra coluna TIMESTAMP): aqui o resultado precisa bater com o rotulo
+// gravado. Sem isso, `subDays(new Date(), 1)` as 14h UTC vira "ontem 14h" e
+// um filtro gte/lt em cima disso pega o rotulo de HOJE (dia ainda
+// incompleto) em vez do de ontem — bug real em /utilizacao/auditoria/
+// excecoes (2026-09-11), que mostrava "hoje" rotulado como "ontem".
+export function brazilDayLabel(daysFromToday = 0): Date {
+  const parts = utcInstantToLocalParts(new Date(Date.now() + daysFromToday * 86_400_000).toISOString())!;
+  return parseLocalDate(parts.dateISO);
+}
+
 // Inverso de utcInstantToLocalParts: converte um "yyyy-MM-dd" (rotulo de
 // dia-calendario de Brasilia, ex.: um dia que o usuario escolheu
 // reimportar em Integrações) no instante UTC exato da meia-noite REAL em

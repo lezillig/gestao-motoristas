@@ -29,6 +29,7 @@ import {
   AlertTriangle,
   Plug,
   Gavel,
+  Sun,
 } from "lucide-react";
 
 type NavItem = {
@@ -40,6 +41,12 @@ type NavItem = {
 };
 
 const NAV: NavItem[] = [
+  {
+    href: "/hoje",
+    label: "Hoje",
+    icon: Sun,
+    roles: ["ADMIN", "GESTOR"],
+  },
   {
     href: "/dashboard",
     label: "Painel",

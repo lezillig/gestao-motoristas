@@ -2,24 +2,15 @@ import Link from "next/link";
 import { addDays, format, subDays } from "date-fns";
 import { AlertTriangle, ArrowLeft, CheckCircle2, SearchCheck } from "lucide-react";
 import { requireRole } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass, inputClass, primaryButtonClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
-import { parseLocalDate } from "@/lib/date";
-
-const LEAVE_LABELS: Record<string, string> = {
-  folga: "Folga",
-  atestado: "Atestado",
-  ferias: "Férias",
-  abono: "Abono",
-};
+import { brazilDayLabel, parseLocalDate } from "@/lib/date";
+import { fetchExcecoesDoDia } from "@/lib/excecoesDia";
 
 // Versao "em lote" da Auditoria do dia (../page.tsx): em vez de escolher 1
 // motorista de cada vez, roda a mesma pergunta basica — "tem escala e
-// ponto batendo nesse dia?" — pra TODOS de uma vez, e so mostra quem tem
-// divergencia. De proposito NAO cruza Ituran/abastecimento aqui (isso e
-// por veiculo, mais pesado de fazer em lote pra empresa inteira) — pra
-// esse detalhe, clica e vai pra auditoria completa daquele motorista/dia.
+// ponto batendo nesse dia?" — pra TODOS de uma vez (ver lib/excecoesDia.ts,
+// compartilhada com o painel Hoje).
 export default async function ExcecoesDoDiaPage({
   searchParams,
 }: {
@@ -31,51 +22,9 @@ export default async function ExcecoesDoDiaPage({
   // Padrao: ontem, nao hoje — os crons (TiqueTaque/SIAT) rodam de
   // madrugada buscando o dia anterior, entao "hoje" costuma estar
   // incompleto e geraria falso positivo de "sem ponto"/"sem escala".
-  const dayStart = data ? parseLocalDate(data) : subDays(new Date(), 1);
-  const dayEnd = addDays(dayStart, 1);
+  const dayStart = data ? parseLocalDate(data) : brazilDayLabel(-1);
 
-  const [drivers, escalas, entries, leaves] = await Promise.all([
-    prisma.driver.findMany({
-      where: { companyId: session.companyId, active: true },
-      select: { id: true, name: true, funcao: true },
-    }),
-    prisma.escala.findMany({
-      where: { companyId: session.companyId, date: { gte: dayStart, lt: dayEnd } },
-      select: { driverId: true },
-    }),
-    prisma.timeClockEntry.findMany({
-      where: { companyId: session.companyId, date: { gte: dayStart, lt: dayEnd } },
-      select: { driverId: true },
-    }),
-    prisma.driverLeave.findMany({
-      where: { companyId: session.companyId, startDate: { lte: dayStart }, endDate: { gte: dayStart } },
-      select: { driverId: true, leaveType: true },
-    }),
-  ]);
-
-  const driversComEscala = new Set(escalas.map((e) => e.driverId));
-  const driversComPonto = new Set(entries.map((e) => e.driverId));
-  const leaveByDriverId = new Map(leaves.map((l) => [l.driverId, l.leaveType]));
-
-  type Excecao = { driverId: string; driverName: string; tipo: "escala_sem_ponto" | "ponto_sem_escala"; afastamento: string | null };
-  const excecoes: Excecao[] = [];
-  for (const d of drivers) {
-    const temEscala = driversComEscala.has(d.id);
-    const temPonto = driversComPonto.has(d.id);
-    if (temEscala === temPonto) continue; // os 2 ou nenhum dos 2 — sem divergencia pra reportar
-    const afastamento = leaveByDriverId.get(d.id) ?? null;
-    excecoes.push({
-      driverId: d.id,
-      driverName: d.name,
-      tipo: temEscala ? "escala_sem_ponto" : "ponto_sem_escala",
-      afastamento: afastamento ? (LEAVE_LABELS[afastamento] ?? afastamento) : null,
-    });
-  }
-  // Afastamento explica a ausencia — nao esconde a linha (o afastamento em
-  // si pode estar mal cadastrado), mas manda pro fim da lista, priorizando
-  // quem realmente precisa de atencao.
-  excecoes.sort((a, b) => (a.afastamento ? 1 : 0) - (b.afastamento ? 1 : 0));
-
+  const excecoes = await fetchExcecoesDoDia(session.companyId, dayStart);
   const semAfastamento = excecoes.filter((e) => !e.afastamento).length;
 
   const prevDay = format(subDays(dayStart, 1), "yyyy-MM-dd");
