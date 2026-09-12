@@ -21,6 +21,8 @@ import { requireRole } from "@/lib/auth";
 import { cardClass, badgeClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import { buildHoje, MULTAS_PRAZO_JANELA_DIAS } from "@/lib/hoje";
+import { hojeEmailDestinatarios, isEmailAvailable } from "@/lib/email";
+import EnviarEmailButton from "./EnviarEmailButton";
 
 function formatBRL(cents: number | null): string {
   if (cents == null) return "—";
@@ -103,13 +105,23 @@ export default async function HojePage() {
   const ontemISO = format(hoje.ontemLabel, "yyyy-MM-dd");
   const dataExtenso = format(hoje.hojeLabel, "EEEE, d 'de' MMMM", { locale: ptBR });
   const tudoEmDia = hoje.urgentes === 0 && hoje.avisos === 0;
+  const emailLigado = isEmailAvailable();
+  const destinatarios = hojeEmailDestinatarios();
 
   return (
     <div>
       <PageHeader
         title="Hoje"
         subtitle={`${dataExtenso.charAt(0).toUpperCase()}${dataExtenso.slice(1)} — o que precisa de decisão agora, reunido de todos os módulos.`}
+        extra={emailLigado ? <EnviarEmailButton /> : undefined}
       />
+      <p className="-mt-3 mb-5 text-xs text-slate-400">
+        {emailLigado
+          ? destinatarios.length > 0
+            ? `Este painel também chega por e-mail todo dia às 07h para ${destinatarios.length} destinatário(s).`
+            : "E-mail configurado, mas sem destinatários do envio diário — defina HOJE_EMAIL_PARA (separados por vírgula)."
+          : "E-mail diário desligado — configure RESEND_API_KEY (e HOJE_EMAIL_PARA) para receber este painel às 07h."}
+      </p>
 
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Tile label="Urgentes" value={hoje.urgentes} sub="prazo de multa e CNH vencida" tone={hoje.urgentes > 0 ? "critical" : "good"} />

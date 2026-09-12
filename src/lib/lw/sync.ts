@@ -91,6 +91,47 @@ export async function prepareMultasSyncPlan(companyId: string): Promise<MultasSy
   return { itens, semCorrespondenciaNaLw };
 }
 
+export interface LwCadastroConferencia {
+  totalFrota: number;
+  totalLw: number;
+  // Veiculos do NOSSO cadastro (Ituran/SIAT) que a LW nao conhece — multa
+  // deles nunca vai chegar por aqui ate alguem cadastrar o veiculo la.
+  frotaSemLw: { plate: string; modelo: string; status: string }[];
+  // Veiculos cadastrados na LW que nao batem com nenhum veiculo nosso —
+  // placa errada de um lado, veiculo vendido/baixado, ou frota de outra
+  // empresa no mesmo login.
+  lwSemFrota: { placa: string; placaMercosul: string | null; modelo: string | null; status: string | null }[];
+}
+
+// Cruza a frota inteira contra o cadastro de veiculos da LW nos dois
+// sentidos (1 chamada a LW). Mesmo casamento de placa do plano de sync
+// (matchVehicleToLw) — a lista de "sem correspondencia" ja aparecia so no
+// chat/log do sync; aqui vira uma conferencia que o usuario aciona em
+// Integrações quando quiser.
+export async function conferirCadastrosLw(companyId: string): Promise<LwCadastroConferencia> {
+  const token = await getLwToken();
+  const [veiculosLw, frota] = await Promise.all([
+    listarVeiculosLw(token),
+    prisma.vehicle.findMany({
+      where: { companyId },
+      select: { plate: true, brand: true, model: true, status: true },
+      orderBy: { plate: "asc" },
+    }),
+  ]);
+  const lwCasados = new Set<number>();
+  const frotaSemLw: LwCadastroConferencia["frotaSemLw"] = [];
+  for (const v of frota) {
+    const match = matchVehicleToLw(v.plate, veiculosLw);
+    if (match) lwCasados.add(match.registro.id_veiculo);
+    else frotaSemLw.push({ plate: v.plate, modelo: `${v.brand} ${v.model}`.trim(), status: v.status });
+  }
+  const lwSemFrota = veiculosLw
+    .filter((r) => !lwCasados.has(r.id_veiculo))
+    .map((r) => ({ placa: r.placa, placaMercosul: r.placaMercosul, modelo: r.marca_modelo, status: r.status }))
+    .sort((a, b) => a.placa.localeCompare(b.placa));
+  return { totalFrota: frota.length, totalLw: veiculosLw.length, frotaSemLw, lwSemFrota };
+}
+
 export interface MultasSyncVehicleResult {
   criadas: number;
   atualizadas: number;

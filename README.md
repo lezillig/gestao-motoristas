@@ -27,8 +27,17 @@ Login de demonstração após o seed: `admin@exemplo.com` / `admin123`.
 - `DATABASE_URL` — string de conexão Postgres (Neon, Supabase, Vercel Postgres, etc.)
 - `JWT_SECRET` — string aleatória usada para assinar a sessão
 - `ANTHROPIC_API_KEY` — opcional; habilita a extração assistida por IA das
-  regras da convenção coletiva. Sem ela, o cadastro manual de regras
-  continua funcionando normalmente.
+  regras da convenção coletiva e o Assistente da operação (`/assistente`).
+  Sem ela, o cadastro manual de regras continua funcionando normalmente.
+- `RESEND_API_KEY` — opcional; habilita o e-mail diário do painel Hoje
+  (cron `/api/cron/hoje-email`, 07h de Brasília) e o botão "Enviar por
+  e-mail pra mim" em `/hoje`.
+- `HOJE_EMAIL_PARA` — destinatários do e-mail diário, separados por vírgula.
+- `EMAIL_FROM` — opcional; remetente (ex.: `Gestão de Motoristas <hoje@seudominio.com.br>`,
+  domínio verificado na Resend). Sem ele usa `onboarding@resend.dev`, que só
+  entrega para o e-mail dono da conta Resend.
+- `APP_BASE_URL` — opcional; URL pública usada nos links do e-mail
+  (padrão: origem da requisição).
 
 ## Deploy
 

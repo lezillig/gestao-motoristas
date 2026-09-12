@@ -28,6 +28,10 @@
     {
       "path": "/api/cron/lw-multas-import",
       "schedule": "45 7 * * *"
+    },
+    {
+      "path": "/api/cron/hoje-email",
+      "schedule": "0 10 * * *"
     }
   ]
 }

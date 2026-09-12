@@ -28,6 +28,7 @@ import SofitSyncButton from "../combustivel/SofitSyncButton";
 import LeaveImportButton from "../afastamentos/LeaveImportButton";
 import MultasSyncButton from "../multas/MultasSyncButton";
 import BackfillTripsForm from "./BackfillTripsForm";
+import LwCadastroCheck from "./LwCadastroCheck";
 import SyncAllButton from "./SyncAllButton";
 import GapStatusPanel from "./GapStatusPanel";
 import { checkAllGaps, RECURRING_GAP_WINDOW_DAYS } from "@/lib/integrationGaps";
@@ -212,6 +213,7 @@ export default async function IntegracoesPage() {
         >
           <div className="flex flex-col gap-3">
             {isLwAvailable() ? <MultasSyncButton /> : <p className="text-xs text-slate-400">Configure LW_API_LOGIN/LW_API_SENHA pra habilitar.</p>}
+            {isLwAvailable() && <LwCadastroCheck />}
             <GoTo href="/multas" label="Ver multas" />
           </div>
         </IntegrationCard>
