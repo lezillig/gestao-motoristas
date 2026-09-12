@@ -1,4 +1,4 @@
-import { format, subDays } from "date-fns";
+import { format } from "date-fns";
 import { AlertTriangle, Gauge, Satellite, Trophy } from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -8,7 +8,8 @@ import SortableTh from "@/components/ui/SortableTh";
 import { getActiveTelemetryProvider } from "@/lib/telemetry";
 import { findSpeedAlerts, isSpeeding, SPEED_LIMIT_KMH } from "@/lib/speedCompliance";
 import GerarLeiturasButton from "./GerarLeiturasButton";
-import { parseLocalDate } from "@/lib/date";
+import { brazilDayLabel, parseLocalDate, utcInstantToLocalParts } from "@/lib/date";
+import { toMinutes } from "@/lib/time";
 import type { Prisma } from "@prisma/client";
 
 const SORT_FIELDS = ["vehicle", "speedKmh", "recordedAt"] as const;
@@ -48,33 +49,33 @@ export default async function TelemetriaPage({
   const filtered = Boolean(vehicleId || dateFrom || dateTo);
   const sortLinkParams = { vehicleId, dateFrom, dateTo };
 
-  // driverAt() so precisa de check-ins que se sobrepoem a janela das leituras
-  // exibidas — buscar TODO o historico de check-ins da empresa (crescente
-  // pra sempre) so pra essa checagem era o gargalo. Restringe por veiculo
-  // quando o filtro pede um so; restringe por data quando dateFrom/dateTo
-  // sao informados OU (sem filtro nenhum) pelas ultimas 14 dias, folga
-  // generosa dado que 1 dia de cron ja supera as 100 leituras exibidas
-  // nesse caso (comentario acima) — com so vehicleId e sem datas, o
-  // historico do veiculo pode ser mais antigo que isso, entao nao limita.
-  const usageLogWhere: Prisma.VehicleUsageLogWhereInput = { companyId: session.companyId };
-  if (vehicleId) usageLogWhere.vehicleId = vehicleId;
+  // Motorista da leitura: pela Escala do SIAT do mesmo veiculo no mesmo dia
+  // (calendario de Brasilia) — ate 2026-09-12 usava o check-in manual de
+  // /utilizacao, que ninguem preenche na operacao real, entao a coluna e o
+  // ranking ficavam sempre vazios. Mesmo criterio veiculo+dia ja usado em
+  // lib/vehicleTripEscala.ts e na tela de Risco. So busca escalas que podem
+  // casar com as leituras exibidas: por veiculo quando o filtro pede um so;
+  // por data quando dateFrom/dateTo sao informados OU (sem filtro nenhum)
+  // pelos ultimos 14 dias — com so vehicleId e sem datas, o historico do
+  // veiculo pode ser mais antigo que isso, entao nao limita.
+  const escalaWhere: Prisma.EscalaWhereInput = { companyId: session.companyId, vehicleId: vehicleId ?? { not: null } };
   if (dateFrom || dateTo || !filtered) {
-    const usageWindowStart = dateFrom ? parseLocalDate(dateFrom) : subDays(new Date(), 14);
-    const usageWindowEnd = dateTo ? new Date(parseLocalDate(dateTo).getTime() + 24 * 60 * 60 * 1000 - 1) : new Date();
-    usageLogWhere.checkInAt = { lte: usageWindowEnd };
-    usageLogWhere.OR = [{ checkOutAt: null }, { checkOutAt: { gte: usageWindowStart } }];
+    escalaWhere.date = {
+      gte: dateFrom ? parseLocalDate(dateFrom) : brazilDayLabel(-14),
+      ...(dateTo ? { lte: parseLocalDate(dateTo) } : {}),
+    };
   }
 
-  const [readings, usageLogs, vehicles] = await Promise.all([
+  const [readings, escalas, vehicles] = await Promise.all([
     prisma.telemetryReading.findMany({
       where,
       include: { vehicle: true },
       orderBy,
       take: filtered ? FILTERED_TAKE : DEFAULT_TAKE,
     }),
-    prisma.vehicleUsageLog.findMany({
-      where: usageLogWhere,
-      include: { driver: true },
+    prisma.escala.findMany({
+      where: escalaWhere,
+      select: { vehicleId: true, date: true, startTime: true, endTime: true, driver: { select: { id: true, name: true } } },
     }),
     // So ativos na lista de filtro — veiculo inativo/baixado nao deveria
     // poluir a busca, mesmo espirito do filtro "Ativos" em /cadastros/veiculos.
@@ -85,17 +86,26 @@ export default async function TelemetriaPage({
     }),
   ]);
 
-  const usageLogsByVehicle = new Map<string, typeof usageLogs>();
-  for (const log of usageLogs) {
-    const list = usageLogsByVehicle.get(log.vehicleId) ?? [];
-    list.push(log);
-    usageLogsByVehicle.set(log.vehicleId, list);
+  const escalasByVehicleDay = new Map<string, typeof escalas>();
+  for (const e of escalas) {
+    if (!e.vehicleId) continue;
+    const key = `${e.vehicleId}_${format(e.date, "yyyy-MM-dd")}`;
+    const list = escalasByVehicleDay.get(key) ?? [];
+    list.push(e);
+    escalasByVehicleDay.set(key, list);
   }
 
+  // Com mais de uma escala no dia (troca de turno), prefere a que cobre o
+  // horario da leitura; escala sem endTime (reserva do SIAT sem
+  // trip_end_time) cobre ate o fim do dia. Senao, a primeira do dia.
   function driverAt(vehicleId: string, at: Date) {
-    return (usageLogsByVehicle.get(vehicleId) ?? []).find(
-      (l) => l.checkInAt <= at && (!l.checkOutAt || l.checkOutAt >= at)
-    )?.driver;
+    const local = utcInstantToLocalParts(at.toISOString());
+    if (!local) return undefined;
+    const doDia = escalasByVehicleDay.get(`${vehicleId}_${local.dateISO}`);
+    if (!doDia || doDia.length === 0) return undefined;
+    const minuto = toMinutes(local.time);
+    const cobre = doDia.find((e) => toMinutes(e.startTime) <= minuto && (!e.endTime || toMinutes(e.endTime) >= minuto));
+    return (cobre ?? doDia[0]).driver;
   }
 
   const alerts = findSpeedAlerts(readings);

@@ -2,10 +2,12 @@ import Anthropic from "@anthropic-ai/sdk";
 import { utcInstantToLocalParts } from "@/lib/date";
 import { buildAssistenteTools } from "./tools";
 
-// Opus 5 com thinking adaptativo (padrão do modelo quando `thinking` é
-// omitido). A versão do SDK instalada (0.70.x) ainda não tipa
-// output_config.effort nem fallbacks — quando o SDK for atualizado, vale
-// adicionar effort "medium" (latência dentro dos 60s da Vercel) e fallbacks.
+// Opus 5 com thinking adaptativo e effort "medium": perguntas de consulta
+// com 3-5 chamadas de ferramenta precisam caber nos 60s do plano Hobby da
+// Vercel, e "high" (padrão) alonga demais a etapa de raciocínio pra ganho
+// pequeno nesse tipo de tarefa. fallbacks "default" faz o servidor rodar a
+// mesma pergunta em outro modelo se o Opus 5 recusar por política — sem
+// isso a recusa simplesmente encerra a resposta.
 export const ASSISTENTE_MODEL = "claude-opus-5";
 const MAX_ITERACOES = 8;
 const HISTORICO_MAX_TURNOS = 12;
@@ -49,6 +51,10 @@ export async function perguntarAssistente(params: {
     model: ASSISTENTE_MODEL,
     max_tokens: 8000,
     max_iterations: MAX_ITERACOES,
+    thinking: { type: "adaptive" },
+    output_config: { effort: "medium" },
+    betas: ["server-side-fallback-2026-07-01"],
+    fallbacks: "default",
     system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
     tools: buildAssistenteTools(params.companyId),
     messages: [

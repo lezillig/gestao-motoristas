@@ -61,7 +61,7 @@ export async function extractRegrasFromPdf(pdfBuffer: Buffer): Promise<Suggested
     model: "claude-opus-4-8",
     max_tokens: 8000,
     system: SYSTEM_PROMPT,
-    output_format: betaZodOutputFormat(ExtractionResultSchema),
+    output_config: { format: betaZodOutputFormat(ExtractionResultSchema) },
     messages: [
       {
         role: "user",
