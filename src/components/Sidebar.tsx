@@ -30,6 +30,7 @@ import {
   Plug,
   Gavel,
   Sun,
+  Siren,
 } from "lucide-react";
 
 type NavItem = {
@@ -123,6 +124,12 @@ const NAV: NavItem[] = [
     href: "/multas",
     label: "Multas",
     icon: Gavel,
+    roles: ["ADMIN", "GESTOR"],
+  },
+  {
+    href: "/risco",
+    label: "Risco por motorista",
+    icon: Siren,
     roles: ["ADMIN", "GESTOR"],
   },
   {
