@@ -99,6 +99,12 @@ model Company {
   name      String
   logoUrl   String?
   active    Boolean  @default(true)
+  // Encargos sobre a folha (INSS patronal, FGTS, 13o, ferias, provisoes),
+  // em percentual inteiro (ex.: 80). Aplicado SO na tela Custos, em cima da
+  // mao de obra calculada a partir do espelho do TiqueTaque x valor-hora nua
+  // — nunca nos calculos trabalhistas (Analise de riscos, Passivo), que
+  // precisam da hora nua. Nulo = sem encargos (custo subestimado, avisado).
+  encargosPercentual Int?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -121,6 +127,40 @@ model Company {
   clientes             Cliente[]
   multas               Multa[]
   indicacaoCondutors   IndicacaoCondutor[]
+  timesheets           TimesheetMensal[]
+}
+
+// Espelho de ponto mensal JA APURADO pelo TiqueTaque (GET /timesheets?
+// employee_id&start_date&end_date — confirmado real 2026-09-13; o unico
+// endpoint de apuracao que existe la, todos os candidatos de banco de
+// horas/feriados dao 404). Horas em decimal (9.20 = 9h12), como a API
+// devolve. Guardado por motorista/mes porque e a base de custo de mao de
+// obra em /custos: o TiqueTaque ja classifica normal, HE 50%, HE 100%,
+// noturno, DSR e folga conforme as regras/feriados configurados LA — nao
+// faz sentido reimplementar isso aqui. Os calculos trabalhistas proprios
+// (pontoCompliance/passivo) continuam sobre TimeClockEntry: papel juridico,
+// nao de custeio. `dias` guarda o detalhe diario cru pra auditoria.
+model TimesheetMensal {
+  id                  String   @id @default(cuid())
+  companyId           String
+  company             Company  @relation(fields: [companyId], references: [id])
+  driverId            String
+  driver              Driver   @relation(fields: [driverId], references: [id])
+  mes                 String // "yyyy-MM"
+  horasNormais        Float    @default(0)
+  extra50             Float    @default(0)
+  extra100            Float    @default(0)
+  adicionalNoturno    Float    @default(0)
+  horaNoturnaReduzida Float    @default(0)
+  dsr                 Float    @default(0)
+  folga               Float    @default(0)
+  atraso              Float    @default(0)
+  totalHoras          Float    @default(0)
+  dias                Json?
+  syncedAt            DateTime @default(now())
+
+  @@unique([driverId, mes])
+  @@index([companyId, mes])
 }
 
 model User {
@@ -268,6 +308,7 @@ model Driver {
   usageLogs            VehicleUsageLog[]
   fuelTransactions     FuelTransaction[]
   leaves               DriverLeave[]
+  timesheets           TimesheetMensal[]
   indicacoesCondutor   IndicacaoCondutor[]
 
   // Toda listagem de motorista filtra por empresa, e a maioria tambem por

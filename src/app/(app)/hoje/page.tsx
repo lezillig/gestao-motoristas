@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ComponentType, ReactNode } from "react";
-import { format } from "date-fns";
+import { format, startOfWeek } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   AlarmClockOff,
@@ -38,6 +38,7 @@ const TONE_BADGE: Record<Tone, string> = {
 };
 
 function Section({
+  id,
   icon: Icon,
   title,
   count,
@@ -48,6 +49,7 @@ function Section({
   children,
   footer,
 }: {
+  id?: string;
   icon: ComponentType<{ className?: string }>;
   title: string;
   count: number;
@@ -60,7 +62,7 @@ function Section({
 }) {
   const vazio = count === 0;
   return (
-    <section className={`${cardClass} flex flex-col`}>
+    <section id={id} className={`${cardClass} flex scroll-mt-4 flex-col target:ring-2 target:ring-blue-300`}>
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Icon className="h-4 w-4 shrink-0 text-slate-500" />
@@ -87,15 +89,20 @@ function Row({ children }: { children: ReactNode }) {
   return <li className="flex items-start justify-between gap-3 py-2.5 first:pt-0 last:pb-0">{children}</li>;
 }
 
-function Tile({ label, value, sub, tone }: { label: string; value: number | string; sub?: string; tone: Tone }) {
+// Cada bloco leva pro detalhe: os tres primeiros rolam ate a secao
+// correspondente nesta mesma pagina; "Escalas hoje" abre a grade da semana.
+function Tile({ label, value, sub, tone, href }: { label: string; value: number | string; sub?: string; tone: Tone; href: string }) {
   return (
-    <div className={cardClass}>
+    <Link href={href} prefetch={false} className={`${cardClass} block transition-shadow hover:shadow-md`} title="Ver detalhes">
       <p className={`text-2xl font-semibold ${tone === "critical" ? "text-red-700" : tone === "warning" ? "text-amber-700" : "text-slate-900"}`}>
         {value}
       </p>
       <p className="mt-0.5 text-xs text-slate-500">{label}</p>
       {sub && <p className="mt-0.5 text-[11px] text-slate-400">{sub}</p>}
-    </div>
+      <p className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-blue-700">
+        Ver detalhes <ArrowRight className="h-3 w-3" />
+      </p>
+    </Link>
   );
 }
 
@@ -124,15 +131,16 @@ export default async function HojePage() {
       </p>
 
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Tile label="Urgentes" value={hoje.urgentes} sub="prazo de multa e CNH vencida" tone={hoje.urgentes > 0 ? "critical" : "good"} />
-        <Tile label="Avisos" value={hoje.avisos} sub="divergências, cartões, integrações, manutenção" tone={hoje.avisos > 0 ? "warning" : "good"} />
+        <Tile href="#urgentes" label="Urgentes" value={hoje.urgentes} sub="prazo de multa e CNH vencida" tone={hoje.urgentes > 0 ? "critical" : "good"} />
+        <Tile href="#avisos" label="Avisos" value={hoje.avisos} sub="divergências, cartões, integrações, manutenção" tone={hoje.avisos > 0 ? "warning" : "good"} />
         <Tile
+          href={`/escalas?semana=${format(startOfWeek(hoje.hojeLabel, { weekStartsOn: 1 }), "yyyy-MM-dd")}`}
           label="Escalas hoje"
           value={hoje.resumo.escalasHoje}
           sub={`${hoje.resumo.motoristasEscalados} motorista(s) · ${hoje.resumo.veiculosEscalados} veículo(s)`}
           tone="neutral"
         />
-        <Tile label="Motoristas afastados hoje" value={hoje.afastadosHoje.length} sub="férias, atestado, folga ou abono" tone="neutral" />
+        <Tile href="#afastados" label="Motoristas afastados hoje" value={hoje.afastadosHoje.length} sub="férias, atestado, folga ou abono" tone="neutral" />
       </div>
 
       {tudoEmDia && (
@@ -144,6 +152,7 @@ export default async function HojePage() {
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Section
+          id="urgentes"
           icon={Gavel}
           title={`Multas — prazo de indicação em até ${MULTAS_PRAZO_JANELA_DIAS} dias`}
           count={hoje.multas.vencendo}
@@ -228,6 +237,7 @@ export default async function HojePage() {
         </Section>
 
         <Section
+          id="avisos"
           icon={AlarmClockOff}
           title={`Escala x ponto de ontem (${format(hoje.ontemLabel, "dd/MM")})`}
           count={hoje.excecoesOntem.semAfastamento}
@@ -375,6 +385,7 @@ export default async function HojePage() {
         </Section>
 
         <Section
+          id="afastados"
           icon={CalendarOff}
           title="Motoristas afastados hoje"
           count={hoje.afastadosHoje.length}

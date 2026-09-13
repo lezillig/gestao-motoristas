@@ -2,6 +2,10 @@
   "buildCommand": "prisma migrate deploy && next build",
   "crons": [
     {
+      "path": "/api/cron/tiquetaque-timesheets",
+      "schedule": "20 4 * * *"
+    },
+    {
       "path": "/api/cron/tiquetaque-import",
       "schedule": "0 5 * * *"
     },

@@ -6,6 +6,7 @@ import { requireRole } from "@/lib/auth";
 import { cardClass, badgeClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import { buildCustosMes, parseMes, SEM_CLIENTE, SEM_ESCALA } from "@/lib/custos";
+import EncargosForm from "./EncargosForm";
 
 function brl(cents: number): string {
   return (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -60,6 +61,8 @@ export default async function CustosPage({ searchParams }: { searchParams: Promi
   const next = format(addMonths(monthStart, 1), "yyyy-MM");
   const temMaoDeObra = totais.maoDeObraCents > 0;
   const semDados = custos.veiculos.length === 0 && custos.clientes.length === 0;
+  const mao = custos.maoDeObra;
+  const semEspelhoNoMes = mao.motoristasComEspelho === 0;
 
   return (
     <div>
@@ -96,6 +99,55 @@ export default async function CustosPage({ searchParams }: { searchParams: Promi
           sub={temMaoDeObra ? `${brl(totais.maoDeObraCents)} de mão de obra` : "sem valor-hora cadastrado"}
         />
       </div>
+
+      <section className={`${cardClass} mb-6`}>
+        <div className="flex flex-wrap items-start justify-between gap-6">
+          <div className="min-w-[280px] flex-1">
+            <h2 className="text-sm font-semibold text-slate-900">Mão de obra do mês</h2>
+            <p className="mb-3 text-xs text-slate-500">
+              Espelho de ponto apurado pelo TiqueTaque × valor-hora nua, mais encargos.{" "}
+              {mao.motoristasComEspelho} motorista(s) com espelho
+              {mao.motoristasSemEspelho > 0 && ` · ${mao.motoristasSemEspelho} sem espelho (usando ponto × hora)`}
+              {mao.motoristasSemValorHora > 0 && ` · ${mao.motoristasSemValorHora} sem valor-hora (fora do R$)`}.
+            </p>
+            {semEspelhoNoMes ? (
+              <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                Nenhum espelho de ponto deste mês ainda — sincronize em Integrações (&quot;Sincronizar tudo&quot; ou o cron da madrugada) para
+                o custo real de mão de obra aparecer. Até lá, a mão de obra usa horas do ponto × hora normal.
+              </p>
+            ) : (
+              <dl className="grid grid-cols-[1fr_auto_auto] gap-x-6 gap-y-1 text-sm">
+                <dt className="text-slate-600">Base (normais + DSR + folga)</dt>
+                <dd className="text-right tabular-nums text-slate-500">{num(mao.horasNormais, 1)} h normais</dd>
+                <dd className="text-right tabular-nums">{brl(mao.baseCents)}</dd>
+                <dt className="text-slate-600">Hora extra 50% (ou % da CCT)</dt>
+                <dd className="text-right tabular-nums text-slate-500">{num(mao.horasExtra50, 1)} h</dd>
+                <dd className="text-right tabular-nums">{brl(mao.he50Cents)}</dd>
+                <dt className="text-slate-600">Hora extra 100%</dt>
+                <dd className="text-right tabular-nums text-slate-500">{num(mao.horasExtra100, 1)} h</dd>
+                <dd className="text-right tabular-nums">{brl(mao.he100Cents)}</dd>
+                <dt className="text-slate-600">Adicional noturno + hora reduzida</dt>
+                <dd />
+                <dd className="text-right tabular-nums">{brl(mao.noturnoCents)}</dd>
+                <dt className="text-slate-600">Encargos {mao.encargosPercentual != null ? `(${mao.encargosPercentual}%)` : "(não configurados)"}</dt>
+                <dd />
+                <dd className={`text-right tabular-nums ${mao.encargosPercentual == null ? "text-amber-700" : ""}`}>{brl(mao.encargosCents)}</dd>
+                <dt className="border-t border-slate-200 pt-1 font-semibold text-slate-900">Total de mão de obra</dt>
+                <dd className="border-t border-slate-200 pt-1" />
+                <dd className="border-t border-slate-200 pt-1 text-right font-semibold tabular-nums text-slate-900">{brl(mao.totalCents)}</dd>
+              </dl>
+            )}
+          </div>
+          <div className="min-w-[260px]">
+            <h3 className="mb-1 text-sm font-semibold text-slate-900">Parâmetros de custo</h3>
+            <p className="mb-2 text-xs text-slate-500">
+              INSS patronal, FGTS, 13º, férias e provisões, num percentual único sobre a mão de obra. Só afeta esta tela — os cálculos
+              trabalhistas continuam com a hora nua.
+            </p>
+            <EncargosForm atual={mao.encargosPercentual} />
+          </div>
+        </div>
+      </section>
 
       {semDados ? (
         <div className={`${cardClass} py-10 text-center text-sm text-slate-500`}>Nenhum abastecimento, multa, viagem ou escala nesse mês.</div>
@@ -244,10 +296,11 @@ export default async function CustosPage({ searchParams }: { searchParams: Promi
           </li>
           <li>
             <Clock className="mr-1 inline h-3 w-3" />
-            Horas: ponto batido do motorista no dia, atribuído à(s) escala(s) dele naquele dia (dividido se houver mais de uma). Mão de
-            obra só entra pra quem tem valor-hora no cadastro
-            {totais.motoristasSemValorHora > 0 && ` — ${totais.motoristasSemValorHora} motorista(s) com ponto no mês ainda sem valor-hora`}.
-            Hora extra, adicional noturno e encargos não estão incluídos (ver Análise de riscos e Passivo trabalhista).
+            Horas: ponto batido do motorista no dia, atribuído à(s) escala(s) dele naquele dia (dividido se houver mais de uma) — é por
+            esses minutos que o custo mensal do motorista é rateado entre clientes e veículos. Mão de obra: espelho de ponto apurado pelo
+            TiqueTaque (normais + DSR + folga, HE 50% com o % da CCT/ACT, HE 100%, noturno) × valor-hora nua × encargos; sem espelho no
+            mês, cai para minutos do ponto × hora. Só entra em R$ quem tem valor-hora no cadastro
+            {mao.motoristasSemValorHora > 0 && ` — ${mao.motoristasSemValorHora} motorista(s) ainda sem`}.
           </li>
         </ul>
       </div>

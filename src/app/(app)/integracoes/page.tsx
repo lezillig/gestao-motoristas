@@ -145,7 +145,7 @@ export default async function IntegracoesPage() {
         <IntegrationCard
           icon={Clock}
           title="TiqueTaque"
-          description="Ponto eletrônico, cadastro de funcionários e afastamentos (folgas/atestados/férias). Roda sozinho toda madrugada; dá pra importar/atualizar na hora também."
+          description="Ponto eletrônico, cadastro de funcionários, afastamentos (folgas/atestados/férias) e o espelho de ponto apurado do mês (base da mão de obra em Custos). Roda sozinho toda madrugada; dá pra importar/atualizar na hora também."
           unavailable={!isTiqueTaqueAvailable()}
         >
           <div className="flex flex-col gap-3">

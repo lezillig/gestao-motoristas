@@ -16,6 +16,26 @@ export type TiqueTaqueEmployee = {
   paymentSourceId: string | null;
 };
 
+// Espelho de ponto apurado — GET /timesheets?employee_id&start_date&end_date
+// (confirmado real 2026-09-13). Totais em horas DECIMAIS ("178.58" = 178h35),
+// exatamente como a API manda; `dias` e o detalhe diario cru
+// ({"2026-08-01": {horarios: [...], total: "9.20", extra_50: "1.87"}}).
+export type TiqueTaqueTimesheet = {
+  employeeId: string;
+  startDate: string;
+  endDate: string;
+  horasNormais: number;
+  extra50: number;
+  extra100: number;
+  adicionalNoturno: number;
+  horaNoturnaReduzida: number;
+  dsr: number;
+  folga: number;
+  atraso: number;
+  total: number;
+  dias: Record<string, unknown>;
+};
+
 // Folga/atestado/ferias/abono — GET /work-leaves?employee_id=... Datas vem
 // como datetime completo no meio-dia UTC (ex. "2026-07-18T12:00:00+00:00"),
 // entao nunca cruzam meia-noite local mesmo em UTC-3 — so pegamos os 10

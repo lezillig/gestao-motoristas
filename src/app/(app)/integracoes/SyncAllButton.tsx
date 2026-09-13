@@ -5,6 +5,7 @@ import { CheckCircle2, Loader2, AlertTriangle, Circle, PlayCircle } from "lucide
 import { primaryButtonClass } from "@/lib/ui";
 import { prepareTiqueTaqueImport, importDriverFromTiqueTaque } from "../ponto/actions";
 import { prepareLeaveImport, importLeavesForDriver } from "../afastamentos/actions";
+import { prepareTimesheetImport, importTimesheetForDriver } from "../ponto/timesheetActions";
 import { syncFromSiat } from "../escalas/siatActions";
 import { syncSofitFuel } from "../combustivel/sofitActions";
 import { syncAnpPrices } from "../combustivel/actions";
@@ -12,13 +13,14 @@ import { syncTicketLogCardStatuses } from "../combustivel/cartoes/actions";
 import { prepareMultasSync, syncMultasVehicle } from "../multas/actions";
 import { sleep, TIQUETAQUE_IMPORT_PACE_MS } from "@/lib/tiquetaque/pace";
 
-type SystemKey = "tiquetaquePonto" | "tiquetaqueAfastamentos" | "siat" | "sofit" | "ticketlog" | "anp" | "multas";
+type SystemKey = "tiquetaquePonto" | "tiquetaqueAfastamentos" | "tiquetaqueEspelho" | "siat" | "sofit" | "ticketlog" | "anp" | "multas";
 type SystemStatus = "idle" | "running" | "done" | "error" | "indisponivel";
 type SystemState = { status: SystemStatus; message?: string; progress?: { done: number; total: number } };
 
 const LABELS: Record<SystemKey, string> = {
   tiquetaquePonto: "TiqueTaque — Ponto/funcionários",
   tiquetaqueAfastamentos: "TiqueTaque — Afastamentos",
+  tiquetaqueEspelho: "TiqueTaque — Espelho de ponto (mês atual)",
   siat: "SIAT — Escalas",
   sofit: "Sofit — Combustível",
   ticketlog: "Ticket Log — Cartões",
@@ -32,6 +34,7 @@ const LABELS: Record<SystemKey, string> = {
 const PROGRESS_UNIT: Record<SystemKey, string> = {
   tiquetaquePonto: "motorista(s)",
   tiquetaqueAfastamentos: "motorista(s)",
+  tiquetaqueEspelho: "motorista(s)",
   siat: "motorista(s)",
   sofit: "motorista(s)",
   ticketlog: "motorista(s)",
@@ -42,7 +45,7 @@ const PROGRESS_UNIT: Record<SystemKey, string> = {
 // Multas nao compartilha limite de taxa com o TiqueTaque (fornecedor
 // diferente, LW Tecnologia) — roda em paralelo com tudo o resto, mesmo
 // espirito de SIAT/Sofit/Ticket Log/ANP.
-const ORDER: SystemKey[] = ["tiquetaquePonto", "tiquetaqueAfastamentos", "siat", "sofit", "ticketlog", "anp", "multas"];
+const ORDER: SystemKey[] = ["tiquetaquePonto", "tiquetaqueAfastamentos", "tiquetaqueEspelho", "siat", "sofit", "ticketlog", "anp", "multas"];
 
 function StatusIcon({ status }: { status: SystemStatus }) {
   if (status === "running") return <Loader2 className="h-4 w-4 shrink-0 animate-spin text-blue-600" />;
@@ -94,6 +97,7 @@ export default function SyncAllButton({
   const [states, setStates] = useState<Record<SystemKey, SystemState>>({
     tiquetaquePonto: { status: tiquetaqueAvailable ? "idle" : "indisponivel" },
     tiquetaqueAfastamentos: { status: tiquetaqueAvailable ? "idle" : "indisponivel" },
+    tiquetaqueEspelho: { status: tiquetaqueAvailable ? "idle" : "indisponivel" },
     siat: { status: siatAvailable ? "idle" : "indisponivel" },
     sofit: { status: sofitAvailable ? "idle" : "indisponivel" },
     ticketlog: { status: ticketLogAvailable ? "idle" : "indisponivel" },
@@ -172,9 +176,32 @@ export default function SyncAllButton({
     }
   }
 
+  // Espelho apurado do mes corrente (base de mao de obra em /custos) — mesma
+  // API e mesmo limite de taxa, entao entra na mesma fila sequencial.
+  async function runTiqueTaqueEspelho() {
+    patch("tiquetaqueEspelho", { status: "running" });
+    try {
+      const planResult = await prepareTimesheetImport(mesAtual);
+      if (planResult.error || !planResult.plan) {
+        patch("tiquetaqueEspelho", { status: "error", message: planResult.error ?? "Falha ao preparar." });
+        return;
+      }
+      const r = await runPacedDriverLoop("tiquetaqueEspelho", planResult.plan, (driverId, employeeId, token) =>
+        importTimesheetForDriver(driverId, employeeId, token, mesAtual)
+      );
+      patch("tiquetaqueEspelho", {
+        status: r.errCount > 0 ? "error" : "done",
+        message: `${r.ok} espelho(s) atualizado(s).${r.errCount > 0 ? ` ${r.errCount} sem vínculo/erro.` : ""}`,
+      });
+    } catch (e) {
+      patch("tiquetaqueEspelho", { status: "error", message: e instanceof Error ? e.message : "Falha inesperada." });
+    }
+  }
+
   async function runTiqueTaqueSequencial() {
     await runTiqueTaquePonto();
     await runTiqueTaqueAfastamentos();
+    await runTiqueTaqueEspelho();
   }
 
   async function runSiat() {
@@ -277,8 +304,9 @@ export default function SyncAllButton({
         <div>
           <p className="text-sm font-semibold text-slate-900">Sincronizar tudo agora</p>
           <p className="text-xs text-slate-500">
-            Dispara os 7 fluxos manuais de uma vez (TiqueTaque, SIAT, Sofit, Ticket Log, ANP, Multas). Pode levar
-            alguns minutos — TiqueTaque e Multas processam um item de cada vez pra respeitar o limite das APIs.
+            Dispara os 8 fluxos manuais de uma vez (TiqueTaque — ponto, afastamentos e espelho —, SIAT, Sofit, Ticket Log,
+            ANP, Multas). Pode levar alguns minutos — TiqueTaque e Multas processam um item de cada vez pra respeitar o
+            limite das APIs.
           </p>
         </div>
         <button

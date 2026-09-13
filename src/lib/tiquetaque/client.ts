@@ -1,5 +1,5 @@
 import { unstable_cache } from "next/cache";
-import type { TiqueTaqueEmployee, TiqueTaqueDayEntry, TiqueTaqueLeave } from "./types";
+import type { TiqueTaqueEmployee, TiqueTaqueDayEntry, TiqueTaqueLeave, TiqueTaqueTimesheet } from "./types";
 import { pairPunchesIntoDays } from "./pairing";
 
 const BASE_URL = "https://api.tiquetaque.com/v2.1";
@@ -160,6 +160,46 @@ export async function fetchEmployeeDays(
     deadline
   )) as TimesResponse;
   return pairPunchesIntoDays(data.times ?? []);
+}
+
+type TimesheetResponse = {
+  employee_id?: string;
+  totals?: Record<string, string | number | null>;
+  days?: Record<string, unknown>;
+};
+
+// GET /timesheets — o espelho de ponto apurado pelo proprio TiqueTaque
+// (normal, HE 50/100, noturno, DSR, folga, atraso). Exige employee_id +
+// start_date + end_date (422 sem eles; "month"/"period" nao existem).
+export async function fetchEmployeeTimesheet(
+  employeeId: string,
+  startDate: string,
+  endDate: string,
+  deadline?: number
+): Promise<TiqueTaqueTimesheet> {
+  const data = (await tiqueTaqueFetch(
+    `/timesheets?employee_id=${employeeId}&start_date=${startDate}&end_date=${endDate}`,
+    deadline
+  )) as TimesheetResponse;
+  const n = (key: string): number => {
+    const v = parseFloat(String(data.totals?.[key] ?? "0"));
+    return Number.isNaN(v) ? 0 : v;
+  };
+  return {
+    employeeId,
+    startDate,
+    endDate,
+    horasNormais: n("horas_normais"),
+    extra50: n("extra_50"),
+    extra100: n("extra_100"),
+    adicionalNoturno: n("adicional_noturno"),
+    horaNoturnaReduzida: n("hora_noturna_reduzida"),
+    dsr: n("dsr"),
+    folga: n("folga"),
+    atraso: n("atraso"),
+    total: n("total"),
+    dias: data.days ?? {},
+  };
 }
 
 type WorkLeavesPage = {
