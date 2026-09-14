@@ -2,6 +2,7 @@ import { differenceInCalendarDays, format, subDays } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import { currentKm } from "@/lib/maintenance";
 import { OS_STATUS_ABERTOS } from "@/lib/sofit/manutencaoSync";
+import { CATEGORIA_REVISAO, categoriaCausa, ehCorretiva, INTERVALO_DIAS_MINIMO_PLAUSIVEL, KM_POR_DIA_MAXIMO_PLAUSIVEL } from "@/lib/manutencao";
 
 export const KM_PLAUSIVEL_MAX = 500_000;
 export const KM_POR_ANO_MAX = 120_000;
@@ -162,6 +163,25 @@ export async function auditarSofit(companyId: string, now = new Date()): Promise
     linhas: regressivas.slice(-300).reverse(),
   });
 
+  // 4b. Hodometro da ultima revisao incoerente com o km atual
+  achados.push({
+    chave: "revisao_km_incoerente",
+    titulo: `Km rodado desde a última revisão implausível (> ${KM_POR_DIA_MAXIMO_PLAUSIVEL} km/dia)`,
+    gravidade: "media",
+    oQueFazer: "Ou o hodômetro digitado no fechamento da OS de revisão está errado (dígito a menos), ou o km atual está. Corrigir na Sofit — enquanto isso o veículo é avaliado só pelo critério de dias.",
+    colunas: ["Placa", "Última revisão", "Hodômetro na revisão", "Km atual", "Dias desde", "Km por dia"],
+    linhas: vehicles
+      .filter((v) => v.lastMaintenanceMileage > 0 && v.ultimaManutencaoEm && currentKm(v) > v.lastMaintenanceMileage)
+      .map((v) => {
+        const dias = Math.max(1, differenceInCalendarDays(now, v.ultimaManutencaoEm!));
+        const kmDia = Math.round((currentKm(v) - v.lastMaintenanceMileage) / dias);
+        return { v, dias, kmDia };
+      })
+      .filter((x) => x.kmDia > KM_POR_DIA_MAXIMO_PLAUSIVEL)
+      .sort((a, b) => b.kmDia - a.kmDia)
+      .map(({ v, dias, kmDia }) => ({ Placa: v.plate, "Última revisão": d(v.ultimaManutencaoEm), "Hodômetro na revisão": v.lastMaintenanceMileage, "Km atual": currentKm(v), "Dias desde": dias, "Km por dia": kmDia })),
+  });
+
   // 5. OS em andamento antigas
   achados.push({
     chave: "os_antiga",
@@ -243,6 +263,18 @@ export async function auditarSofit(companyId: string, now = new Date()): Promise
       .map((o) => ({ OS: o.numero, Placa: plateOf(o), Tipo: o.tipo, "Aberta em": d(o.criadaEm), "Concluída em": d(o.fimEm), "Dias parado": Math.round(o.diasParado ?? 0), Problema: problema1(o.problema) })),
   });
 
+  // 8b. Revisao/inspecao aberta como corretiva
+  achados.push({
+    chave: "revisao_como_corretiva",
+    titulo: 'Revisão/inspeção aberta como "corretiva" (últimos 90 dias)',
+    gravidade: "media",
+    oQueFazer: "Abrir revisões e inspeções (escolar, EMTU, periódica) como PREVENTIVA na Sofit. Como corretiva, elas inflam a taxa de corretiva e escondem a preventiva que de fato acontece.",
+    colunas: ["OS", "Placa", "Tipo na Sofit", "Aberta em", "Status", "Descrição"],
+    linhas: os
+      .filter((o) => o.criadaEm >= inicio90 && ehCorretiva(o.tipo) && categoriaCausa(o.problema) === CATEGORIA_REVISAO)
+      .map((o) => ({ OS: o.numero, Placa: plateOf(o), "Tipo na Sofit": o.tipo, "Aberta em": d(o.criadaEm), Status: o.status, Descrição: problema1(o.problema) })),
+  });
+
   // 9. Vencimentos nao baixados
   const umAno = subDays(now, 365);
   achados.push({
@@ -265,6 +297,16 @@ export async function auditarSofit(companyId: string, now = new Date()): Promise
     oQueFazer: "Cadastrar a frequência (km e/ou dias) no veículo na Sofit — sem isso o plano preventivo nunca gera OS para ele e aqui ele não entra na aderência ao plano.",
     colunas: ["Placa", "Modelo", "Ano", "Hodômetro"],
     linhas: ativosSofit.filter((v) => !v.manutencaoIntervaloKm && !v.manutencaoIntervaloDias).map((v) => ({ Placa: v.plate, Modelo: `${v.brand} ${v.model}`.trim(), Ano: v.year, Hodômetro: currentKm(v) || null })),
+  });
+  achados.push({
+    chave: "intervalo_dias_implausivel",
+    titulo: `Intervalo de manutenção em dias implausível na Sofit (menor que ${INTERVALO_DIAS_MINIMO_PLAUSIVEL} dias)`,
+    gravidade: "media",
+    oQueFazer: "Revisar a frequência em dias do veículo na Sofit (visto '10 dias' em dezenas de veículos). Com isso o plano gera OS preventiva a cada 10 dias que ninguém aprova — é uma das causas das 70+ preventivas travadas. Aqui esse intervalo é ignorado; vale só o de km.",
+    colunas: ["Placa", "Modelo", "Intervalo (dias)", "Intervalo (km)"],
+    linhas: ativosSofit
+      .filter((v) => v.manutencaoIntervaloDias && v.manutencaoIntervaloDias < INTERVALO_DIAS_MINIMO_PLAUSIVEL)
+      .map((v) => ({ Placa: v.plate, Modelo: `${v.brand} ${v.model}`.trim(), "Intervalo (dias)": v.manutencaoIntervaloDias, "Intervalo (km)": v.manutencaoIntervaloKm })),
   });
   achados.push({
     chave: "frota_sem_sofit",

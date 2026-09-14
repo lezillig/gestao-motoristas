@@ -11,6 +11,8 @@ const SUGESTOES = [
   "Qual veículo teve o maior custo por km no mês passado?",
   "Quem são os 5 motoristas com maior risco nos últimos 30 dias?",
   "Quantas horas o motorista João fez em agosto?",
+  "Quais veículos estão parados há mais de 30 dias?",
+  "O que a equipe de manutenção precisa corrigir na Sofit?",
 ];
 
 export default async function AssistentePage() {

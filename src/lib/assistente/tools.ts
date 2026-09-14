@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
-import { addDays, differenceInCalendarDays, format } from "date-fns";
+import { addDays, differenceInCalendarDays, format, subMonths } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import { brazilDateStringToUtc, parseLocalDate, utcInstantToLocalParts } from "@/lib/date";
 import { extractPlate, platePhysicalVariants } from "@/lib/plate";
@@ -10,6 +10,9 @@ import { resolveCondutorParaMulta } from "@/lib/lw/resolveCondutor";
 import { buildCustosMes, parseMes } from "@/lib/custos";
 import { buildRiscoMotoristas, RISCO_JANELAS_DIAS } from "@/lib/riscoMotorista";
 import { buildHoje } from "@/lib/hoje";
+import { buildManutencao, ehCorretiva, OS_STATUS_LABEL, OS_TIPO_LABEL } from "@/lib/manutencao";
+import { auditarSofit } from "@/lib/sofit/auditoria";
+import { OS_STATUS_ABERTOS } from "@/lib/sofit/manutencaoSync";
 
 // Ferramentas do assistente — TODAS somente leitura e sempre restritas ao
 // companyId da sessao (fechado no closure, o modelo nunca escolhe a empresa).
@@ -56,12 +59,20 @@ function janelaUtc(de: string, ate: string) {
 }
 
 export function buildAssistenteTools(companyId: string) {
+  function placaNormalizada(placaTexto: string): string {
+    return extractPlate(placaTexto) ?? placaTexto.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  }
   async function resolverVeiculoPorPlaca(placaTexto: string) {
-    const placa = extractPlate(placaTexto) ?? placaTexto.toUpperCase().replace(/[^A-Z0-9]/g, "");
     return prisma.vehicle.findFirst({
-      where: { companyId, plate: { in: platePhysicalVariants(placa) } },
+      where: { companyId, plate: { in: platePhysicalVariants(placaNormalizada(placaTexto)) } },
       select: { id: true, plate: true, brand: true, model: true, status: true },
     });
+  }
+  // Filtro de OS por placa que alcanca tanto a OS vinculada ao veiculo quanto
+  // a que ficou so com placaOriginal (placa da Sofit que nao casou).
+  function filtroPorPlaca(placaTexto: string) {
+    const variantes = platePhysicalVariants(placaNormalizada(placaTexto));
+    return { OR: [{ vehicle: { plate: { in: variantes } } }, { placaOriginal: { in: variantes } }] };
   }
 
   const buscarMotoristas = betaZodTool({
@@ -393,6 +404,181 @@ export function buildAssistenteTools(companyId: string) {
     },
   });
 
+  // --- Manutencao (espelho da Sofit) ---
+  const manutencaoResumo = betaZodTool({
+    name: "manutencao_resumo",
+    description:
+      "Visão executiva da manutenção (Sofit): frota disponível × em manutenção, OS abertas por status e idade, o que cobrar da equipe, aderência ao plano, preventiva × corretiva por mês, causas das corretivas, reincidentes, vencimentos. Mesmo cálculo da tela Manutenção.",
+    inputSchema: z.object({}),
+    run: async () => {
+      const m = await buildManutencao(companyId);
+      return json({
+        ultimaSincronizacao: m.ultimaSync ? instante(m.ultimaSync) : null,
+        frota: m.frota,
+        osAbertas: { total: m.backlog.total, porStatus: m.backlog.porStatus, haMaisDe30Dias: m.backlog.antigas, preventivasAguardandoAprovacaoMais7d: m.backlog.aprovacaoAtrasada },
+        paraCobrar: m.higiene,
+        aderenciaPlano: { vencidas: m.aderencia.vencidas, venceEmBreve: m.aderencia.breve, emDia: m.aderencia.emDia, semHistorico: m.aderencia.semHistorico },
+        mensal: m.mensal,
+        corretivasPorVeiculoAtivo: m.corretivasPorVeiculo,
+        causasCorretivas90d: m.causas.slice(0, 8),
+        reincidentes90d: m.reincidentes.slice(0, 8),
+        fornecedores90d: m.fornecedores.slice(0, 5),
+        vencimentos: { vencidos: m.vencimentos.vencidos.length, proximos60d: m.vencimentos.proximos.length },
+        paradosAgora: m.parados.slice(0, 10).map((p) => ({ placa: p.plate, modelo: p.modelo, osAberta: p.osAberta ? `${p.osAberta.numero} há ${p.osAberta.idadeDias}d` : "sem OS aberta" })),
+      });
+    },
+  });
+
+  const osAbertas = betaZodTool({
+    name: "os_abertas",
+    description:
+      "Ordens de serviço abertas na Sofit (aguardando aprovação, planejada, em andamento, aguardando NF), com filtros por status, idade mínima em dias e placa. Mais antigas primeiro. Até 50.",
+    inputSchema: z.object({
+      status: z.enum(["underApproval", "planned", "inProgress", "waitingNf"]).optional(),
+      diasMinimo: z.number().int().min(0).optional().describe("Só OS abertas há pelo menos N dias"),
+      placa: z.string().optional(),
+    }),
+    run: async ({ status, diasMinimo, placa }) => {
+      // Tambem por placaOriginal: OS da Sofit cuja placa nao casou com a frota
+      // (ver auditoria "os_sem_veiculo") ainda precisa aparecer ao perguntar
+      // por essa placa.
+      const filtroPlaca = placa ? filtroPorPlaca(placa) : null;
+      const rows = await prisma.ordemServico.findMany({
+        where: {
+          companyId,
+          status: status ? status : { in: [...OS_STATUS_ABERTOS] },
+          ...(filtroPlaca ?? {}),
+          ...(diasMinimo ? { criadaEm: { lte: new Date(Date.now() - diasMinimo * 86_400_000) } } : {}),
+        },
+        include: { vehicle: { select: { plate: true } } },
+        orderBy: { criadaEm: "asc" },
+        take: 50,
+      });
+      const agora = new Date();
+      return json({
+        total: rows.length,
+        os: rows.map((o) => ({
+          os: o.numero,
+          placa: o.vehicle?.plate ?? o.placaOriginal,
+          tipo: OS_TIPO_LABEL[o.tipo ?? ""] ?? o.tipo,
+          status: OS_STATUS_LABEL[o.status ?? ""] ?? o.status,
+          abertaEm: dia(o.criadaEm),
+          dias: differenceInCalendarDays(agora, o.criadaEm),
+          previsao: o.previsaoFimEm ? dia(o.previsaoFimEm) : null,
+          fornecedor: o.fornecedor,
+          problema: o.problema?.split("\n")[0]?.slice(0, 100) ?? null,
+        })),
+      });
+    },
+  });
+
+  const veiculosParados = betaZodTool({
+    name: "veiculos_parados",
+    description: "Veículos marcados 'em manutenção' na Sofit agora, com a OS aberta e há quantos dias; filtro por idade mínima da OS (ou só os sem OS aberta).",
+    inputSchema: z.object({ diasMinimo: z.number().int().min(0).optional(), somenteSemOs: z.boolean().optional() }),
+    run: async ({ diasMinimo, somenteSemOs }) => {
+      const m = await buildManutencao(companyId);
+      const lista = m.parados.filter((p) => (somenteSemOs ? !p.osAberta : true) && (diasMinimo ? (p.osAberta?.idadeDias ?? 0) >= diasMinimo : true));
+      return json({
+        emManutencaoAgora: m.frota.emManutencao,
+        semOsAberta: m.higiene.paradosSemOs,
+        filtrados: lista.length,
+        veiculos: lista.slice(0, 60).map((p) => ({
+          placa: p.plate,
+          modelo: p.modelo,
+          os: p.osAberta?.numero ?? null,
+          tipo: p.osAberta ? (OS_TIPO_LABEL[p.osAberta.tipo ?? ""] ?? p.osAberta.tipo) : null,
+          status: p.osAberta ? (OS_STATUS_LABEL[p.osAberta.status ?? ""] ?? p.osAberta.status) : "sem OS aberta",
+          diasParado: p.osAberta?.idadeDias ?? null,
+          problema: p.osAberta?.problema?.split("\n")[0]?.slice(0, 100) ?? null,
+        })),
+      });
+    },
+  });
+
+  const aderenciaPlano = betaZodTool({
+    name: "aderencia_plano",
+    description: "Aderência ao plano de manutenção por veículo: km e dias desde a última revisão concluída contra o intervalo cadastrado na Sofit. Filtro por situação (vencida, breve, em_dia, sem_historico) e placa. Até 40.",
+    inputSchema: z.object({ situacao: z.enum(["vencida", "breve", "em_dia", "sem_historico"]).optional(), placa: z.string().optional() }),
+    run: async ({ situacao, placa }) => {
+      const veiculo = placa ? await resolverVeiculoPorPlaca(placa) : null;
+      if (placa && !veiculo) return `Nenhum veículo cadastrado com a placa ${placa}.`;
+      const m = await buildManutencao(companyId);
+      const lista = m.aderencia.itens.filter((a) => (!situacao || a.situacao === situacao) && (!veiculo || a.vehicleId === veiculo.id));
+      if (veiculo && lista.length === 0) return `${veiculo.plate} não entra na aderência ao plano: sem intervalo de manutenção cadastrado na Sofit ou inativo lá.`;
+      return json({
+        totais: { vencidas: m.aderencia.vencidas, venceEmBreve: m.aderencia.breve, emDia: m.aderencia.emDia, semHistorico: m.aderencia.semHistorico },
+        filtrados: lista.length,
+        veiculos: lista.slice(0, 40).map((a) => ({
+          placa: a.plate,
+          modelo: a.modelo,
+          situacao: a.situacao,
+          percentualDoIntervalo: a.pct != null ? Math.round(a.pct * 100) : null,
+          kmAtual: a.kmAtual,
+          kmDesdeUltimaRevisao: a.kmDesde,
+          intervaloKm: a.intervaloKm,
+          diasDesdeUltimaRevisao: a.diasDesde,
+          intervaloDias: a.intervaloDias,
+          ultimaRevisao: a.ultimaEm ? dia(a.ultimaEm) : null,
+          disponibilidadeAgora: a.disponibilidade,
+        })),
+      });
+    },
+  });
+
+  const historicoManutencao = betaZodTool({
+    name: "historico_manutencao_veiculo",
+    description: "Histórico de ordens de serviço de um veículo na Sofit (padrão: últimos 12 meses): tipo, status, datas, dias parado, hodômetro, fornecedor e problema. Até 60.",
+    inputSchema: z.object({ placa: z.string(), meses: z.number().int().min(1).max(36).optional() }),
+    run: async ({ placa, meses }) => {
+      const v = await resolverVeiculoPorPlaca(placa);
+      const desde = subMonths(new Date(), meses ?? 12);
+      const rows = await prisma.ordemServico.findMany({ where: { companyId, ...filtroPorPlaca(placa), criadaEm: { gte: desde } }, orderBy: { criadaEm: "desc" }, take: 60 });
+      if (!v && rows.length === 0) return `Nenhum veículo cadastrado com a placa ${placa} e nenhuma OS da Sofit com essa placa.`;
+      const corretivas = rows.filter((o) => ehCorretiva(o.tipo)).length;
+      return json({
+        veiculo: v ? { placa: v.plate, modelo: `${v.brand} ${v.model}`.trim() } : { placa: placaNormalizada(placa), aviso: "placa não está na frota cadastrada — OS vindas só da Sofit" },
+        periodoMeses: meses ?? 12,
+        totalOs: rows.length,
+        corretivas,
+        preventivas: rows.filter((o) => o.tipo === "preventive").length,
+        diasParadoTotal: Math.round(rows.reduce((s, o) => s + (o.diasParado ?? 0), 0)),
+        os: rows.map((o) => ({
+          os: o.numero,
+          tipo: OS_TIPO_LABEL[o.tipo ?? ""] ?? o.tipo,
+          status: OS_STATUS_LABEL[o.status ?? ""] ?? o.status,
+          abertaEm: dia(o.criadaEm),
+          concluidaEm: o.fimEm ? dia(o.fimEm) : null,
+          diasParado: o.diasParado,
+          hodometro: o.hodometroFinal,
+          fornecedor: o.fornecedor,
+          problema: o.problema?.split("\n")[0]?.slice(0, 120) ?? null,
+        })),
+      });
+    },
+  });
+
+  const auditoriaSofit = betaZodTool({
+    name: "auditoria_sofit",
+    description:
+      "Auditoria de qualidade dos dados da Sofit: sem parâmetro lista os itens (chave, título, gravidade, quantidade); com `item` devolve as linhas daquele item (até 50). Chaves: hodometro_implausivel, km_por_ano, odometro_divergente, os_hodometro, os_antiga, preventiva_aprovacao, parado_sem_os, os_aberta_disponivel, os_sem_veiculo, revisao_como_corretiva, os_sem_hodometro, os_dias_parado, vencimento_antigo, sem_intervalo, frota_sem_sofit, status_divergente, km_baixo_idade.",
+    inputSchema: z.object({ item: z.string().optional() }),
+    run: async ({ item }) => {
+      const a = await auditarSofit(companyId);
+      if (!item) {
+        return json({
+          geradoEm: instante(a.geradoEm),
+          totalApontamentos: a.totalLinhas,
+          porGravidade: a.porGravidade,
+          itens: a.achados.map((x) => ({ chave: x.chave, titulo: x.titulo, gravidade: x.gravidade, quantidade: x.linhas.length, oQueFazer: x.oQueFazer })),
+        });
+      }
+      const ach = a.achados.find((x) => x.chave === item);
+      if (!ach) return `Item "${item}" não existe ou não tem apontamentos no momento.`;
+      return json({ chave: ach.chave, titulo: ach.titulo, gravidade: ach.gravidade, oQueFazer: ach.oQueFazer, total: ach.linhas.length, linhas: ach.linhas.slice(0, 50) });
+    },
+  });
+
   return [
     buscarMotoristas,
     buscarVeiculos,
@@ -406,20 +592,13 @@ export function buildAssistenteTools(companyId: string) {
     custosDoMes,
     riscoMotoristas,
     pendenciasHoje,
+    manutencaoResumo,
+    osAbertas,
+    veiculosParados,
+    aderenciaPlano,
+    historicoManutencao,
+    auditoriaSofit,
   ];
 }
 
-export const FERRAMENTA_LABEL: Record<string, string> = {
-  buscar_motoristas: "motoristas",
-  buscar_veiculos: "veículos",
-  quem_estava_com_veiculo: "quem estava com o veículo",
-  escalas: "escalas (SIAT)",
-  viagens_ituran: "viagens (Ituran)",
-  ponto: "ponto",
-  multas: "multas",
-  abastecimentos: "abastecimentos",
-  afastamentos: "afastamentos",
-  custos_do_mes: "custos do mês",
-  risco_motoristas: "risco por motorista",
-  pendencias_hoje: "painel Hoje",
-};
+export { FERRAMENTA_LABEL } from "./labels";

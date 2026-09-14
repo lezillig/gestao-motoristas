@@ -393,7 +393,9 @@ export default async function ManutencaoPage({ searchParams }: { searchParams: P
                   </td>
                   <td className={`${TD} ${NUM}`}>{num(a.kmAtual)}</td>
                   <td className={`${TD} text-xs`}>{a.ultimaEm ? `${format(a.ultimaEm, "dd/MM/yy")}${a.ultimaKm ? ` · ${num(a.ultimaKm)} km` : ""}` : "—"}</td>
-                  <td className={`${TD} ${NUM}`}>{a.kmDesde != null ? `${num(a.kmDesde)} / ${num(a.intervaloKm)}` : `— / ${num(a.intervaloKm)}`}</td>
+                  <td className={`${TD} ${NUM}`} title={a.kmIncoerente ? "Km desde a revisão implausível (hodômetro errado na Sofit) — ver auditoria" : undefined}>
+                    {a.kmDesde != null ? `${num(a.kmDesde)} / ${num(a.intervaloKm)}` : `${a.kmIncoerente ? "incoerente" : "—"} / ${num(a.intervaloKm)}`}
+                  </td>
                   <td className={`${TD} ${NUM}`}>{a.diasDesde != null ? `${a.diasDesde} / ${a.intervaloDias ?? "—"}` : `— / ${a.intervaloDias ?? "—"}`}</td>
                   <td className={TD}>
                     <span className={`${badgeClass} ${SITUACAO[a.situacao].cls}`}>
@@ -513,7 +515,7 @@ export default async function ManutencaoPage({ searchParams }: { searchParams: P
         <p className="mb-1 font-medium text-slate-700">De onde vem cada número</p>
         <ul className="list-disc space-y-0.5 pl-4">
           <li>Tudo é espelho da Sofit (ordens de serviço, cadastro de veículos com disponibilidade e intervalo, vencimentos), sincronizado toda madrugada e pelo botão em Integrações. Se a Sofit está desatualizada, isto aqui mostra a desatualização — é o ponto.</li>
-          <li>&quot;Última revisão&quot; = última OS concluída preventiva ou com descrição de revisão/troca de óleo, com o hodômetro que a oficina registrou no fechamento. Km atual = o maior entre Ituran e Sofit.</li>
+          <li>&quot;Última revisão&quot; = última OS concluída preventiva ou com descrição de revisão/troca de óleo, com o hodômetro que a oficina registrou no fechamento. Km atual = o maior entre Ituran e Sofit. Intervalo em dias menor que 30 e km desde a revisão acima de 700 km/dia são tratados como dado errado (vão para a auditoria) e não contam como &quot;vencida&quot;.</li>
           <li>Custo por OS não aparece porque a Sofit da empresa não tem custo lançado nas OS (quase tudo R$ 0) — dado que falta lançar lá, não integrar aqui.</li>
         </ul>
       </div>

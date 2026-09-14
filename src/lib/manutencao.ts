@@ -33,7 +33,19 @@ export const VENCIMENTO_JANELA_DIAS = 60;
 const REINCIDENCIA_JANELA_DIAS = 90;
 const REINCIDENCIA_MIN_OS = 3;
 
-const TIPOS_CORRETIVOS = new Set(["corrective", "breakdown", "accident"]);
+// Unico lugar que define o que conta como "corretiva" — tela, assistente e
+// auditoria usam este mesmo conjunto pra nunca discordarem.
+export const TIPOS_CORRETIVOS = new Set(["corrective", "breakdown", "accident"]);
+export const ehCorretiva = (tipo: string | null | undefined) => TIPOS_CORRETIVOS.has(tipo ?? "");
+// Intervalo em dias abaixo disso nao e revisao, e configuracao errada na
+// Sofit (visto real: "10 dias" em dezenas de veiculos, o que sozinho poria
+// a frota inteira como "plano vencido") — ignorado no criterio por dias.
+export const INTERVALO_DIAS_MINIMO_PLAUSIVEL = 30;
+// Van/micro-onibus de fretamento nao roda mais que isso num dia; acima, o
+// hodometro da revisao (ou o atual) esta errado — visto real: "21.938 km em
+// 16 dias". Nesse caso o criterio de km e descartado (fica so o de dias) e o
+// veiculo vai pra auditoria ("revisao_km_incoerente").
+export const KM_POR_DIA_MAXIMO_PLAUSIVEL = 700;
 
 export type OsAberta = {
   id: string;
@@ -61,6 +73,7 @@ export type AderenciaVeiculo = {
   diasDesde: number | null;
   pct: number | null;
   situacao: "vencida" | "breve" | "em_dia" | "sem_historico";
+  kmIncoerente: boolean;
   disponibilidade: string | null;
 };
 
@@ -71,18 +84,32 @@ export type CausaCorretiva = { categoria: string; os: number; veiculos: number; 
 // corretiva pela raiz (meta do usuario, 2026-09-13: reduzir ao maximo o
 // numero de OS corretivas). Palavras vistas na propria base: troca, revisao,
 // pneus, freio, elevador, vazamento, porta, ar condicionado, partida...
+// Ordem importa: a primeira que casar vence. "Revisão / inspeção" vem antes
+// de tudo porque uma OS "REVISÃO ESCOLAR"/"REVISÃO EMTU" aberta como
+// corretiva (confirmado real: ~30 das 117 "Outros" de 90 dias) e, na
+// verdade, preventiva/inspecao classificada errado — vira item de cobranca
+// (ver auditoria "revisao_como_corretiva"), nao causa de quebra.
+export const CATEGORIA_REVISAO = "Revisão / inspeção (aberta como corretiva)";
+// Ordem (revisada apos code review, 2026-09-13): componentes ESPECIFICOS
+// primeiro, pra "REVISÃO DOS FREIOS - PASTILHA GASTA" cair em Freios e
+// "AR CONDICIONADO FRACO" em Ar-condicionado; Revisão so pega o que sobrou
+// sem componente (REVISÃO ESCOLAR, REVISÃO EMTU, troca de óleo); Motor, que
+// tem termos genericos (FRACO, FALHA), fica por ultimo.
 const CATEGORIAS_CAUSA: [string, RegExp][] = [
-  ["Freios", /FREIO|PASTILHA|DISCO DE|LONA|TAMBOR/],
-  ["Pneus / rodas", /PNEU|RODA(?!R)|ALINH|BALANC|ESTEPE/],
-  ["Elevador / acessibilidade", /ELEVADOR|PLATAFORMA|CADEIRA|RAMPA|CINTO/],
-  ["Elétrica / bateria / partida", /BATERIA|EL[EÉ]TRIC|PARTIDA|ALTERNADOR|FAROL|L[AÂ]MPADA|LUZ|CHICOTE|FUS[IÍ]VEL|PAINEL/],
-  ["Motor / óleo / arrefecimento", /MOTOR|[OÓ]LEO|CORREIA|FILTRO|ARREFEC|RADIADOR|SUPERAQUEC|VELA|INJE[CÇ]/],
-  ["Ar-condicionado", /AR\s*COND|CLIMATIZ|CONDICIONADO|COMPRESSOR/],
-  ["Suspensão / direção", /SUSPENS|AMORTEC|MOLA|DIRE[CÇ][AÃ]O|BUCHA|PIV[OÔ]|BANDEJA|ROLAMENTO/],
-  ["Câmbio / embreagem", /C[AÂ]MBIO|EMBREAGEM|MARCHA|DIFERENCIAL|CARD[AÃ]/],
+  ["Sinistro / avaria externa", /ACIDENTE|COLIS[AÃ]O|BATIDA|SINISTRO|AVARIA|PEDRADA|ENCALHADO|GUINCHO|VANDAL|ROUBO|FURTO/],
+  ["Freios", /FREIO|PASTILHA|DISCO DE|LONA|TAMBOR|CU[IÍ]CA/],
+  ["Pneus / rodas", /PNEU|RODA(?!R)|ALINH|BALANC|ESTEPE|PRISIONEIRO|CALOTA/],
+  ["Elevador / acessibilidade", /ELEVAD[D]?OR|PLATAFORMA|CADEIRA|RAMPA|CINTO/],
+  ["Ar-condicionado / ventilação", /AR\s*COND|CLIMATIZ|CONDICIONADO|VENTILA/],
+  ["Elétrica / bateria / partida", /BATERIA|EL[EÉ]TRIC|PARTIDA|ALTERNADOR|GERADOR|FAROL|L[AÂ]MPADA|LANTERNA|LUZ\b|CHICOTE|FIA[CÇ][AÃ]O|FIO ROMPIDO|FUS[IÍ]VEL|PAINEL|SOQUETE|CHAVE DE SETA|BUZINA/],
+  ["Suspensão / direção / transmissão", /SUSPEN[SÇ]|AMORTEC|MOLA|DIRE[CÇ][AÃ]O|BUCHA|PIV[OÔ]|BANDEJA|ROLAMENTO|HOMOCIN|HEMOCIN|EIXO|C[AÂ]MBIO|EMBREAGEM|MARCHA|DIFERENCIAL|CARD[AÃ]|VOLANTE/],
+  ["Vidros / limpador / retrovisores", /PARA-?\s?BRISA|BARA BRISA|VIDRO|JANELA|VIGIA|LIMPADOR|PALHETA|RETROVISOR/],
+  ["Portas / lataria / interior", /PORTA|LATARIA|FUNILARIA|FUNELARIA|PINTURA|PARA-?CHOQUE|ADESIV|INSUFILME|BANCO|ESTRIBO|ARM[AÁ]RIO|ESTRUTURA|BAND[OÔ]|INVERNIZ|DELINEAR|CORTINA|ASSOALHO|TETO/],
+  ["Chaves / travas", /CHAVE|TRAVA|FECHADURA|CANIVETE/],
+  ["Tacógrafo / equipamentos", /TAC[OÓ]GRAFO|RASTREADOR|C[AÂ]MERA|MONITOR|R[AÁ]DIO/],
   ["Vazamentos", /VAZAMENTO|VAZANDO/],
-  ["Portas / vidros / lataria", /PORTA|VIDRO|JANELA|LATARIA|PINTURA|RETROVISOR|PARA-?CHOQUE|ADESIV|INSUFILME|BANCO/],
-  ["Tacógrafo / equipamentos", /TAC[OÓ]GRAFO|RASTREADOR|C[AÂ]MERA|MONITOR|SOM/],
+  [CATEGORIA_REVISAO, /REVIS[AÃ]O|REVISAO|PREVENTIVA|INSPE[CÇ][AÃ]O|VISTORIA|EMTU|ESCOLAR|CVS|ARTESP|DETRAN|TROCA DE [OÓ]LEO/],
+  ["Motor / injeção / potência", /MOTOR|[OÓ]LEO|CORREIA|FILTRO|ARREFEC|RADIADOR|SUPERAQUEC|VELA|INJE[CÇ]|BICO|TURBINA|INTERCOOLER|ARLA|REGENERA|FRACO|SEM (POT[EÊ]NCIA|FOR[CÇ]A|ACELERA)|PERDEU (A )?FOR[CÇ]A|N[AÃ]O PEGA|MORRENDO|DESLIGA|FUMA[CÇ]A|FALHA(NDO)?|ESCAPAMENTO|TANQUE|MANGUEIRA|COMBUST[IÍ]VEL|DIESEL|[AÁ]GUA (BAIXANDO|DO RESERVAT)|COMPRES[S]?OR/],
 ];
 export function categoriaCausa(problema: string | null): string {
   const p = (problema ?? "").toUpperCase();
@@ -205,10 +232,16 @@ export async function buildManutencao(companyId: string, now = new Date()): Prom
       const kmAtual = currentKm(v);
       const intervaloKm = maintenanceIntervalKm(v);
       const temHistorico = v.lastMaintenanceMileage > 0 || v.ultimaManutencaoEm != null;
-      const kmDesde = v.lastMaintenanceMileage > 0 ? kmAtual - v.lastMaintenanceMileage : null;
+      // Km so conta com hodometro atual conhecido (>0) e coerente com a ultima
+      // revisao (nao negativo — hodometro da revisao maior que o atual e dado
+      // errado, apontado na auditoria, nao "plano vencido").
+      let kmDesde = v.lastMaintenanceMileage > 0 && kmAtual > 0 && kmAtual >= v.lastMaintenanceMileage ? kmAtual - v.lastMaintenanceMileage : null;
       const diasDesde = v.ultimaManutencaoEm ? differenceInCalendarDays(now, v.ultimaManutencaoEm) : null;
+      const kmIncoerente = kmDesde != null && diasDesde != null && kmDesde / Math.max(1, diasDesde) > KM_POR_DIA_MAXIMO_PLAUSIVEL;
+      if (kmIncoerente) kmDesde = null;
+      const intervaloDiasValido = v.manutencaoIntervaloDias && v.manutencaoIntervaloDias >= INTERVALO_DIAS_MINIMO_PLAUSIVEL ? v.manutencaoIntervaloDias : null;
       const pctKm = kmDesde != null ? kmDesde / intervaloKm : null;
-      const pctDias = diasDesde != null && v.manutencaoIntervaloDias ? diasDesde / v.manutencaoIntervaloDias : null;
+      const pctDias = diasDesde != null && intervaloDiasValido ? diasDesde / intervaloDiasValido : null;
       const pct = pctKm != null || pctDias != null ? Math.max(pctKm ?? 0, pctDias ?? 0) : null;
       const situacao: AderenciaVeiculo["situacao"] = !temHistorico || pct == null ? "sem_historico" : pct >= 1 ? "vencida" : pct >= 0.8 ? "breve" : "em_dia";
       return {
@@ -217,13 +250,14 @@ export async function buildManutencao(companyId: string, now = new Date()): Prom
         modelo: `${v.brand} ${v.model}`.trim(),
         kmAtual,
         intervaloKm,
-        intervaloDias: v.manutencaoIntervaloDias,
+        intervaloDias: intervaloDiasValido,
         ultimaKm: v.lastMaintenanceMileage > 0 ? v.lastMaintenanceMileage : null,
         ultimaEm: v.ultimaManutencaoEm,
         kmDesde,
         diasDesde,
         pct,
         situacao,
+        kmIncoerente,
         disponibilidade: v.sofitDisponibilidade,
       };
     })

@@ -4,23 +4,9 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Loader2, SendHorizontal, Sparkles } from "lucide-react";
 import { cardClass, badgeClass, primaryButtonClass } from "@/lib/ui";
+import { FERRAMENTA_LABEL } from "@/lib/assistente/labels";
 
 type Mensagem = { role: "user" | "assistant"; content: string; ferramentas?: string[] };
-
-const FERRAMENTA_LABEL: Record<string, string> = {
-  buscar_motoristas: "motoristas",
-  buscar_veiculos: "veículos",
-  quem_estava_com_veiculo: "quem estava com o veículo",
-  escalas: "escalas (SIAT)",
-  viagens_ituran: "viagens (Ituran)",
-  ponto: "ponto",
-  multas: "multas",
-  abastecimentos: "abastecimentos",
-  afastamentos: "afastamentos",
-  custos_do_mes: "custos do mês",
-  risco_motoristas: "risco por motorista",
-  pendencias_hoje: "painel Hoje",
-};
 
 // Renderizador mínimo de markdown (negrito, código, links internos, listas
 // e parágrafos) — sem dangerouslySetInnerHTML: tudo vira nó React, e link
