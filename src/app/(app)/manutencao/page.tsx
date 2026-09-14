@@ -71,9 +71,14 @@ export default async function ManutencaoPage({ searchParams }: { searchParams: P
         title="Manutenção"
         subtitle="Visão executiva da Sofit: frota disponível, fila de ordens de serviço, preventiva × corretiva, aderência ao plano, reincidência e vencimentos legais."
         extra={
-          <Link href="/integracoes" className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:underline">
-            {m.ultimaSync ? `Sincronizado ${format(m.ultimaSync, "dd/MM HH:mm")}` : "Nunca sincronizado"} · Integrações <ArrowRight className="h-3 w-3" />
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link href="/manutencao/auditoria" className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100">
+              <AlertTriangle className="h-3.5 w-3.5" /> Auditoria de dados da Sofit
+            </Link>
+            <Link href="/integracoes" className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:underline">
+              {m.ultimaSync ? `Sincronizado ${format(m.ultimaSync, "dd/MM HH:mm")}` : "Nunca sincronizado"} · Integrações <ArrowRight className="h-3 w-3" />
+            </Link>
+          </div>
         }
       />
 
@@ -196,6 +201,48 @@ export default async function ManutencaoPage({ searchParams }: { searchParams: P
           </p>
         </section>
       </div>
+
+      <section className={`${cardClass} mb-6 p-0 overflow-hidden`}>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">Causas das OS corretivas — 90 dias</h2>
+            <p className="text-xs text-slate-500">
+              Meta: reduzir corretiva. Corretivas por veículo ativo no mês:{" "}
+              <span className="font-semibold text-slate-800">{m.corretivasPorVeiculo.mesAtual ?? "—"}</span>
+              {m.corretivasPorVeiculo.mesAnterior != null && ` (mês anterior ${m.corretivasPorVeiculo.mesAnterior})`}. Onde uma causa concentra OS e dias parados, cabe inspeção/preventiva dirigida.
+            </p>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className={TH}>Causa</th>
+                <th className={`${TH} ${NUM}`}>OS</th>
+                <th className={`${TH} ${NUM}`}>Veículos</th>
+                <th className={`${TH} ${NUM}`}>Dias parado</th>
+                <th className={TH}>Veículos mais afetados</th>
+              </tr>
+            </thead>
+            <tbody>
+              {m.causas.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-4 py-6 text-center text-sm text-slate-500">Sem OS corretivas no período.</td>
+                </tr>
+              )}
+              {m.causas.map((c) => (
+                <tr key={c.categoria} className="border-t border-slate-100">
+                  <td className={`${TD} font-medium`}>{c.categoria}</td>
+                  <td className={`${TD} ${NUM} font-semibold`}>{c.os}</td>
+                  <td className={`${TD} ${NUM}`}>{c.veiculos}</td>
+                  <td className={`${TD} ${NUM}`}>{num(c.diasParado)}</td>
+                  <td className={`${TD} font-mono text-xs text-slate-500`}>{c.exemplos.join(", ")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <section className={`${cardClass} mb-6 p-0 overflow-hidden`}>
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">

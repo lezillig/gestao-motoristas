@@ -73,6 +73,7 @@ export async function syncOrdensServicoSofit(companyId: string, since: Date, dea
       previsaoFimEm: o.previsaoFimEm,
       diasParado: o.diasParado,
       hodometroFinal: o.hodometroFinal,
+      hodometroFinalBruto: o.hodometroFinalBruto,
       custoCents: o.custoCents,
       syncedAt: new Date(),
     };
@@ -114,11 +115,15 @@ export async function syncVeiculosSofit(companyId: string, deadline: number): Pr
         sofitStatus: v.status,
         sofitDisponibilidade: v.disponibilidade,
         sofitOdometroKm: v.odometroKm,
+        sofitOdometroBrutoKm: v.odometroBrutoKm,
         manutencaoIntervaloKm: v.intervaloKm,
         manutencaoIntervaloDias: v.intervaloDias,
         sofitSyncedAt: agora,
       },
     });
+    // Ano do veiculo: so preenche quando o nosso cadastro nao tem (mesma
+    // regra de enriquecimento do SIAT — nunca sobrescreve dado ja digitado).
+    if (v.anoModelo) await prisma.vehicle.updateMany({ where: { id: vehicleId, year: null }, data: { year: v.anoModelo } });
     const rows = [];
     for (const d of v.dues) {
       const item = await nomeItem(d.itemId);

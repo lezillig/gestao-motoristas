@@ -384,6 +384,10 @@ model Vehicle {
   sofitStatus             String?
   sofitDisponibilidade    String?
   sofitOdometroKm         Int?
+  // Valor cru do hodometro na Sofit, sem filtro de plausibilidade (Float pra
+  // caber 12.212.212.212, visto real) — so pra auditoria de dados apontar o
+  // que precisa ser corrigido la; nunca entra em calculo.
+  sofitOdometroBrutoKm    Float?
   manutencaoIntervaloKm   Int?
   manutencaoIntervaloDias Int?
   ultimaManutencaoEm      DateTime?
@@ -437,6 +441,8 @@ model OrdemServico {
   previsaoFimEm  DateTime?
   diasParado     Float?
   hodometroFinal Int?
+  // Cru, sem filtro (ver Vehicle.sofitOdometroBrutoKm) — so pra auditoria.
+  hodometroFinalBruto Float?
   custoCents     Int?
   syncedAt       DateTime  @default(now())
 

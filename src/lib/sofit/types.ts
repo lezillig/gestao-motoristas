@@ -116,6 +116,7 @@ export type SofitServiceOrder = {
   previsaoFimEm: Date | null;
   diasParado: number | null;
   hodometroFinal: number | null;
+  hodometroFinalBruto: number | null;
   custoCents: number | null;
 };
 
@@ -136,6 +137,8 @@ export type SofitVehicleFullRaw = {
   status: string | null;
   disponibility: string | null;
   current_odometer: number | null;
+  model_year: number | null;
+  fabrication_year: number | null;
   basic_maintenance_frequency_km: number | null;
   basic_maintenance_frequency_time_num: number | null;
   basic_maintenance_frequency_time_period: string | null;
@@ -160,6 +163,8 @@ export type SofitVehicle = {
   status: string | null;
   disponibilidade: string | null;
   odometroKm: number | null;
+  odometroBrutoKm: number | null;
+  anoModelo: number | null;
   intervaloKm: number | null;
   intervaloDias: number | null;
   dues: SofitVehicleDue[];

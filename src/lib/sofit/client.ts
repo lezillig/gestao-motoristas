@@ -167,8 +167,10 @@ function toDate(value: string | null | undefined): Date | null {
 
 // Hodometro digitado errado na Sofit (visto real 2026-09-13: 12.212.212.212
 // km num veiculo) estoura o inteiro do banco e, pior, viraria "km atual" no
-// alerta de revisao. Acima de 5 milhoes de km nenhum onibus/van chega.
-const KM_MAXIMO_PLAUSIVEL = 5_000_000;
+// alerta de revisao. Limite de 500 mil km definido pelo usuario (2026-09-13)
+// pra frota deles (vans e micro-onibus); acima disso o valor da Sofit e
+// ignorado e so o hodometro da Ituran vale pro veiculo.
+const KM_MAXIMO_PLAUSIVEL = 500_000;
 function kmPlausivel(value: number | null | undefined): number | null {
   if (value == null || !Number.isFinite(value) || value <= 0 || value > KM_MAXIMO_PLAUSIVEL) return null;
   return Math.round(value);
@@ -194,6 +196,7 @@ function mapServiceOrder(o: SofitServiceOrderRaw): SofitServiceOrder | null {
     previsaoFimEm: toDate(o.forecast_finish_date),
     diasParado: o.vehicle_down_days,
     hodometroFinal: kmPlausivel(o.final_odometer),
+    hodometroFinalBruto: o.final_odometer != null && Number.isFinite(o.final_odometer) ? Math.round(o.final_odometer) : null,
     custoCents: o.total_cost != null ? Math.round(o.total_cost * 100) : null,
   };
 }
@@ -238,7 +241,7 @@ const VEHICLES_FULL_QUERY = `
     vehicles(page: $page, perPage: $perPage, lastIntegrationDate: "2000-01-01T00:00:00.000Z") {
       count
       nodes {
-        id license_plate status disponibility current_odometer
+        id license_plate status disponibility current_odometer model_year fabrication_year
         basic_maintenance_frequency_km basic_maintenance_frequency_time_num basic_maintenance_frequency_time_period
         dues { id item_id due_date recurrent_due recurrence }
       }
@@ -262,6 +265,8 @@ function mapVehicle(v: SofitVehicleFullRaw): SofitVehicle {
     status: v.status,
     disponibilidade: v.disponibility,
     odometroKm: kmPlausivel(v.current_odometer),
+    odometroBrutoKm: v.current_odometer != null && Number.isFinite(v.current_odometer) ? Math.round(v.current_odometer) : null,
+    anoModelo: v.model_year && v.model_year > 1980 ? Math.round(v.model_year) : v.fabrication_year && v.fabrication_year > 1980 ? Math.round(v.fabrication_year) : null,
     intervaloKm: kmPlausivel(v.basic_maintenance_frequency_km),
     intervaloDias: periodoEmDias(v.basic_maintenance_frequency_time_num, v.basic_maintenance_frequency_time_period),
     dues: (v.dues ?? [])

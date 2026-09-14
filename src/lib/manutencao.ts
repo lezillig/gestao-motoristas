@@ -65,6 +65,30 @@ export type AderenciaVeiculo = {
 };
 
 export type ManutencaoMes = { mes: string; total: number; corretivas: number; preventivas: number; externas: number; diasParado: number };
+export type CausaCorretiva = { categoria: string; os: number; veiculos: number; diasParado: number; exemplos: string[] };
+
+// Categorias de causa a partir do texto livre do problema — pra atacar a
+// corretiva pela raiz (meta do usuario, 2026-09-13: reduzir ao maximo o
+// numero de OS corretivas). Palavras vistas na propria base: troca, revisao,
+// pneus, freio, elevador, vazamento, porta, ar condicionado, partida...
+const CATEGORIAS_CAUSA: [string, RegExp][] = [
+  ["Freios", /FREIO|PASTILHA|DISCO DE|LONA|TAMBOR/],
+  ["Pneus / rodas", /PNEU|RODA(?!R)|ALINH|BALANC|ESTEPE/],
+  ["Elevador / acessibilidade", /ELEVADOR|PLATAFORMA|CADEIRA|RAMPA|CINTO/],
+  ["Elétrica / bateria / partida", /BATERIA|EL[EÉ]TRIC|PARTIDA|ALTERNADOR|FAROL|L[AÂ]MPADA|LUZ|CHICOTE|FUS[IÍ]VEL|PAINEL/],
+  ["Motor / óleo / arrefecimento", /MOTOR|[OÓ]LEO|CORREIA|FILTRO|ARREFEC|RADIADOR|SUPERAQUEC|VELA|INJE[CÇ]/],
+  ["Ar-condicionado", /AR\s*COND|CLIMATIZ|CONDICIONADO|COMPRESSOR/],
+  ["Suspensão / direção", /SUSPENS|AMORTEC|MOLA|DIRE[CÇ][AÃ]O|BUCHA|PIV[OÔ]|BANDEJA|ROLAMENTO/],
+  ["Câmbio / embreagem", /C[AÂ]MBIO|EMBREAGEM|MARCHA|DIFERENCIAL|CARD[AÃ]/],
+  ["Vazamentos", /VAZAMENTO|VAZANDO/],
+  ["Portas / vidros / lataria", /PORTA|VIDRO|JANELA|LATARIA|PINTURA|RETROVISOR|PARA-?CHOQUE|ADESIV|INSUFILME|BANCO/],
+  ["Tacógrafo / equipamentos", /TAC[OÓ]GRAFO|RASTREADOR|C[AÂ]MERA|MONITOR|SOM/],
+];
+export function categoriaCausa(problema: string | null): string {
+  const p = (problema ?? "").toUpperCase();
+  for (const [nome, re] of CATEGORIAS_CAUSA) if (re.test(p)) return nome;
+  return p.trim() ? "Outros" : "Sem descrição";
+}
 export type Reincidente = { plate: string; os: number; diasParado: number; problemas: string[] };
 export type Fornecedor = { nome: string; os: number; diasParadoMedio: number };
 export type Vencimento = { plate: string; tipo: string; venceEm: Date; dias: number; recorrencia: string | null };
@@ -76,6 +100,8 @@ export type Manutencao = {
   backlog: { porStatus: Record<string, number>; total: number; itens: OsAberta[]; antigas: number; aprovacaoAtrasada: number };
   aderencia: { itens: AderenciaVeiculo[]; vencidas: number; breve: number; emDia: number; semHistorico: number };
   mensal: ManutencaoMes[];
+  causas: CausaCorretiva[];
+  corretivasPorVeiculo: { mesAtual: number | null; mesAnterior: number | null };
   reincidentes: Reincidente[];
   fornecedores: Fornecedor[];
   vencimentos: { vencidos: Vencimento[]; proximos: Vencimento[]; antigosNaoAtualizados: number };
@@ -223,8 +249,38 @@ export async function buildManutencao(companyId: string, now = new Date()): Prom
     m.diasParado += o.diasParado ?? 0;
   }
 
-  // --- Reincidentes e fornecedores (90 dias) ---
+  // --- Causas das corretivas (90 dias) e corretivas por veiculo ativo ---
   const plateById = new Map(vehicles.map((v) => [v.id, v.plate]));
+  const porCausa = new Map<string, { os: number; veiculos: Set<string>; diasParado: number; exemplos: Map<string, number> }>();
+  for (const o of osRecentes) {
+    if (o.criadaEm < inicio90 || !TIPOS_CORRETIVOS.has(o.tipo ?? "")) continue;
+    const cat = categoriaCausa(o.problema);
+    const acc = porCausa.get(cat) ?? { os: 0, veiculos: new Set(), diasParado: 0, exemplos: new Map() };
+    acc.os++;
+    acc.diasParado += o.diasParado ?? 0;
+    const plate = (o.vehicleId && plateById.get(o.vehicleId)) || o.placaOriginal || "?";
+    acc.veiculos.add(plate);
+    acc.exemplos.set(plate, (acc.exemplos.get(plate) ?? 0) + 1);
+    porCausa.set(cat, acc);
+  }
+  const causas: CausaCorretiva[] = [...porCausa.entries()]
+    .map(([categoria, a]) => ({
+      categoria,
+      os: a.os,
+      veiculos: a.veiculos.size,
+      diasParado: Math.round(a.diasParado),
+      exemplos: [...a.exemplos.entries()].sort((x, y) => y[1] - x[1]).slice(0, 4).map(([p, n]) => (n > 1 ? `${p} (${n})` : p)),
+    }))
+    .sort((a, b) => b.os - a.os);
+  const frotaAtiva = Math.max(1, comSofit.length);
+  const mesAtualRow = meses[meses.length - 1];
+  const mesAnteriorRow = meses[meses.length - 2];
+  const corretivasPorVeiculo = {
+    mesAtual: mesAtualRow ? Math.round((mesAtualRow.corretivas / frotaAtiva) * 100) / 100 : null,
+    mesAnterior: mesAnteriorRow ? Math.round((mesAnteriorRow.corretivas / frotaAtiva) * 100) / 100 : null,
+  };
+
+  // --- Reincidentes e fornecedores (90 dias) ---
   const porVeiculo = new Map<string, { os: number; diasParado: number; problemas: string[] }>();
   const porFornecedor = new Map<string, { os: number; diasParado: number; comDias: number }>();
   const termos = new Map<string, number>();
@@ -281,6 +337,8 @@ export async function buildManutencao(companyId: string, now = new Date()): Prom
     backlog: { porStatus, total: abertas.length, itens: abertas, antigas, aprovacaoAtrasada },
     aderencia,
     mensal: meses,
+    causas,
+    corretivasPorVeiculo,
     reincidentes,
     fornecedores,
     vencimentos: { vencidos, proximos, antigosNaoAtualizados },
