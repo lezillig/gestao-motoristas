@@ -11,8 +11,14 @@ import { executarCron } from "@/lib/cronRun";
 // viagens de ONTEM (calendario de Brasilia) casadas com a escala do dia.
 export const maxDuration = 60;
 
+// Orcamento pra gravacao das viagens, com folga pro registro da execucao e a
+// resposta dentro dos 60s. Viagens novas entram sempre (um createMany por
+// lote); o que fica pra proxima execucao, se faltar tempo, sao so as
+// atualizacoes de viagens ja existentes.
+const BATCH_TIME_BUDGET_MS = 45_000;
+
 export async function GET(req: NextRequest) {
-  return executarCron("ituran-import", req, async () => {
+  return executarCron("ituran-import", req, async ({ iniciadoEm }) => {
     if (!isIturanAvailable()) return { status: "pulado", detalhe: { skipped: "Ituran não configurada" } };
 
     // "Ontem" no calendario de Brasilia: a API da Ituran recebe os instantes
@@ -27,6 +33,8 @@ export async function GET(req: NextRequest) {
 
     let readingsCreated = 0;
     let tripsUpserted = 0;
+    let tripsCriadas = 0;
+    let tripsAtualizadas = 0;
     let tripsSemEscala = 0;
     const errors: string[] = [];
 
@@ -55,17 +63,24 @@ export async function GET(req: NextRequest) {
         await updateVehicleMileageFromReadings(readingsData);
       }
 
-      const tripResult = await syncVehicleTripsForCompany(company.id, trips, yesterday, yesterday);
+      const tripResult = await syncVehicleTripsForCompany(company.id, trips, yesterday, yesterday, {
+        deadline: iniciadoEm + BATCH_TIME_BUDGET_MS,
+      });
       tripsUpserted += tripResult.upserted;
+      tripsCriadas += tripResult.criadas;
+      tripsAtualizadas += tripResult.atualizadas;
       tripsSemEscala += tripResult.semEscala;
       errors.push(...tripResult.errors);
+      if (tripResult.incompleto) {
+        errors.push("Tempo esgotado antes de atualizar todas as viagens já existentes — o restante entra na próxima execução.");
+      }
     }
 
     return {
       status: "ok",
       processados: readingsCreated + tripsUpserted,
       erros: errors,
-      detalhe: { date: format(yesterday, "yyyy-MM-dd"), readingsCreated, tripsUpserted, tripsSemEscala },
+      detalhe: { date: format(yesterday, "yyyy-MM-dd"), readingsCreated, tripsUpserted, tripsCriadas, tripsAtualizadas, tripsSemEscala },
     };
   });
 }

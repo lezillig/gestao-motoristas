@@ -1,10 +1,12 @@
 import Link from "next/link";
-import { format } from "date-fns";
+import { format, subDays } from "date-fns";
 import { ArrowLeft, Download, ShieldCheck } from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { cardClass, badgeClass, secondaryButtonClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
-import { auditarSofit, type Gravidade } from "@/lib/sofit/auditoria";
+import { auditarSofit, historicoAuditoria, registrarSnapshotAuditoria, type Gravidade } from "@/lib/sofit/auditoria";
+import { brazilDayLabel } from "@/lib/date";
+import EvolucaoAuditoria from "./EvolucaoAuditoria";
 
 const GRAV: Record<Gravidade, { label: string; cls: string }> = {
   alta: { label: "Alta", cls: "bg-red-100 text-red-700" },
@@ -17,6 +19,29 @@ export default async function AuditoriaSofitPage({ searchParams }: { searchParam
   const session = await requireRole("ADMIN", "GESTOR");
   const { todos } = await searchParams;
   const a = await auditarSofit(session.companyId);
+  // O retrato do dia tambem e gravado ao abrir a pagina (alem do fim da
+  // sincronizacao diaria), pra o historico comecar a contar ja. Falha aqui
+  // nao impede de mostrar a auditoria.
+  await registrarSnapshotAuditoria(session.companyId, a).catch(() => {});
+  const historico = await historicoAuditoria(session.companyId);
+
+  // Base da comparacao: o retrato mais recente de ate 7 dias atras; sem
+  // historico tao antigo, o primeiro registrado.
+  const atual = historico.at(-1);
+  const alvo = format(subDays(brazilDayLabel(0), 7), "yyyy-MM-dd");
+  const base = [...historico].reverse().find((h) => h.dia <= alvo) ?? (historico.length > 1 ? historico[0] : undefined);
+  const variacao =
+    atual && base && base.dia !== atual.dia
+      ? [...new Set([...Object.keys(base.porChave), ...Object.keys(atual.porChave)])]
+          .map((chave) => ({
+            chave,
+            titulo: atual.porChave[chave]?.titulo ?? base.porChave[chave]?.titulo ?? chave,
+            antes: base.porChave[chave]?.n ?? 0,
+            agora: atual.porChave[chave]?.n ?? 0,
+          }))
+          .filter((v) => v.antes !== v.agora)
+          .sort((x, y) => x.agora - x.antes - (y.agora - y.antes))
+      : [];
 
   return (
     <div>
@@ -47,6 +72,12 @@ export default async function AuditoriaSofitPage({ searchParams }: { searchParam
           </Link>
         )}
       </div>
+
+      <EvolucaoAuditoria
+        pontos={historico.map(({ dia, total, alta, media, baixa }) => ({ dia, total, alta, media, baixa }))}
+        variacao={variacao}
+        baseDia={base && atual && base.dia !== atual.dia ? base.dia : null}
+      />
 
       {a.achados.length === 0 ? (
         <div className={`${cardClass} flex items-center gap-2 text-sm text-emerald-700`}>

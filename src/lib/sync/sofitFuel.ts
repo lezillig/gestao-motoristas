@@ -9,18 +9,30 @@ import type { Prisma } from "@prisma/client";
 // Sem sincronizacao anterior (1a vez): comeca em 2026-01-01 (pedido
 // explicito do usuario) em vez do historico inteiro da conta (desde 2021,
 // ~14 mil despesas de todo tipo). Da em diante, cada sincronizacao retoma
-// de onde a anterior parou (ver `since` abaixo) — como o fetch e limitado
-// por orcamento de tempo (ver fetchFuelTransactionsSince), um backfill
-// grande pode levar varias chamadas pra completar; isso e esperado e seguro
-// (nunca reprocessa nem duplica, so demora mais de uma vez).
+// de onde a anterior parou (ver `since` abaixo).
 const INITIAL_BACKFILL_SINCE = new Date("2026-01-01T00:00:00.000Z");
+
+const LOTE_LEITURA = 1000;
+
+export type SofitFuelSyncResult = {
+  created: number;
+  skipped: number;
+  hasMore: boolean;
+  // Cursor pra continuar exatamente de onde parou quando hasMore: o mesmo
+  // `since` desta chamada e a proxima pagina a buscar. Sem isso, a chamada
+  // seguinte recalculava `since` e recomecava da pagina 1 — se o lote nao
+  // coubesse no orcamento, o cron se reencadeava sem nunca avancar.
+  since: Date;
+  nextPage: number;
+};
 
 export async function syncSofitFuelCore(
   companyId: string,
   deadline?: number,
-  sinceOverride?: Date
-): Promise<{ created: number; skipped: number; hasMore: boolean }> {
-  const [lastSync, vehicles, drivers, existingCodigos] = await Promise.all([
+  sinceOverride?: Date,
+  startPage = 1
+): Promise<SofitFuelSyncResult> {
+  const [lastSync, vehicles, drivers] = await Promise.all([
     prisma.fuelTransaction.findFirst({
       where: { companyId, fonte: "SOFIT" },
       orderBy: { dataHora: "desc" },
@@ -28,24 +40,30 @@ export async function syncSofitFuelCore(
     }),
     prisma.vehicle.findMany({ where: { companyId }, select: { id: true, plate: true } }),
     prisma.driver.findMany({ where: { companyId }, select: { id: true, cpf: true, name: true } }),
-    prisma.fuelTransaction.findMany({
-      where: { companyId, codigoTransacao: { startsWith: "SOFIT-" } },
-      select: { codigoTransacao: true },
-    }),
   ]);
 
   // sinceOverride: backfill manual de uma lacuna especifica (ver
-  // Integrações) — sempre mais antigo que o normal "desde a ultima
-  // sincronizacao", entao refaz um trecho ja coberto tambem, mas o
-  // dedupe por codigoTransacao acima (`codigosVistos`) ja garante que so
-  // o que realmente falta vira INSERT novo.
+  // Integrações) ou continuacao encadeada do cron — pode refazer um trecho ja
+  // coberto; o dedupe por codigoTransacao abaixo garante que so o que
+  // realmente falta vira INSERT.
   const since = sinceOverride ?? lastSync?.dataHora ?? INITIAL_BACKFILL_SINCE;
   const vehicleByPlate = new Map(vehicles.map((v) => [v.plate, v.id]));
   const driverByCpf = new Map(drivers.map((d) => [d.cpf.replace(/\D/g, ""), d.id]));
   const driverByName = new Map(drivers.map((d) => [d.name.trim().toLowerCase(), d.id]));
-  const codigosVistos = new Set(existingCodigos.map((t) => t.codigoTransacao as string));
 
-  const { transactions, hasMore } = await fetchFuelTransactionsSince(since, deadline);
+  const { transactions, hasMore, nextPage } = await fetchFuelTransactionsSince(since, deadline, startPage);
+
+  // Dedupe so contra os codigos deste lote — antes carregava todos os
+  // codigos SOFIT-* ja importados (cresce sem limite) a cada execucao.
+  const codigosDoLote = [...new Set(transactions.map((t) => `SOFIT-${t.sofitTransactionId}`))];
+  const codigosVistos = new Set<string>();
+  for (let i = 0; i < codigosDoLote.length; i += LOTE_LEITURA) {
+    const rows = await prisma.fuelTransaction.findMany({
+      where: { codigoTransacao: { in: codigosDoLote.slice(i, i + LOTE_LEITURA) } },
+      select: { codigoTransacao: true },
+    });
+    for (const r of rows) if (r.codigoTransacao) codigosVistos.add(r.codigoTransacao);
+  }
 
   let skipped = 0;
   const toCreate: Prisma.FuelTransactionCreateManyInput[] = [];
@@ -91,9 +109,13 @@ export async function syncSofitFuelCore(
     });
   }
 
+  let created = 0;
   if (toCreate.length > 0) {
-    await prisma.fuelTransaction.createMany({ data: toCreate });
+    // skipDuplicates: cron encadeado e botao manual rodando juntos podiam
+    // inserir o mesmo codigoTransacao (unico) e derrubar o lote inteiro.
+    const r = await prisma.fuelTransaction.createMany({ data: toCreate, skipDuplicates: true });
+    created = r.count;
   }
 
-  return { created: toCreate.length, skipped, hasMore };
+  return { created, skipped, hasMore, since, nextPage };
 }

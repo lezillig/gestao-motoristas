@@ -277,10 +277,10 @@ export default async function DossiePage({
       <p className="text-xs text-slate-500">
         <strong>O que a verificação de integridade prova:</strong> cada registro tem um hash (impressão digital
         criptográfica) do seu conteúdo, atualizado a cada escrita feita por este sistema; toda alteração gera uma
-        linha permanente no histórico acima com o hash antes/depois. "Íntegro" significa que a cadeia de hashes
+        linha permanente no histórico acima com o hash antes/depois. &quot;Íntegro&quot; significa que a cadeia de hashes
         bate do início ao fim e o conteúdo atual do registro corresponde exatamente ao último hash registrado — ou
-        seja, não há alteração de conteúdo sem uma linha correspondente explicando quem, quando e o quê. "Não
-        verificável" cobre registros/alterações anteriores à existência deste recurso, nunca é tratado como
+        seja, não há alteração de conteúdo sem uma linha correspondente explicando quem, quando e o quê. &quot;Não
+        verificável&quot; cobre registros/alterações anteriores à existência deste recurso, nunca é tratado como
         violação. Isto não substitui perícia técnica nem aconselhamento jurídico.
       </p>
     </div>

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { AlertTriangle, CheckCircle2, Upload } from "lucide-react";
 import { inputClass, labelClass, primaryButtonClass } from "@/lib/ui";
@@ -129,9 +130,9 @@ export default function TiqueTaqueCsvImportForm() {
               Importação concluída — {result.created} registro(s) novo(s) importado(s)
               {result.corrected > 0 && `, ${result.corrected} registro(s) corrigido(s) (ver `}
               {result.corrected > 0 && (
-                <a href="/ponto/correcoes" className="underline">
+                <Link href="/ponto/correcoes" className="underline">
                   histórico de correções
-                </a>
+                </Link>
               )}
               {result.corrected > 0 && ")"}
               .

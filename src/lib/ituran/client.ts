@@ -18,10 +18,11 @@ export function isIturanAvailable(): boolean {
   return Boolean(process.env.ITURAN_USERNAME && process.env.ITURAN_PASSWORD);
 }
 
-// Sem cache/persistencia de token nesta leva — uso pouco frequente (botao
-// manual + 1x/dia via cron), entao busca um token novo a cada chamada em
-// vez de guardar/renovar entre invocacoes (mesmo espirito de simplicidade
-// do cliente SIAT, que nem token tem). app_id e opcional — confirmado real
+// Token guardado em memoria ate expirar (expires_in menos 1 min de folga):
+// antes era um login novo por PAGINA de cada consulta, o que dobrava as
+// chamadas e o tempo do cron. Vive so enquanto a instancia serverless estiver
+// quente; se a Ituran revogar antes, o 401 invalida e refaz uma vez (ver
+// iturarFetch). app_id e opcional — confirmado real
 // (2026-08-21): a conta da AzulMob autentica normalmente sem ele.
 //
 // Retry com backoff so em 5xx (falha passageira do lado da Ituran,
@@ -30,6 +31,13 @@ export function isIturanAvailable(): boolean {
 // 4xx, que e credencial errada/invalida e insistir so atrasa mostrar o
 // erro real pro usuario.
 const MAX_AUTH_RETRIES = 2;
+
+let tokenCache: { token: string; expiresAt: number } | null = null;
+
+async function tokenValido(): Promise<string> {
+  if (tokenCache && tokenCache.expiresAt > Date.now()) return tokenCache.token;
+  return getAccessToken();
+}
 
 async function getAccessToken(attempt = 0): Promise<string> {
   const username = process.env.ITURAN_USERNAME;
@@ -59,11 +67,13 @@ async function getAccessToken(attempt = 0): Promise<string> {
   }
   const data = (await res.json()) as IturanTokenResponse;
   if (!data.access_token) throw new Error("Ituran não devolveu access_token.");
+  const validadeSeg = Number.isFinite(data.expires_in) && data.expires_in > 120 ? data.expires_in - 60 : 300;
+  tokenCache = { token: data.access_token, expiresAt: Date.now() + validadeSeg * 1000 };
   return data.access_token;
 }
 
-async function iturarFetch<T>(path: string, params: Record<string, string>, attempt = 0): Promise<T> {
-  const token = await getAccessToken();
+async function iturarFetch<T>(path: string, params: Record<string, string>, attempt = 0, renovado = false): Promise<T> {
+  const token = await tokenValido();
   const url = new URL(`${ITURAN_BASE_URL}${path}`);
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
 
@@ -71,10 +81,14 @@ async function iturarFetch<T>(path: string, params: Record<string, string>, atte
     headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
   });
 
+  if (res.status === 401 && !renovado) {
+    tokenCache = null;
+    return iturarFetch<T>(path, params, attempt, true);
+  }
   if (res.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {
     const backoffMs = 2000 * 2 ** attempt;
     await new Promise((resolve) => setTimeout(resolve, backoffMs));
-    return iturarFetch<T>(path, params, attempt + 1);
+    return iturarFetch<T>(path, params, attempt + 1, renovado);
   }
   if (!res.ok) {
     const body = await res.text().catch(() => "");

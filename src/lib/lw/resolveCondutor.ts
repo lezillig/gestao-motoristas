@@ -15,46 +15,48 @@ export interface ResolveCondutorResult {
   candidatos: number;
 }
 
-// Resolve automaticamente quem estava dirigindo o veiculo no momento da
-// infracao, cruzando com o uso real (VehicleUsageLog, prioridade — reflete
-// quem de fato pegou o veiculo) e, na falta disso, a Escala planejada.
-// Mesma logica de divergencia ja usada em /utilizacao (escala x uso real),
-// so que aplicada no sentido inverso: dado um instante, achar o motorista.
-// Nunca envia nada pra LW sozinho — so preenche um candidato pra
-// confirmacao humana (ver IndicacaoCondutor.status no schema).
-export async function resolveCondutorParaMulta(input: ResolveCondutorInput): Promise<ResolveCondutorResult> {
-  if (!input.vehicleId || !input.dataInfracao) return { driverId: null, origem: null, candidatos: 0 };
+export type UsoParaResolucao = { driverId: string; checkInAt: Date; checkOutAt: Date | null };
+export type EscalaParaResolucao = { driverId: string; date: Date; startTime: string; endTime: string | null };
 
-  // dataInfracao e um ROTULO de data (ver parseLwDateLabel em lw/sync.ts) —
-  // usa format() com os componentes LOCAIS do Date, nunca toISOString(),
-  // mesmo cuidado ja documentado neste projeto pra esse tipo de campo.
+const VAZIO: ResolveCondutorResult = { driverId: null, origem: null, candidatos: 0 };
+
+// dataInfracao e um ROTULO de data (ver parseLwDateLabel em lw/sync.ts) —
+// usa format() com os componentes LOCAIS do Date, nunca toISOString(),
+// mesmo cuidado ja documentado neste projeto pra esse tipo de campo.
+function momentoDaInfracao(input: ResolveCondutorInput): { dateISO: string; instant: Date | null } | null {
+  if (!input.vehicleId || !input.dataInfracao) return null;
   const dateISO = format(input.dataInfracao, "yyyy-MM-dd");
   const instant = input.horaInfracao ? combineLocalDateTime(dateISO, input.horaInfracao) : null;
+  return { dateISO, instant: instant && !Number.isNaN(instant.getTime()) ? instant : null };
+}
 
-  if (instant && !Number.isNaN(instant.getTime())) {
-    const usos = await prisma.vehicleUsageLog.findMany({
-      where: {
-        vehicleId: input.vehicleId,
-        checkInAt: { lte: instant },
-        OR: [{ checkOutAt: null }, { checkOutAt: { gte: instant } }],
-      },
-      select: { driverId: true },
-    });
-    const driversUso = new Set(usos.map((u) => u.driverId));
-    if (driversUso.size === 1) {
-      return { driverId: [...driversUso][0], origem: "USO_VEICULO_AUTOMATICO", candidatos: 1 };
-    }
-    if (driversUso.size > 1) {
-      return { driverId: null, origem: null, candidatos: driversUso.size };
-    }
+// Resolve quem estava dirigindo o veiculo no momento da infracao, cruzando
+// com o uso real (VehicleUsageLog, prioridade — reflete quem de fato pegou o
+// veiculo) e, na falta disso, a Escala planejada. Versao pura: recebe os usos
+// e escalas do veiculo ja carregados, pra resolver varias multas do mesmo
+// veiculo sem consultar o banco uma vez por multa. Nunca envia nada pra LW —
+// so preenche um candidato pra confirmacao humana.
+export function resolverCondutorComDados(
+  input: ResolveCondutorInput,
+  usos: UsoParaResolucao[],
+  escalas: EscalaParaResolucao[]
+): ResolveCondutorResult {
+  const momento = momentoDaInfracao(input);
+  if (!momento) return VAZIO;
+  const { dateISO, instant } = momento;
+
+  if (instant) {
+    const driversUso = new Set(
+      usos.filter((u) => u.checkInAt <= instant && (u.checkOutAt == null || u.checkOutAt >= instant)).map((u) => u.driverId)
+    );
+    if (driversUso.size === 1) return { driverId: [...driversUso][0], origem: "USO_VEICULO_AUTOMATICO", candidatos: 1 };
+    if (driversUso.size > 1) return { driverId: null, origem: null, candidatos: driversUso.size };
   }
 
-  const escalas = await prisma.escala.findMany({
-    where: { vehicleId: input.vehicleId, date: parseLocalDate(dateISO) },
-    select: { driverId: true, startTime: true, endTime: true },
-  });
+  const dia = parseLocalDate(dateISO).getTime();
   const driversEscala = new Set(
     escalas
+      .filter((e) => e.date.getTime() === dia)
       .filter((e) => {
         if (!input.horaInfracao) return true;
         const hora = toMinutes(input.horaInfracao);
@@ -65,8 +67,26 @@ export async function resolveCondutorParaMulta(input: ResolveCondutorInput): Pro
       .map((e) => e.driverId)
   );
 
-  if (driversEscala.size === 1) {
-    return { driverId: [...driversEscala][0], origem: "ESCALA_AUTOMATICA", candidatos: 1 };
-  }
+  if (driversEscala.size === 1) return { driverId: [...driversEscala][0], origem: "ESCALA_AUTOMATICA", candidatos: 1 };
   return { driverId: null, origem: null, candidatos: driversEscala.size };
+}
+
+// Versao com consulta, pra uma multa isolada (assistente).
+export async function resolveCondutorParaMulta(input: ResolveCondutorInput): Promise<ResolveCondutorResult> {
+  const momento = momentoDaInfracao(input);
+  if (!momento || !input.vehicleId) return VAZIO;
+  const { dateISO, instant } = momento;
+  const [usos, escalas] = await Promise.all([
+    instant
+      ? prisma.vehicleUsageLog.findMany({
+          where: { vehicleId: input.vehicleId, checkInAt: { lte: instant }, OR: [{ checkOutAt: null }, { checkOutAt: { gte: instant } }] },
+          select: { driverId: true, checkInAt: true, checkOutAt: true },
+        })
+      : Promise.resolve([] as UsoParaResolucao[]),
+    prisma.escala.findMany({
+      where: { vehicleId: input.vehicleId, date: parseLocalDate(dateISO) },
+      select: { driverId: true, date: true, startTime: true, endTime: true },
+    }),
+  ]);
+  return resolverCondutorComDados(input, usos, escalas);
 }

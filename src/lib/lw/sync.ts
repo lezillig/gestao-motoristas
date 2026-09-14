@@ -1,8 +1,9 @@
+import { addDays } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import { parseLocalDate } from "@/lib/date";
 import { getLwToken, listarVeiculosLw, buscarMultasPorPlaca } from "./client";
 import { matchVehicleToLw } from "./plateMatch";
-import { resolveCondutorParaMulta } from "./resolveCondutor";
+import { resolverCondutorComDados, type EscalaParaResolucao, type UsoParaResolucao } from "./resolveCondutor";
 import type { LwMultaDTO } from "./types";
 
 // dataInfracao/dataVencimento/apCondutorDataVencimento da LW vem como
@@ -138,16 +139,22 @@ export interface MultasSyncVehicleResult {
   totalMultas: number;
 }
 
-// 2a etapa: 1 veiculo por chamada (ver comentario acima). Faz login de novo
-// a cada chamada, mesmo espirito de simplicidade ja usado no cliente SIAT/
-// Ituran (uso pouco frequente, sem cache de token entre invocacoes).
+// 2a etapa: 1 veiculo por chamada (ver comentario acima). Quem ja tem um
+// token da LW (o cron, que processa dezenas de veiculos por invocacao) passa o
+// mesmo; sem token, faz login.
+//
+// Em lote: 1 leitura das multas ja conhecidas. Multa sem mudanca nenhuma
+// (mesmo JSON da LW, mesmo veiculo) nao e regravada — so atualiza syncedAt de
+// todas de uma vez. Antes eram findUnique + upsert por multa, todo dia,
+// inclusive nas que nunca mudam.
 export async function syncMultasForVehicle(
   companyId: string,
   vehicleId: string,
-  placaParaConsulta: string
+  placaParaConsulta: string,
+  token?: string
 ): Promise<MultasSyncVehicleResult> {
-  const token = await getLwToken();
-  const todasMultas = await buscarMultasPorPlaca(token, placaParaConsulta);
+  const tokenLw = token ?? (await getLwToken());
+  const todasMultas = await buscarMultasPorPlaca(tokenLw, placaParaConsulta);
   // So a partir de MULTAS_SYNC_CUTOFF (ver comentario acima) — uma multa
   // sem dataInfracao reconhecivel tambem fica de fora, nao da pra confirmar
   // que e recente.
@@ -155,47 +162,117 @@ export async function syncMultasForVehicle(
     const data = parseLwDateLabel(m.dataInfracao);
     return data !== null && data >= MULTAS_SYNC_CUTOFF;
   });
+  if (multas.length === 0) return { criadas: 0, atualizadas: 0, totalMultas: 0 };
+
+  const existentes = await prisma.multa.findMany({
+    where: { lwId: { in: multas.map((m) => m.id) } },
+    select: { lwId: true, companyId: true, vehicleId: true, placaConsultada: true, rawJson: true },
+  });
+  const porLwId = new Map(existentes.map((e) => [e.lwId, e]));
 
   let criadas = 0;
   let atualizadas = 0;
+  const inalteradas: string[] = [];
   for (const m of multas) {
-    const jaExiste = await prisma.multa.findUnique({ where: { lwId: m.id }, select: { id: true } });
+    const existente = porLwId.get(m.id);
+    if (
+      existente &&
+      existente.companyId === companyId &&
+      existente.vehicleId === vehicleId &&
+      existente.placaConsultada === placaParaConsulta &&
+      jsonEstavel(existente.rawJson) === jsonEstavel(m)
+    ) {
+      inalteradas.push(m.id);
+      atualizadas++;
+      continue;
+    }
     const data = buildMultaData(companyId, vehicleId, placaParaConsulta, m);
     await prisma.multa.upsert({
       where: { lwId: m.id },
       create: { lwId: m.id, ...data },
       update: data,
     });
-    if (jaExiste) atualizadas++;
+    if (existente) atualizadas++;
     else criadas++;
   }
+  if (inalteradas.length > 0) {
+    await prisma.multa.updateMany({ where: { lwId: { in: inalteradas } }, data: { syncedAt: new Date() } });
+  }
   return { criadas, atualizadas, totalMultas: multas.length };
+}
+
+// JSON com chaves ordenadas: o Postgres (jsonb) devolve as chaves em ordem
+// propria, entao comparar JSON.stringify direto diria "mudou" sempre.
+function jsonEstavel(valor: unknown): string {
+  const ordenar = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(ordenar);
+    if (v && typeof v === "object") {
+      const obj = v as Record<string, unknown>;
+      return Object.fromEntries(
+        Object.keys(obj)
+          .filter((k) => obj[k] !== undefined)
+          .sort()
+          .map((k) => [k, ordenar(obj[k])])
+      );
+    }
+    return v;
+  };
+  return JSON.stringify(ordenar(valor));
 }
 
 // Roda depois de syncMultasForVehicle pro mesmo veiculo — tenta resolver o
 // condutor automaticamente pra cada multa nova/ainda pendente. Compartilhado
 // entre a Server Action (sync manual, ver src/app/(app)/multas/actions.ts)
-// e o cron diario (ver src/app/api/cron/lw-multas-import/route.ts), pra nao
-// duplicar essa logica nos dois lugares.
+// e o cron diario (ver src/app/api/cron/lw-multas-import/route.ts).
+//
+// Filtra no banco so o que ainda pode ser resolvido automaticamente (sem
+// indicacao, ou PENDENTE_MANUAL que nenhuma pessoa decidiu) e carrega usos e
+// escalas do veiculo uma vez, resolvendo tudo em memoria. Antes recarregava
+// todo o historico de multas do veiculo e fazia 1-2 consultas por multa
+// pendente — e as pendentes, por definicao, voltam todo dia.
 export async function resolveCondutoresPendentes(companyId: string, vehicleId: string): Promise<void> {
   const multas = await prisma.multa.findMany({
-    where: { vehicleId, companyId },
-    include: { indicacao: true },
+    where: {
+      vehicleId,
+      companyId,
+      OR: [
+        { indicacao: null },
+        { indicacao: { status: "PENDENTE_MANUAL", OR: [{ origemResolucao: null }, { origemResolucao: { not: "MANUAL" } }] } },
+      ],
+    },
+    select: { id: true, vehicleId: true, dataInfracao: true, horaInfracao: true, indicacao: { select: { id: true } } },
   });
+  if (multas.length === 0) return;
+
+  const tempos = multas.map((m) => m.dataInfracao?.getTime()).filter((t): t is number => t != null);
+  let usos: UsoParaResolucao[] = [];
+  let escalas: EscalaParaResolucao[] = [];
+  if (tempos.length > 0) {
+    const menor = addDays(new Date(Math.min(...tempos)), -1);
+    const maior = addDays(new Date(Math.max(...tempos)), 2);
+    const dias = [...new Set(tempos)].map((t) => new Date(t));
+    [usos, escalas] = await Promise.all([
+      prisma.vehicleUsageLog.findMany({
+        where: { vehicleId, checkInAt: { lte: maior }, OR: [{ checkOutAt: null }, { checkOutAt: { gte: menor } }] },
+        select: { driverId: true, checkInAt: true, checkOutAt: true },
+      }),
+      prisma.escala.findMany({
+        where: { vehicleId, date: { in: dias } },
+        select: { driverId: true, date: true, startTime: true, endTime: true },
+      }),
+    ]);
+  }
+
   for (const multa of multas) {
     // Toda multa ganha uma linha de IndicacaoCondutor (mesmo sem sugestao
     // automatica, status fica PENDENTE_MANUAL) — sem isso, filtrar/ordenar
     // por status de indicacao na listagem teria que tratar "sem linha" e
     // "PENDENTE_MANUAL" como o mesmo caso em dois lugares diferentes.
-    const podeAutoResolver =
-      !multa.indicacao || (multa.indicacao.origemResolucao !== "MANUAL" && multa.indicacao.status === "PENDENTE_MANUAL");
-    if (!podeAutoResolver) continue;
-
-    const resolved = await resolveCondutorParaMulta({
-      vehicleId: multa.vehicleId,
-      dataInfracao: multa.dataInfracao,
-      horaInfracao: multa.horaInfracao,
-    });
+    const resolved = resolverCondutorComDados(
+      { vehicleId: multa.vehicleId, dataInfracao: multa.dataInfracao, horaInfracao: multa.horaInfracao },
+      usos,
+      escalas
+    );
 
     if (resolved.driverId) {
       await prisma.indicacaoCondutor.upsert({

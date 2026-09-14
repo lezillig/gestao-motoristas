@@ -1081,3 +1081,23 @@ model RateLimit {
   contagem   Int
   reiniciaEm DateTime
 }
+
+// Um retrato por empresa e por dia do total de apontamentos da auditoria de
+// dados da Sofit — base do grafico de evolucao em /manutencao/auditoria, que a
+// gestao usa pra acompanhar a limpeza dos dados pela equipe de manutencao.
+// dia = rotulo do dia de Brasilia (ver brazilDayLabel); o ultimo retrato do
+// dia substitui o anterior.
+model AuditoriaSofitSnapshot {
+  id           String   @id @default(cuid())
+  companyId    String
+  dia          DateTime
+  total        Int
+  alta         Int
+  media        Int
+  baixa        Int
+  // { [chave do item]: { titulo, n } }
+  porChave     Json
+  atualizadoEm DateTime @updatedAt
+
+  @@unique([companyId, dia])
+}

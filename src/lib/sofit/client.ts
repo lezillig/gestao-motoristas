@@ -97,6 +97,8 @@ function mapTransaction(t: SofitTransactionRaw): SofitFuelTransaction {
 }
 
 export type FetchFuelTransactionsResult = {
+  // Proxima pagina a buscar pra retomar do ponto em que o orcamento acabou.
+  nextPage: number;
   transactions: SofitFuelTransaction[];
   // true quando parou por causa do orcamento de tempo, nao porque acabaram
   // as paginas — quem chama deve tentar de novo (o proximo `since` avanca
@@ -117,15 +119,16 @@ export type FetchFuelTransactionsResult = {
 // chamou decidir se continua (outro clique, ou o cron se auto-encadeando).
 export async function fetchFuelTransactionsSince(
   since: Date,
-  deadline: number = Date.now() + 45_000
+  deadline: number = Date.now() + 45_000,
+  startPage = 1
 ): Promise<FetchFuelTransactionsResult> {
   const result: SofitFuelTransaction[] = [];
-  let page = 1;
+  let page = Math.max(1, Math.floor(startPage));
   let total = Infinity;
 
   while ((page - 1) * SOFIT_MAX_PAGE_SIZE < total && page <= MAX_PAGES) {
     if (Date.now() > deadline) {
-      return { transactions: result, hasMore: true };
+      return { transactions: result, hasMore: true, nextPage: page };
     }
     const data = await sofitFetch<SofitExpensesResponse>(EXPENSES_QUERY, {
       page,
@@ -142,7 +145,7 @@ export async function fetchFuelTransactionsSince(
     page += 1;
   }
 
-  return { transactions: result, hasMore: false };
+  return { transactions: result, hasMore: false, nextPage: page };
 }
 
 const SERVICE_ORDERS_QUERY = `

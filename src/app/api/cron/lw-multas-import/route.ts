@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
       if (i > cursor) await sleep(LW_SYNC_PACE_MS);
 
       try {
-        const result = await syncMultasForVehicle(item.companyId, item.vehicleId, item.placaParaConsulta);
+        const result = await syncMultasForVehicle(item.companyId, item.vehicleId, item.placaParaConsulta, token);
         await resolveCondutoresPendentes(item.companyId, item.vehicleId);
         criadas += result.criadas;
         atualizadas += result.atualizadas;

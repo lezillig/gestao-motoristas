@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 import { inputClass, labelClass, primaryButtonClass, secondaryButtonClass } from "@/lib/ui";
@@ -33,10 +33,14 @@ export default function EscalaForm({
   // encontrado ao testar). `version` muda a cada retorno da action,
   // forcando os campos abaixo a remontar com os valores devolvidos em
   // `state.values` em vez de ficarem em branco.
+  // Ajuste de estado durante a renderizacao (padrao recomendado pelo React
+  // pra reagir a mudanca de valor), em vez de setState dentro de useEffect.
   const [version, setVersion] = useState(0);
-  useEffect(() => {
+  const [stateAnterior, setStateAnterior] = useState(state);
+  if (state !== stateAnterior) {
+    setStateAnterior(state);
     if (state.values) setVersion((v) => v + 1);
-  }, [state]);
+  }
   const effective = state.values ?? {
     driverId: defaultValues?.driverId ?? "",
     vehicleId: defaultValues?.vehicleId ?? "",

@@ -2,11 +2,14 @@ import { NextRequest } from "next/server";
 import { isSofitAvailable } from "@/lib/sofit/client";
 import { prisma } from "@/lib/prisma";
 import { atualizarUltimaManutencao, syncOrdensServicoSofit, syncVeiculosSofit, ultimoCursorOs } from "@/lib/sofit/manutencaoSync";
+import { auditarSofit, registrarSnapshotAuditoria } from "@/lib/sofit/auditoria";
 import { executarCron } from "@/lib/cronRun";
 
 // Diario (ver vercel.json): veiculos (status, hodometro, plano, vencimentos)
 // e ordens de servico da Sofit. OS e incremental por updated_at; quando nao
 // cabe no orcamento, a rota chama a si mesma com ?since=<cursor>&company=.
+// Ao terminar a ultima parte, grava o retrato do dia da auditoria de dados
+// (grafico de evolucao em /manutencao/auditoria).
 export const maxDuration = 60;
 const BUDGET_MS = 40_000;
 
@@ -34,14 +37,30 @@ export async function GET(req: NextRequest) {
         const since = sinceDate ?? (await ultimoCursorOs(company.id));
         const r = await syncOrdensServicoSofit(company.id, since, deadline);
         let ultima: number | undefined;
+        let snapshot: "gravado" | "falhou" | undefined;
         if (r.hasMore) {
           continuacao = true;
           encadear({ since: r.nextSince.toISOString(), company: company.id });
         } else {
           ultima = await atualizarUltimaManutencao(company.id);
+          try {
+            await registrarSnapshotAuditoria(company.id, await auditarSofit(company.id));
+            snapshot = "gravado";
+          } catch (e) {
+            snapshot = "falhou";
+            errors.push(`${company.id}: retrato da auditoria não gravado — ${e instanceof Error ? e.message : "falha"}`);
+          }
         }
         processados += r.upserted + (veiculos ? Object.values(veiculos).reduce<number>((s, v) => (typeof v === "number" ? s + v : s), 0) : 0);
-        out.push({ company: company.id, veiculos, osUpserted: r.upserted, osSemVeiculo: r.semVeiculo, continued: r.hasMore, ultimaManutencaoAtualizada: ultima });
+        out.push({
+          company: company.id,
+          veiculos,
+          osUpserted: r.upserted,
+          osSemVeiculo: r.semVeiculo,
+          continued: r.hasMore,
+          ultimaManutencaoAtualizada: ultima,
+          snapshotAuditoria: snapshot,
+        });
       } catch (e) {
         errors.push(`${company.id}: ${e instanceof Error ? e.message : "falha"}`);
       }

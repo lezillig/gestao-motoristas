@@ -1047,7 +1047,7 @@ export default async function AnaliseDeRiscosPage({
       )}
       <p className="mt-3 text-xs text-slate-400">
         Os alertas de jurisprudência são informativos, baseados em padrões conhecidos — não substituem uma avaliação do setor jurídico. O
-        card "Atrasos" é um indicador de assiduidade (horário real batido vs. horário programado na escala, com
+        card &quot;Atrasos&quot; é um indicador de assiduidade (horário real batido vs. horário programado na escala, com
         tolerância de {PONTUALIDADE_TOLERANCIA_MINUTOS}min), não uma violação legal — por isso não aparece na tabela
         de ocorrências abaixo.
       </p>

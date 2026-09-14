@@ -1,5 +1,6 @@
-import { differenceInCalendarDays, format, subDays } from "date-fns";
+import { addDays, differenceInCalendarDays, format, subDays } from "date-fns";
 import { prisma } from "@/lib/prisma";
+import { brazilDayLabel } from "@/lib/date";
 import { currentKm } from "@/lib/maintenance";
 import { OS_STATUS_ABERTOS } from "@/lib/sofit/manutencaoSync";
 import { CATEGORIA_REVISAO, categoriaCausa, ehCorretiva, INTERVALO_DIAS_MINIMO_PLAUSIVEL, KM_POR_DIA_MAXIMO_PLAUSIVEL } from "@/lib/manutencao";
@@ -348,4 +349,35 @@ export async function auditarSofit(companyId: string, now = new Date()): Promise
   const porGravidade: Record<Gravidade, number> = { alta: 0, media: 0, baixa: 0 };
   for (const a of comLinhas) porGravidade[a.gravidade] += a.linhas.length;
   return { geradoEm: now, achados: comLinhas, totalLinhas: comLinhas.reduce((s, a) => s + a.linhas.length, 0), porGravidade };
+}
+
+export type ItensSnapshot = Record<string, { titulo: string; n: number }>;
+export type RetratoAuditoria = { dia: string; total: number; alta: number; media: number; baixa: number; porChave: ItensSnapshot };
+
+// Grava (ou substitui) o retrato do dia da auditoria. Chamado ao fim da
+// sincronizacao de manutencao (cron e botao) e ao abrir a pagina da auditoria.
+export async function registrarSnapshotAuditoria(companyId: string, a: AuditoriaSofit): Promise<void> {
+  const dia = brazilDayLabel(0);
+  const porChave: ItensSnapshot = Object.fromEntries(a.achados.map((x) => [x.chave, { titulo: x.titulo, n: x.linhas.length }]));
+  const dados = { total: a.totalLinhas, alta: a.porGravidade.alta, media: a.porGravidade.media, baixa: a.porGravidade.baixa, porChave };
+  await prisma.auditoriaSofitSnapshot.upsert({
+    where: { companyId_dia: { companyId, dia } },
+    create: { companyId, dia, ...dados },
+    update: dados,
+  });
+}
+
+export async function historicoAuditoria(companyId: string, dias = 90): Promise<RetratoAuditoria[]> {
+  const rows = await prisma.auditoriaSofitSnapshot.findMany({
+    where: { companyId, dia: { gte: addDays(brazilDayLabel(0), -dias) } },
+    orderBy: { dia: "asc" },
+  });
+  return rows.map((r) => ({
+    dia: format(r.dia, "yyyy-MM-dd"),
+    total: r.total,
+    alta: r.alta,
+    media: r.media,
+    baixa: r.baixa,
+    porChave: (r.porChave ?? {}) as ItensSnapshot,
+  }));
 }

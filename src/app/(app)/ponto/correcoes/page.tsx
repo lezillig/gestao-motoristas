@@ -97,7 +97,14 @@ export default async function PontoCorrecoesPage({
   let impactCents = 0;
   let semValorHora = 0;
   let overtimeDeltaTotalMinutes = 0;
-  const rows = corrections.map((c) => {
+  const rows: {
+    c: (typeof corrections)[number];
+    antes: ReturnType<typeof turno>;
+    depois: ReturnType<typeof turno>;
+    impactoCents: number | null;
+    overtimeDeltaMinutes: number | null;
+  }[] = [];
+  for (const c of corrections) {
     const driver = c.driver as DriverWithConvencoes;
     const antes = turno(c.clockInAntes, c.clockOutAntes, c.intervaloInicioAntes, c.intervaloFimAntes, c.punchesAntes);
     const depois = turno(c.clockInDepois, c.clockOutDepois, c.intervaloInicioDepois, c.intervaloFimDepois, c.punchesDepois);
@@ -124,8 +131,8 @@ export default async function PontoCorrecoesPage({
       }
     }
 
-    return { c, antes, depois, impactoCents, overtimeDeltaMinutes };
-  });
+    rows.push({ c, antes, depois, impactoCents, overtimeDeltaMinutes });
+  }
 
   // Quebra por mes (mes do turno, nao da data em que a correcao foi feita) —
   // responde "quantas horas extras a mais por mes" sem precisar navegar

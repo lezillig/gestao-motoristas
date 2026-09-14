@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { isSofitAvailable } from "@/lib/sofit/client";
 import { atualizarUltimaManutencao, syncOrdensServicoSofit, syncVeiculosSofit, ultimoCursorOs } from "@/lib/sofit/manutencaoSync";
+import { auditarSofit, registrarSnapshotAuditoria } from "@/lib/sofit/auditoria";
 
 export type SyncManutencaoResult = {
   error?: string;
@@ -33,6 +34,14 @@ export async function syncManutencaoSofit(sinceISO: string | null): Promise<Sync
     const since = sinceISO ? new Date(sinceISO) : await ultimoCursorOs(session.companyId);
     const r = await syncOrdensServicoSofit(session.companyId, since, deadline);
     const ultimaManutencaoAtualizada = r.hasMore ? undefined : await atualizarUltimaManutencao(session.companyId);
+    if (!r.hasMore) {
+      // Fim da sincronizacao: grava o retrato do dia da auditoria (grafico de
+      // evolucao). Falha aqui nao derruba o sync, que ja foi concluido.
+      await auditarSofit(session.companyId)
+        .then((a) => registrarSnapshotAuditoria(session.companyId, a))
+        .catch(() => {});
+      revalidatePath("/manutencao/auditoria");
+    }
     revalidatePath("/manutencao");
     revalidatePath("/hoje");
     revalidatePath("/utilizacao");
