@@ -79,7 +79,7 @@ export function buildAssistenteTools(companyId: string) {
     name: "buscar_motoristas",
     description:
       "Localiza motoristas/funcionários pelo nome (parcial, sem acento). Use antes de qualquer consulta por motorista para obter o motoristaId. Retorna até 10.",
-    inputSchema: z.object({ nome: z.string().min(2).describe("Nome ou parte do nome") }),
+    inputSchema: z.object({ nome: z.string().min(2).max(80).describe("Nome ou parte do nome") }),
     run: async ({ nome }) => {
       const palavras = nome.trim().split(/\s+/).filter((p) => p.length > 1);
       const drivers = await prisma.driver.findMany({
@@ -108,8 +108,8 @@ export function buildAssistenteTools(companyId: string) {
     description:
       "Localiza veículos pela placa (aceita formato antigo ou Mercosul, com ou sem hífen) ou por parte do modelo. Use para obter o veiculoId. Retorna até 10.",
     inputSchema: z.object({
-      placa: z.string().optional().describe("Placa completa ou parcial"),
-      modelo: z.string().optional().describe("Parte do modelo/marca"),
+      placa: z.string().max(20).optional().describe("Placa completa ou parcial"),
+      modelo: z.string().max(80).optional().describe("Parte do modelo/marca"),
     }),
     run: async ({ placa, modelo }) => {
       const exato = placa ? await resolverVeiculoPorPlaca(placa) : null;
@@ -132,7 +132,7 @@ export function buildAssistenteTools(companyId: string) {
   const escalas = betaZodTool({
     name: "escalas",
     description: "Escalas planejadas (SIAT) num período, filtrando por motorista e/ou veículo. Traz cliente, rota, horário e veículo. Até 80 linhas.",
-    inputSchema: z.object({ motoristaId: z.string().optional(), veiculoId: z.string().optional(), de: DATA, ate: DATA }),
+    inputSchema: z.object({ motoristaId: z.string().max(64).optional(), veiculoId: z.string().max(64).optional(), de: DATA, ate: DATA }),
     run: async ({ motoristaId, veiculoId, de, ate }) => {
       const erro = validarJanela(de, ate);
       if (erro) return erro;
@@ -163,7 +163,7 @@ export function buildAssistenteTools(companyId: string) {
     name: "viagens_ituran",
     description:
       "Viagens reais do rastreador Ituran de um veículo num período: início/fim, km, velocidade máxima, endereços e o motorista escalado no dia. Até 80 linhas.",
-    inputSchema: z.object({ veiculoId: z.string(), de: DATA, ate: DATA }),
+    inputSchema: z.object({ veiculoId: z.string().max(64), de: DATA, ate: DATA }),
     run: async ({ veiculoId, de, ate }) => {
       const erro = validarJanela(de, ate);
       if (erro) return erro;
@@ -194,7 +194,7 @@ export function buildAssistenteTools(companyId: string) {
   const ponto = betaZodTool({
     name: "ponto",
     description: "Registros de ponto (TiqueTaque) de um motorista num período, com horas trabalhadas por dia e total. Até 70 dias.",
-    inputSchema: z.object({ motoristaId: z.string(), de: DATA, ate: DATA }),
+    inputSchema: z.object({ motoristaId: z.string().max(64), de: DATA, ate: DATA }),
     run: async ({ motoristaId, de, ate }) => {
       const erro = validarJanela(de, ate);
       if (erro) return erro;
@@ -217,7 +217,7 @@ export function buildAssistenteTools(companyId: string) {
     name: "multas",
     description:
       "Multas de trânsito (LW Tecnologia) por veículo e/ou motorista indicado, opcionalmente num período (data da infração). Traz valor, pontos, prazo de indicação e status. Até 50.",
-    inputSchema: z.object({ veiculoId: z.string().optional(), motoristaId: z.string().optional(), de: DATA.optional(), ate: DATA.optional() }),
+    inputSchema: z.object({ veiculoId: z.string().max(64).optional(), motoristaId: z.string().max(64).optional(), de: DATA.optional(), ate: DATA.optional() }),
     run: async ({ veiculoId, motoristaId, de, ate }) => {
       if (de && ate) {
         const erro = validarJanela(de, ate);
@@ -258,7 +258,7 @@ export function buildAssistenteTools(companyId: string) {
   const abastecimentos = betaZodTool({
     name: "abastecimentos",
     description: "Abastecimentos (Sofit/Ticket Log) por veículo e/ou motorista num período, com litros, valor, posto e totais. Até 80.",
-    inputSchema: z.object({ veiculoId: z.string().optional(), motoristaId: z.string().optional(), de: DATA, ate: DATA }),
+    inputSchema: z.object({ veiculoId: z.string().max(64).optional(), motoristaId: z.string().max(64).optional(), de: DATA, ate: DATA }),
     run: async ({ veiculoId, motoristaId, de, ate }) => {
       const erro = validarJanela(de, ate);
       if (erro) return erro;
@@ -291,7 +291,7 @@ export function buildAssistenteTools(companyId: string) {
     name: "quem_estava_com_veiculo",
     description:
       "Responde quem estava com um veículo numa data (e hora, se informada): motorista resolvido pela escala do SIAT/uso do veículo, mais todas as escalas e viagens da Ituran daquele dia. Use para multas, ocorrências e conferências.",
-    inputSchema: z.object({ placa: z.string(), data: DATA, hora: HORA.optional() }),
+    inputSchema: z.object({ placa: z.string().max(20), data: DATA, hora: HORA.optional() }),
     run: async ({ placa, data, hora }) => {
       const v = await resolverVeiculoPorPlaca(placa);
       if (!v) return `Nenhum veículo cadastrado com a placa ${placa}.`;
@@ -390,7 +390,7 @@ export function buildAssistenteTools(companyId: string) {
   const afastamentos = betaZodTool({
     name: "afastamentos",
     description: "Afastamentos (férias, atestado, folga, abono) que tocam um período, opcionalmente de um motorista. Até 80.",
-    inputSchema: z.object({ motoristaId: z.string().optional(), de: DATA, ate: DATA }),
+    inputSchema: z.object({ motoristaId: z.string().max(64).optional(), de: DATA, ate: DATA }),
     run: async ({ motoristaId, de, ate }) => {
       const erro = validarJanela(de, ate);
       if (erro) return erro;
@@ -436,7 +436,7 @@ export function buildAssistenteTools(companyId: string) {
     inputSchema: z.object({
       status: z.enum(["underApproval", "planned", "inProgress", "waitingNf"]).optional(),
       diasMinimo: z.number().int().min(0).optional().describe("Só OS abertas há pelo menos N dias"),
-      placa: z.string().optional(),
+      placa: z.string().max(20).optional(),
     }),
     run: async ({ status, diasMinimo, placa }) => {
       // Tambem por placaOriginal: OS da Sofit cuja placa nao casou com a frota
@@ -499,7 +499,7 @@ export function buildAssistenteTools(companyId: string) {
   const aderenciaPlano = betaZodTool({
     name: "aderencia_plano",
     description: "Aderência ao plano de manutenção por veículo: km e dias desde a última revisão concluída contra o intervalo cadastrado na Sofit. Filtro por situação (vencida, breve, em_dia, sem_historico) e placa. Até 40.",
-    inputSchema: z.object({ situacao: z.enum(["vencida", "breve", "em_dia", "sem_historico"]).optional(), placa: z.string().optional() }),
+    inputSchema: z.object({ situacao: z.enum(["vencida", "breve", "em_dia", "sem_historico"]).optional(), placa: z.string().max(20).optional() }),
     run: async ({ situacao, placa }) => {
       const veiculo = placa ? await resolverVeiculoPorPlaca(placa) : null;
       if (placa && !veiculo) return `Nenhum veículo cadastrado com a placa ${placa}.`;
@@ -529,7 +529,7 @@ export function buildAssistenteTools(companyId: string) {
   const historicoManutencao = betaZodTool({
     name: "historico_manutencao_veiculo",
     description: "Histórico de ordens de serviço de um veículo na Sofit (padrão: últimos 12 meses): tipo, status, datas, dias parado, hodômetro, fornecedor e problema. Até 60.",
-    inputSchema: z.object({ placa: z.string(), meses: z.number().int().min(1).max(36).optional() }),
+    inputSchema: z.object({ placa: z.string().max(20), meses: z.number().int().min(1).max(36).optional() }),
     run: async ({ placa, meses }) => {
       const v = await resolverVeiculoPorPlaca(placa);
       const desde = subMonths(new Date(), meses ?? 12);
@@ -562,7 +562,7 @@ export function buildAssistenteTools(companyId: string) {
     name: "auditoria_sofit",
     description:
       "Auditoria de qualidade dos dados da Sofit: sem parâmetro lista os itens (chave, título, gravidade, quantidade); com `item` devolve as linhas daquele item (até 50). Chaves: hodometro_implausivel, km_por_ano, odometro_divergente, os_hodometro, os_antiga, preventiva_aprovacao, parado_sem_os, os_aberta_disponivel, os_sem_veiculo, revisao_como_corretiva, os_sem_hodometro, os_dias_parado, vencimento_antigo, sem_intervalo, frota_sem_sofit, status_divergente, km_baixo_idade.",
-    inputSchema: z.object({ item: z.string().optional() }),
+    inputSchema: z.object({ item: z.string().max(80).optional() }),
     run: async ({ item }) => {
       const a = await auditarSofit(companyId);
       if (!item) {

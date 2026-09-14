@@ -156,7 +156,7 @@ export async function fetchEmployeeDays(
   deadline?: number
 ): Promise<TiqueTaqueDayEntry[]> {
   const data = (await tiqueTaqueFetch(
-    `/times?start_date=${startDate}&end_date=${endDate}&employee_id=${employeeId}`,
+    `/times?${new URLSearchParams({ start_date: startDate, end_date: endDate, employee_id: employeeId })}`,
     deadline
   )) as TimesResponse;
   return pairPunchesIntoDays(data.times ?? []);
@@ -178,7 +178,7 @@ export async function fetchEmployeeTimesheet(
   deadline?: number
 ): Promise<TiqueTaqueTimesheet> {
   const data = (await tiqueTaqueFetch(
-    `/timesheets?employee_id=${employeeId}&start_date=${startDate}&end_date=${endDate}`,
+    `/timesheets?${new URLSearchParams({ employee_id: employeeId, start_date: startDate, end_date: endDate })}`,
     deadline
   )) as TimesheetResponse;
   const n = (key: string): number => {
@@ -226,7 +226,7 @@ export async function fetchEmployeeLeaves(employeeId: string): Promise<TiqueTaqu
   let page = 1;
   for (;;) {
     const data = (await tiqueTaqueFetch(
-      `/work-leaves?employee_id=${employeeId}&max_results=${maxResults}&page=${page}`
+      `/work-leaves?${new URLSearchParams({ employee_id: employeeId, max_results: String(maxResults), page: String(page) })}`
     )) as WorkLeavesPage;
     const items = data._items ?? [];
     for (const item of items) {

@@ -89,7 +89,7 @@ export async function GET(req: NextRequest) {
 
   const remaining = i < itens.length;
   if (remaining) {
-    const nextUrl = new URL(req.nextUrl.pathname, req.nextUrl.origin);
+    const nextUrl = new URL(req.nextUrl.pathname, process.env.APP_BASE_URL ?? req.nextUrl.origin);
     nextUrl.searchParams.set("cursor", String(i));
     nextUrl.searchParams.set("meses", meses.join(","));
     waitUntil(fetch(nextUrl.toString(), { headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` } }).catch(() => {}));

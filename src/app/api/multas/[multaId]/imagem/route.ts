@@ -7,6 +7,8 @@ import { getLwToken, buscarPrimeiraImagemMulta } from "@/lib/lw/client";
 // navegador). Sem cache HTTP de proposito: a imagem so muda se a multa for
 // re-notificada, caso raro, e o custo de buscar de novo a cada clique e
 // baixo (1 usuario olhando 1 multa por vez, nao um loop).
+const TIPOS_PERMITIDOS = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif", "application/pdf"]);
+
 export async function GET(_req: Request, { params }: { params: Promise<{ multaId: string }> }) {
   const session = await requireRole("ADMIN", "GESTOR");
   const { multaId } = await params;
@@ -20,9 +22,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ multaId
     if (!imagem) return new Response("Nenhuma imagem disponível para esta multa.", { status: 404 });
 
     const bytes = Buffer.from(imagem.imagem, "base64");
+    // Content-Type vem da LW: so aceita tipos de imagem/PDF conhecidos, para
+    // nunca servir text/html (XSS na origem do app) por engano do fornecedor.
+    const tipo = TIPOS_PERMITIDOS.has((imagem.imagemTipo || "").toLowerCase()) ? imagem.imagemTipo.toLowerCase() : "image/jpeg";
     return new Response(new Uint8Array(bytes), {
       headers: {
-        "Content-Type": imagem.imagemTipo || "image/jpeg",
+        "Content-Type": tipo,
+        "X-Content-Type-Options": "nosniff",
         "Content-Disposition": `inline; filename="multa-${multa.lwId}.jpg"`,
         "Cache-Control": "private, max-age=300",
       },

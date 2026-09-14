@@ -97,7 +97,7 @@ export async function buildExportXlsx(headers: string[], rows: ExportRow[], shee
 // pode interpretar como fórmula ao abrir o CSV. Prefixa com aspas simples
 // pra forçar interpretação como texto (não afeta a leitura normal do dado).
 function sanitizeCsvValue(v: string): string {
-  return /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
+  return /^[=+\-@\t\r|]/.test(v.trimStart()) ? `'${v}` : v;
 }
 
 export function buildExportCsv(headers: string[], rows: ExportRow[]): string {

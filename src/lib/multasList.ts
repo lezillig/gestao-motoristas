@@ -1,6 +1,6 @@
-import { format } from "date-fns";
+import { addDays, format } from "date-fns";
 import { prisma } from "@/lib/prisma";
-import { brazilDateTimeToUtc } from "@/lib/date";
+import { brazilDateTimeToUtc, brazilDayLabel } from "@/lib/date";
 import type { Prisma, StatusIndicacaoCondutor } from "@prisma/client";
 
 export const MULTA_SORT_FIELDS = [
@@ -91,8 +91,12 @@ export async function fetchMultasCount(companyId: string, filters: MultasFilters
 // aviso geral, nao um resumo da tela). Contado direto no banco (nao busca
 // as linhas) pra nao repetir o mesmo problema de custo que motivou a
 // paginacao da listagem.
-export async function fetchPrazoAlertCounts(companyId: string, agora: Date): Promise<{ vencido: number; vencendoEm5Dias: number }> {
-  const em5Dias = new Date(agora.getTime() + 5 * 86_400_000);
+export async function fetchPrazoAlertCounts(companyId: string, _agora: Date): Promise<{ vencido: number; vencendoEm5Dias: number }> {
+  // dataLimiteIndicacao e um ROTULO (meia-noite UTC): "vencida" so a partir
+  // do dia seguinte em Brasilia; comparar com o instante atual marcava como
+  // vencida, desde as 21h da vespera, a multa que ainda vence hoje.
+  const agora = brazilDayLabel(0);
+  const em5Dias = addDays(agora, 5);
   const semIndicacaoConfirmadaWhere: Prisma.MultaWhereInput["indicacao"] = {
     status: { notIn: ["ENVIADA", "VALIDADA"] as StatusIndicacaoCondutor[] },
   };

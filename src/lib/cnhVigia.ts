@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { brazilDayLabel } from "@/lib/date";
 import { cnhAlertLevel, requiresCnh, type CnhAlertLevel } from "@/lib/driverAlerts";
 
 export type SubstitutoSugerido = { driverId: string; driverName: string };
@@ -75,7 +76,7 @@ export async function buildCnhVigia(
   if (atRisk.length === 0) return [];
 
   const escalasFuturas = await prisma.escala.findMany({
-    where: { companyId, driverId: { in: atRisk.map((d) => d.id) }, date: { gte: now } },
+    where: { companyId, driverId: { in: atRisk.map((d) => d.id) }, date: { gte: brazilDayLabel(0) } },
     orderBy: { date: "asc" },
     select: { id: true, driverId: true, date: true, startTime: true, routeName: true, clientName: true },
   });

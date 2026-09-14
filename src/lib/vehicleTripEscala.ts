@@ -1,4 +1,5 @@
 import { format } from "date-fns";
+import { utcInstantToLocalParts } from "@/lib/date";
 
 // Mesmo padrao de /utilizacao (src/app/(app)/utilizacao/page.tsx) pra achar
 // divergencia veiculo x escala: chave por veiculo+dia, sem exigir horario
@@ -24,7 +25,10 @@ export function matchEscalaForVehicleTrips<E extends EscalaKeyLike>(
 
   const result = new Map<number, string | null>();
   trips.forEach((trip, index) => {
-    const key = `${trip.vehicleId}_${format(trip.startAt, "yyyy-MM-dd")}`;
+    // startAt e instante real: o dia e o de Brasilia (viagem das 22h BRT e do
+    // mesmo dia da escala, nao do seguinte como o relogio UTC diria).
+    const dia = utcInstantToLocalParts(trip.startAt.toISOString())?.dateISO ?? format(trip.startAt, "yyyy-MM-dd");
+    const key = `${trip.vehicleId}_${dia}`;
     result.set(index, escalaByKey.get(key)?.id ?? null);
   });
   return result;

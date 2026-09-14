@@ -37,6 +37,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         // ConvencaoForm.tsx) — o SDK nao aceita esse campo aqui.
         return {
           allowedContentTypes: ["application/pdf"],
+          maximumSizeInBytes: 25 * 1024 * 1024,
           addRandomSuffix: false,
         };
       },

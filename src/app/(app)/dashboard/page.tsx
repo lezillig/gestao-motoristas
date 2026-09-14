@@ -3,6 +3,7 @@ import { format, differenceInCalendarDays } from "date-fns";
 import { AlertTriangle, IdCard, Landmark, ShieldCheck, UserX } from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { brazilDayLabel } from "@/lib/date";
 import { cardClass, badgeClass } from "@/lib/ui";
 import { cnhAlertLevel, daysUntil, requiresCnh } from "@/lib/driverAlerts";
 import { buildCnhVigia } from "@/lib/cnhVigia";
@@ -37,7 +38,7 @@ export default async function DashboardPage() {
     // vencida mas de ferias/atestado nao e a mesma urgencia de quem esta
     // trabalhando normalmente sem CNH valida.
     prisma.driverLeave.findMany({
-      where: { companyId: session.companyId, startDate: { lte: now }, endDate: { gte: now } },
+      where: { companyId: session.companyId, startDate: { lte: brazilDayLabel(0) }, endDate: { gte: brazilDayLabel(0) } },
       select: { driverId: true, leaveType: true, endDate: true },
     }),
   ]);

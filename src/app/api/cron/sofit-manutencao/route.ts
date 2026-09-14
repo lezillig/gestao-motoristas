@@ -31,11 +31,15 @@ export async function GET(req: NextRequest) {
     if (companyParam && company.id !== companyParam) continue;
     try {
       const veiculos = sinceParam ? undefined : await syncVeiculosSofit(company.id, deadline);
-      const since = sinceParam ? new Date(sinceParam) : await ultimoCursorOs(company.id);
+      const sinceDate = sinceParam ? new Date(sinceParam) : null;
+      if (sinceDate && Number.isNaN(sinceDate.getTime())) {
+        return NextResponse.json({ error: "since inválido (use ISO 8601)." }, { status: 400 });
+      }
+      const since = sinceDate ?? (await ultimoCursorOs(company.id));
       const r = await syncOrdensServicoSofit(company.id, since, deadline);
       let ultima: number | undefined;
       if (r.hasMore) {
-        const nextUrl = new URL(req.nextUrl.pathname, req.nextUrl.origin);
+        const nextUrl = new URL(req.nextUrl.pathname, process.env.APP_BASE_URL ?? req.nextUrl.origin);
         nextUrl.searchParams.set("since", r.nextSince.toISOString());
         nextUrl.searchParams.set("company", company.id);
         waitUntil(fetch(nextUrl.toString(), { headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` } }).catch(() => {}));

@@ -49,6 +49,9 @@ export async function GET(req: NextRequest) {
   const deadline = started + HARD_DEADLINE_MS;
   const cursor = parseInt(req.nextUrl.searchParams.get("cursor") ?? "0", 10);
   const date = req.nextUrl.searchParams.get("date") ?? format(subDays(new Date(), 1), "yyyy-MM-dd");
+  if (!/^d{4}-d{2}-d{2}$/.test(date)) {
+    return NextResponse.json({ error: "date inválido (use yyyy-MM-dd)." }, { status: 400 });
+  }
 
   // Lista achatada e ordenada de forma estavel (por empresa, depois por id)
   // pra o cursor de uma invocacao encadeada continuar exatamente de onde a
@@ -105,7 +108,7 @@ export async function GET(req: NextRequest) {
 
   const remaining = i < drivers.length;
   if (remaining) {
-    const nextUrl = new URL(req.nextUrl.pathname, req.nextUrl.origin);
+    const nextUrl = new URL(req.nextUrl.pathname, process.env.APP_BASE_URL ?? req.nextUrl.origin);
     nextUrl.searchParams.set("cursor", String(i));
     nextUrl.searchParams.set("date", date);
     waitUntil(

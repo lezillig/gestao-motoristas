@@ -102,7 +102,7 @@ export async function GET(req: NextRequest) {
 
   const remaining = i < itens.length;
   if (remaining) {
-    const nextUrl = new URL(req.nextUrl.pathname, req.nextUrl.origin);
+    const nextUrl = new URL(req.nextUrl.pathname, process.env.APP_BASE_URL ?? req.nextUrl.origin);
     nextUrl.searchParams.set("cursor", String(i));
     waitUntil(
       fetch(nextUrl.toString(), {

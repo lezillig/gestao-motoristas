@@ -1,12 +1,12 @@
 import { get } from "@vercel/blob";
-import { requireSession } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await requireSession();
+  const session = await requireRole("ADMIN", "GESTOR");
   const { id } = await params;
 
   const convencao = await prisma.convencaoColetiva.findUnique({

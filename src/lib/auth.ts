@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import type { Role } from "@prisma/client";
 import { defaultRouteForRole } from "@/lib/permissions";
+import { prisma } from "@/lib/prisma";
 
 export const SESSION_COOKIE = "gestao_motoristas_session";
 
@@ -57,7 +58,18 @@ export async function getSession(): Promise<SessionPayload | null> {
 export async function requireSession(): Promise<SessionPayload> {
   const session = await getSession();
   if (!session) redirect("/login");
-  return session;
+  // O JWT vale 12h; sem esta checagem, desativar um usuario ou trocar o
+  // perfil dele so surtiria efeito no proximo login. Uma consulta por
+  // requisicao (chave primaria) e barata perto do custo das paginas.
+  const user = await prisma.user.findUnique({
+    where: { id: session.userId },
+    select: { active: true, role: true, companyId: true },
+  });
+  if (!user || !user.active || user.companyId !== session.companyId) {
+    (await cookies()).delete(SESSION_COOKIE);
+    redirect("/login");
+  }
+  return { ...session, role: user.role };
 }
 
 export async function requireRole(...roles: Role[]): Promise<SessionPayload> {

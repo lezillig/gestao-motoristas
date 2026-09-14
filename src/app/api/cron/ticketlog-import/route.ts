@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isTicketLogAvailable, fetchFuelCardStatuses } from "@/lib/ticketlog/client";
-import { syncTicketLogCardStatusesCore } from "@/app/(app)/combustivel/cartoes/actions";
+import { syncTicketLogCardStatusesCore } from "@/lib/sync/ticketlogCards";
 
 // Diario — atualiza o snapshot de saldo/limite por cartao (ver
 // FuelCardStatus no schema). Volume baixo (~370 cartoes) e uma chamada so a

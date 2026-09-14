@@ -79,7 +79,7 @@ export default function DriverForm({
         </div>
       </div>
       <p className="-mt-2 text-xs text-slate-400">
-        Deixe em branco se ainda não tiver os dados da CNH — o motorista aparece como "CNH pendente" até ser completado.
+        Deixe em branco se ainda não tiver os dados da CNH — o motorista aparece como &quot;CNH pendente&quot; até ser completado.
       </p>
       <div>
         <label className={labelClass}>Data de admissão</label>

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { waitUntil } from "@vercel/functions";
 import { prisma } from "@/lib/prisma";
 import { isSofitAvailable } from "@/lib/sofit/client";
-import { syncSofitFuelCore } from "@/app/(app)/combustivel/sofitActions";
+import { syncSofitFuelCore } from "@/lib/sync/sofitFuel";
 
 // Diario, retomando sempre da ultima transacao Sofit ja importada (ver
 // syncSofitFuelCore). Um backfill grande (ex.: desde 2026-01-01 numa conta
@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
   }
 
   if (anyMore) {
-    const nextUrl = new URL(req.nextUrl.pathname, req.nextUrl.origin);
+    const nextUrl = new URL(req.nextUrl.pathname, process.env.APP_BASE_URL ?? req.nextUrl.origin);
     waitUntil(
       fetch(nextUrl.toString(), {
         headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },

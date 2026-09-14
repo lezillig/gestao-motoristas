@@ -1,6 +1,6 @@
-import { format, addDays, startOfDay } from "date-fns";
+import { format, addDays } from "date-fns";
 import { prisma } from "@/lib/prisma";
-import { brazilMidnightUtc, utcInstantToLocalParts } from "@/lib/date";
+import { brazilDayLabel, brazilMidnightUtc, utcInstantToLocalParts } from "@/lib/date";
 
 export type GapCheck = { lastDate: Date | null; missingDays: string[] };
 
@@ -43,7 +43,7 @@ function missingDaysFromTimestamps(dates: Date[], start: Date, endExclusive: Dat
 }
 
 export async function checkTiqueTaquePontoGaps(companyId: string, days: number): Promise<GapCheck> {
-  const today = startOfDay(new Date());
+  const today = brazilDayLabel(0);
   const windowStart = addDays(today, -days);
   const [last, entries] = await Promise.all([
     prisma.timeClockEntry.findFirst({
@@ -63,7 +63,7 @@ export async function checkTiqueTaquePontoGaps(companyId: string, days: number):
 }
 
 export async function checkSiatGaps(companyId: string, days: number): Promise<GapCheck> {
-  const today = startOfDay(new Date());
+  const today = brazilDayLabel(0);
   const windowStart = addDays(today, -days);
   const [last, escalas] = await Promise.all([
     prisma.escala.findFirst({

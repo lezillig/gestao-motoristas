@@ -49,6 +49,9 @@ export async function POST(req: NextRequest) {
     if (e instanceof Anthropic.APIError) {
       return NextResponse.json({ error: `Falha na API da Anthropic (${e.status}).` }, { status: 502 });
     }
-    return NextResponse.json({ error: e instanceof Error ? e.message : "Falha ao consultar o assistente." }, { status: 500 });
+    // Nao repassa e.message: erro de Prisma/parse pode carregar nome de
+    // tabela, host do banco ou caminho de arquivo.
+    console.error("[assistente]", e instanceof Error ? e.message : e);
+    return NextResponse.json({ error: "Falha ao consultar o assistente — tente de novo em instantes." }, { status: 500 });
   }
 }

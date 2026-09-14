@@ -91,7 +91,10 @@ export async function buildHoje(companyId: string, now = new Date()): Promise<Ho
   const hojeLabel = brazilDayLabel(0);
   const ontemLabel = brazilDayLabel(-1);
   const ontemISO = format(ontemLabel, "yyyy-MM-dd");
-  const limitePrazo = new Date(now.getTime() + MULTAS_PRAZO_JANELA_DIAS * 86_400_000);
+  // Escala.date, DriverLeave.*Date e Multa.dataLimiteIndicacao sao ROTULOS
+  // (meia-noite UTC): comparar com o rotulo de hoje, nunca com o instante
+  // `now` — senao a partir das 21h de Brasilia o dia corrente "some".
+  const limitePrazo = addDays(hojeLabel, MULTAS_PRAZO_JANELA_DIAS);
   const semIndicacaoConfirmada = { status: { notIn: ["ENVIADA", "VALIDADA"] as StatusIndicacaoCondutor[] } };
 
   const [
@@ -110,7 +113,7 @@ export async function buildHoje(companyId: string, now = new Date()): Promise<Ho
     osAbertas,
   ] = await Promise.all([
     prisma.multa.findMany({
-      where: { companyId, dataLimiteIndicacao: { gte: now, lte: limitePrazo }, indicacao: semIndicacaoConfirmada },
+      where: { companyId, dataLimiteIndicacao: { gte: hojeLabel, lte: limitePrazo }, indicacao: semIndicacaoConfirmada },
       include: { vehicle: { select: { plate: true } }, indicacao: { include: { driver: { select: { name: true } } } } },
       orderBy: { dataLimiteIndicacao: "asc" },
       take: ITENS_POR_SECAO,
@@ -121,7 +124,7 @@ export async function buildHoje(companyId: string, now = new Date()): Promise<Ho
       select: { id: true, name: true, funcao: true, departamento: true, cnhCategory: true, cnhExpiration: true },
     }),
     prisma.driverLeave.findMany({
-      where: { companyId, startDate: { lte: now }, endDate: { gte: now } },
+      where: { companyId, startDate: { lte: hojeLabel }, endDate: { gte: hojeLabel } },
       select: { driverId: true, leaveType: true, endDate: true },
     }),
     prisma.escala.findMany({ where: { companyId, date: hojeLabel }, select: { driverId: true, vehicleId: true } }),

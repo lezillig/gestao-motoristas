@@ -39,7 +39,7 @@ export default function TiqueTaqueDriverImportButton() {
       </button>
       <p className="text-xs text-slate-400">
         Traz nome, CPF, telefone e valor-hora de todos os funcionários ativos (não só motoristas). CNH não vem
-        do TiqueTaque — os importados aparecem como "CNH pendente" até serem completados.
+        do TiqueTaque — os importados aparecem como &quot;CNH pendente&quot; até serem completados.
       </p>
 
       {state?.error && (

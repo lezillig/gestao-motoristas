@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { format, subDays } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import { isSiatAvailable } from "@/lib/siat/client";
-import { syncFromSiatCore } from "@/app/(app)/escalas/siatActions";
+import { syncFromSiatCore } from "@/lib/sync/siat";
 
 // Agendado no vercel.json pra rodar as 05:30 UTC (= 02:30 horario de
 // Brasilia) — depois do TiqueTaque (05:00 UTC) e ANTES da Ituran (06:00

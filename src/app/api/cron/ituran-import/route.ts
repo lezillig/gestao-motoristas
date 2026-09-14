@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { endOfDay, format, startOfDay, subDays } from "date-fns";
+import { format } from "date-fns";
+import { brazilDayLabel, brazilMidnightUtc } from "@/lib/date";
 import { prisma } from "@/lib/prisma";
 import { fetchTrips, fetchVehiclesRealtime, isIturanAvailable } from "@/lib/ituran/client";
 import { syncVehicleTripsForCompany } from "@/lib/ituran/tripSync";
@@ -32,9 +33,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Ituran não configurado" }, { status: 200 });
   }
 
-  const yesterday = subDays(new Date(), 1);
-  const dateFrom = startOfDay(yesterday);
-  const dateTo = endOfDay(yesterday);
+  // "Ontem" no calendario de Brasilia: a API da Ituran recebe os instantes
+  // reais das meias-noites BRT (senao as viagens das 21h-23h59 ficavam pro
+  // lote seguinte) e as escalas sao casadas pelo rotulo do dia.
+  const dateFrom = brazilMidnightUtc(-1);
+  const dateTo = new Date(brazilMidnightUtc(0).getTime() - 1);
+  const yesterday = brazilDayLabel(-1);
 
   let snapshots;
   let trips;
@@ -79,7 +83,7 @@ export async function GET(req: NextRequest) {
       await updateVehicleMileageFromReadings(readingsData);
     }
 
-    const tripResult = await syncVehicleTripsForCompany(company.id, trips, dateFrom, dateTo);
+    const tripResult = await syncVehicleTripsForCompany(company.id, trips, yesterday, yesterday);
     tripsUpserted += tripResult.upserted;
     tripsSemEscala += tripResult.semEscala;
     errors.push(...tripResult.errors);

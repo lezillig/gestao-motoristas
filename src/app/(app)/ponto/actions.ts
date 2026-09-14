@@ -375,7 +375,14 @@ export async function importDriverFromTiqueTaque(
     };
   }
 
-  const result = await importDriverDaysCore(session.companyId, driver.id, driver.name, employeeId, startDate, endDate);
+  // Revalida as datas aqui tambem: a fase 1 valida, mas esta action e chamada
+  // direto pelo cliente e o periodo nao faz parte do token HMAC.
+  const range = tiqueTaqueRangeSchema.safeParse({ startDate, endDate });
+  if (!range.success || range.data.startDate > range.data.endDate) {
+    return { created: 0, corrected: 0, errors: [{ driverName: driver.name, message: "Período inválido." }] };
+  }
+
+  const result = await importDriverDaysCore(session.companyId, driver.id, driver.name, employeeId, range.data.startDate, range.data.endDate);
 
   revalidatePath("/ponto");
   revalidatePath("/ponto/analise");

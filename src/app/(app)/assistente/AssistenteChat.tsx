@@ -19,7 +19,9 @@ function inline(text: string): ReactNode[] {
     const link = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(p);
     if (link) {
       const [, label, href] = link;
-      if (href.startsWith("/") && !href.startsWith("//")) {
+      // So caminho interno: comeca com "/" unica, sem "\" (o parser de URL
+      // normaliza "/\evil.com" para "//evil.com") e sem "%5c".
+      if (/^\/(?![/\\])[^\\]*$/.test(href) && !/%5c/i.test(href)) {
         return (
           <Link key={i} href={href} className="font-medium text-blue-700 underline underline-offset-2">
             {label}

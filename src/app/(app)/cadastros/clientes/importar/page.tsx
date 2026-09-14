@@ -1,8 +1,10 @@
 import PageHeader from "@/components/ui/PageHeader";
+import { requireRole } from "@/lib/auth";
 import { cardClass } from "@/lib/ui";
 import ClienteImportForm from "./ClienteImportForm";
 
-export default function ImportarClientesPage() {
+export default async function ImportarClientesPage() {
+  await requireRole("ADMIN", "GESTOR");
   return (
     <div className="max-w-2xl">
       <PageHeader
