@@ -27,27 +27,35 @@ const SITUACAO: Record<AderenciaVeiculo["situacao"], { label: string; cls: strin
   sem_historico: { label: "Sem histórico", cls: "bg-slate-100 text-slate-500" },
 };
 
-function Tile({ icon: Icon, label, value, sub, tone }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string | number; sub?: string; tone: "critical" | "warning" | "good" | "neutral" }) {
+// Cada card leva pro detalhe correspondente na propria pagina (ancora),
+// mesmo padrao dos blocos de /hoje.
+function Tile({ icon: Icon, label, value, sub, tone, href }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string | number; sub?: string; tone: "critical" | "warning" | "good" | "neutral"; href: string }) {
   const cls = { critical: "bg-red-100 text-red-700", warning: "bg-amber-100 text-amber-700", good: "bg-emerald-100 text-emerald-700", neutral: "bg-slate-100 text-slate-600" }[tone];
   return (
-    <div className={cardClass}>
+    <Link href={href} className={`${cardClass} block transition-shadow hover:shadow-md`} title="Ver detalhes">
       <div className={`mb-3 flex h-9 w-9 items-center justify-center rounded-lg ${cls}`}>
         <Icon className="h-4 w-4" />
       </div>
       <p className="text-2xl font-semibold text-slate-900">{value}</p>
       <p className="mt-0.5 text-xs text-slate-500">{label}</p>
       {sub && <p className="mt-0.5 text-[11px] text-slate-400">{sub}</p>}
-    </div>
+      <p className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-blue-700">
+        Ver detalhes <ArrowRight className="h-3 w-3" />
+      </p>
+    </Link>
   );
 }
+
+const SEC = "scroll-mt-4 target:ring-2 target:ring-blue-300";
 
 function num(n: number, d = 0) {
   return n.toLocaleString("pt-BR", { maximumFractionDigits: d });
 }
 
-export default async function ManutencaoPage({ searchParams }: { searchParams: Promise<{ status?: string; todos?: string }> }) {
+export default async function ManutencaoPage({ searchParams }: { searchParams: Promise<{ status?: string; todos?: string; situacao?: string }> }) {
   const session = await requireRole("ADMIN", "GESTOR");
-  const { status: statusFiltro, todos } = await searchParams;
+  const { status: statusFiltro, todos, situacao } = await searchParams;
+  const situacaoFiltro = (["vencida", "breve", "em_dia", "sem_historico"] as const).find((s) => s === situacao) ?? null;
   const available = isSofitAvailable();
   const m = await buildManutencao(session.companyId);
   const semDados = m.ultimaSync == null;
@@ -56,7 +64,14 @@ export default async function ManutencaoPage({ searchParams }: { searchParams: P
   const backlogVisivel = todos === "1" ? backlogFiltrado : backlogFiltrado.slice(0, 40);
   const mesAtual = m.mensal[m.mensal.length - 1];
   const pctPrev = mesAtual && mesAtual.total > 0 ? Math.round((mesAtual.preventivas / mesAtual.total) * 100) : null;
-  const aderVisivel = todos === "1" ? m.aderencia.itens : m.aderencia.itens.slice(0, 40);
+  const aderFiltrada = situacaoFiltro ? m.aderencia.itens.filter((a) => a.situacao === situacaoFiltro) : m.aderencia.itens;
+  const aderVisivel = todos === "1" ? aderFiltrada : aderFiltrada.slice(0, 40);
+  const qs = (extra: Record<string, string | undefined>) => {
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries({ status: statusFiltro, situacao: situacaoFiltro ?? undefined, todos, ...extra })) if (v) p.set(k, v);
+    const s = p.toString();
+    return s ? `?${s}` : "";
+  };
   const cobrancas = [
     m.higiene.osAntigas > 0 && `${m.higiene.osAntigas} OS "em andamento" há mais de ${BACKLOG_ANTIGO_DIAS} dias — provavelmente feitas e não fechadas na Sofit.`,
     m.higiene.aprovacaoAtrasada > 0 && `${m.higiene.aprovacaoAtrasada} preventiva(s) geradas pelo plano aguardando aprovação há mais de ${APROVACAO_ATRASADA_DIAS} dias — o plano existe e está travado por falta de aprovação.`,
@@ -99,13 +114,48 @@ export default async function ManutencaoPage({ searchParams }: { searchParams: P
       )}
 
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-6">
-        <Tile icon={ShieldCheck} label="Disponíveis agora" value={m.frota.disponiveis} sub={`de ${m.frota.total} ativos na Sofit`} tone="good" />
-        <Tile icon={Wrench} label="Em manutenção agora" value={m.frota.emManutencao} sub={`${m.higiene.paradosSemOs} sem OS aberta`} tone={m.frota.emManutencao > 0 ? "warning" : "good"} />
-        <Tile icon={ClipboardList} label="OS abertas" value={m.backlog.total} sub={`${m.backlog.antigas} há mais de ${BACKLOG_ANTIGO_DIAS} dias`} tone={m.backlog.antigas > 0 ? "critical" : "neutral"} />
-        <Tile icon={Gauge} label="Preventiva no mês" value={pctPrev == null ? "—" : `${pctPrev}%`} sub={mesAtual ? `${mesAtual.preventivas} de ${mesAtual.total} OS` : undefined} tone={pctPrev != null && pctPrev < 30 ? "warning" : "neutral"} />
-        <Tile icon={AlertTriangle} label="Plano vencido" value={m.aderencia.vencidas} sub={`${m.aderencia.breve} vencem em breve · ${m.aderencia.semHistorico} sem histórico`} tone={m.aderencia.vencidas > 0 ? "critical" : "good"} />
-        <Tile icon={CalendarClock} label={`Vencimentos em ${VENCIMENTO_JANELA_DIAS} dias`} value={m.vencimentos.proximos.length} sub={`${m.vencimentos.vencidos.length} já vencido(s)`} tone={m.vencimentos.vencidos.length > 0 ? "critical" : m.vencimentos.proximos.length > 0 ? "warning" : "good"} />
+        <Tile href="#frota" icon={ShieldCheck} label="Disponíveis agora" value={m.frota.disponiveis} sub={`de ${m.frota.total} ativos na Sofit`} tone="good" />
+        <Tile href="#parados" icon={Wrench} label="Em manutenção agora" value={m.frota.emManutencao} sub={`${m.higiene.paradosSemOs} sem OS aberta`} tone={m.frota.emManutencao > 0 ? "warning" : "good"} />
+        <Tile href="#backlog" icon={ClipboardList} label="OS abertas" value={m.backlog.total} sub={`${m.backlog.antigas} há mais de ${BACKLOG_ANTIGO_DIAS} dias`} tone={m.backlog.antigas > 0 ? "critical" : "neutral"} />
+        <Tile href="#mensal" icon={Gauge} label="Preventiva no mês" value={pctPrev == null ? "—" : `${pctPrev}%`} sub={mesAtual ? `${mesAtual.preventivas} de ${mesAtual.total} OS` : undefined} tone={pctPrev != null && pctPrev < 30 ? "warning" : "neutral"} />
+        <Tile href="/manutencao?situacao=vencida#aderencia" icon={AlertTriangle} label="Plano vencido" value={m.aderencia.vencidas} sub={`${m.aderencia.breve} vencem em breve · ${m.aderencia.semHistorico} sem histórico`} tone={m.aderencia.vencidas > 0 ? "critical" : "good"} />
+        <Tile href="#vencimentos" icon={CalendarClock} label={`Vencimentos em ${VENCIMENTO_JANELA_DIAS} dias`} value={m.vencimentos.proximos.length} sub={`${m.vencimentos.vencidos.length} já vencido(s)`} tone={m.vencimentos.vencidos.length > 0 ? "critical" : m.vencimentos.proximos.length > 0 ? "warning" : "good"} />
       </div>
+
+      <section id="frota" className={`${cardClass} ${SEC} mb-6`}>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-slate-900">Frota agora — status de cada veículo na Sofit</h2>
+          <span className="text-xs text-slate-500">
+            {m.frota.total} ativos · {m.frota.inativos} inativos na Sofit · {m.frota.semSofit} da frota sem cadastro lá
+          </span>
+        </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          {(
+            [
+              ["Disponíveis", m.frotaListas.disponiveis, "bg-emerald-50 text-emerald-800"],
+              ["Em uso", m.frotaListas.emUso, "bg-blue-50 text-blue-800"],
+              ["Em manutenção", m.frotaListas.emManutencao, "bg-amber-50 text-amber-800"],
+            ] as const
+          ).map(([titulo, placas, cls]) => (
+            <div key={titulo}>
+              <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-slate-500">
+                {titulo} <span className="ml-1 text-slate-400">{placas.length}</span>
+              </p>
+              <div className="flex max-h-48 flex-wrap gap-1 overflow-y-auto">
+                {placas.length === 0 && <span className="text-xs text-slate-400">—</span>}
+                {placas.map((p) => (
+                  <span key={p} className={`rounded px-1.5 py-0.5 font-mono text-[11px] ${cls}`}>
+                    {p}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        {m.frotaListas.semStatus.length > 0 && (
+          <p className="mt-3 text-xs text-slate-400">Sem status de disponibilidade na Sofit: {m.frotaListas.semStatus.join(", ")}</p>
+        )}
+      </section>
 
       {cobrancas.length > 0 && (
         <section className={`${cardClass} mb-6 border-amber-200`}>
@@ -119,7 +169,7 @@ export default async function ManutencaoPage({ searchParams }: { searchParams: P
       )}
 
       <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <section className={`${cardClass} p-0 overflow-hidden`}>
+        <section id="parados" className={`${cardClass} ${SEC} p-0 overflow-hidden`}>
           <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
             <h2 className="text-sm font-semibold text-slate-900">Veículos parados agora (status da Sofit)</h2>
             <span className={`${badgeClass} ${m.parados.length > 0 ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>{m.parados.length}</span>
@@ -162,7 +212,7 @@ export default async function ManutencaoPage({ searchParams }: { searchParams: P
           </div>
         </section>
 
-        <section className={`${cardClass} p-0 overflow-hidden`}>
+        <section id="mensal" className={`${cardClass} ${SEC} p-0 overflow-hidden`}>
           <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
             <h2 className="text-sm font-semibold text-slate-900">Preventiva × corretiva — últimos 6 meses</h2>
           </div>
@@ -244,15 +294,15 @@ export default async function ManutencaoPage({ searchParams }: { searchParams: P
         </div>
       </section>
 
-      <section className={`${cardClass} mb-6 p-0 overflow-hidden`}>
+      <section id="backlog" className={`${cardClass} ${SEC} mb-6 p-0 overflow-hidden`}>
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
           <h2 className="text-sm font-semibold text-slate-900">Fila de ordens de serviço abertas — mais antigas primeiro</h2>
           <div className="flex flex-wrap gap-1.5">
-            <Link href="/manutencao" className={`${badgeClass} ${!statusFiltro ? "bg-blue-700 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+            <Link href={`/manutencao${qs({ status: undefined, todos: undefined })}#backlog`} className={`${badgeClass} ${!statusFiltro ? "bg-blue-700 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
               Todas {m.backlog.total}
             </Link>
             {Object.entries(m.backlog.porStatus).map(([st, n]) => (
-              <Link key={st} href={`/manutencao?status=${st}`} className={`${badgeClass} ${statusFiltro === st ? "bg-blue-700 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+              <Link key={st} href={`/manutencao${qs({ status: st, todos: undefined })}#backlog`} className={`${badgeClass} ${statusFiltro === st ? "bg-blue-700 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
                 {OS_STATUS_LABEL[st] ?? st} {n}
               </Link>
             ))}
@@ -296,17 +346,31 @@ export default async function ManutencaoPage({ searchParams }: { searchParams: P
         {backlogFiltrado.length > backlogVisivel.length && (
           <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
             Mostrando {backlogVisivel.length} de {backlogFiltrado.length}.{" "}
-            <Link href={`/manutencao?${statusFiltro ? `status=${statusFiltro}&` : ""}todos=1`} className="font-medium text-blue-700 hover:underline">Mostrar todas</Link>
+            <Link href={`/manutencao${qs({ todos: "1" })}#backlog`} className="font-medium text-blue-700 hover:underline">Mostrar todas</Link>
           </p>
         )}
       </section>
 
-      <section className={`${cardClass} mb-6 p-0 overflow-hidden`}>
+      <section id="aderencia" className={`${cardClass} ${SEC} mb-6 p-0 overflow-hidden`}>
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
           <h2 className="text-sm font-semibold text-slate-900">Aderência ao plano de manutenção (intervalo de cada veículo na Sofit)</h2>
-          <span className="text-xs text-slate-500">
-            {m.aderencia.vencidas} vencida(s) · {m.aderencia.breve} em breve · {m.aderencia.emDia} em dia · {m.aderencia.semHistorico} sem histórico
-          </span>
+          <div className="flex flex-wrap gap-1.5">
+            <Link href={`/manutencao${qs({ situacao: undefined, todos: undefined })}#aderencia`} className={`${badgeClass} ${!situacaoFiltro ? "bg-blue-700 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+              Todos {m.aderencia.itens.length}
+            </Link>
+            {(
+              [
+                ["vencida", `Vencidas ${m.aderencia.vencidas}`],
+                ["breve", `Em breve ${m.aderencia.breve}`],
+                ["em_dia", `Em dia ${m.aderencia.emDia}`],
+                ["sem_historico", `Sem histórico ${m.aderencia.semHistorico}`],
+              ] as const
+            ).map(([s, label]) => (
+              <Link key={s} href={`/manutencao${qs({ situacao: s, todos: undefined })}#aderencia`} className={`${badgeClass} ${situacaoFiltro === s ? "bg-blue-700 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+                {label}
+              </Link>
+            ))}
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -343,9 +407,9 @@ export default async function ManutencaoPage({ searchParams }: { searchParams: P
             </tbody>
           </table>
         </div>
-        {m.aderencia.itens.length > aderVisivel.length && (
+        {aderFiltrada.length > aderVisivel.length && (
           <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
-            Mostrando {aderVisivel.length} de {m.aderencia.itens.length}. <Link href="/manutencao?todos=1" className="font-medium text-blue-700 hover:underline">Mostrar todos</Link>
+            Mostrando {aderVisivel.length} de {aderFiltrada.length}. <Link href={`/manutencao${qs({ todos: "1" })}#aderencia`} className="font-medium text-blue-700 hover:underline">Mostrar todos</Link>
           </p>
         )}
       </section>
@@ -407,7 +471,7 @@ export default async function ManutencaoPage({ searchParams }: { searchParams: P
         </section>
       </div>
 
-      <section className={`${cardClass} mb-6 p-0 overflow-hidden`}>
+      <section id="vencimentos" className={`${cardClass} ${SEC} mb-6 p-0 overflow-hidden`}>
         <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
           <h2 className="text-sm font-semibold text-slate-900">Vencimentos legais — vencidos e próximos {VENCIMENTO_JANELA_DIAS} dias</h2>
           <span className="text-xs text-slate-500">IPVA, licenciamento, DPVAT, seguro, tacógrafo, extintor, CVS — conforme cadastro na Sofit</span>

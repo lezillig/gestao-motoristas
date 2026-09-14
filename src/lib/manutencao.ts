@@ -96,6 +96,7 @@ export type Vencimento = { plate: string; tipo: string; venceEm: Date; dias: num
 export type Manutencao = {
   ultimaSync: Date | null;
   frota: { total: number; disponiveis: number; emManutencao: number; emUso: number; inativos: number; semSofit: number };
+  frotaListas: { disponiveis: string[]; emUso: string[]; emManutencao: string[]; semStatus: string[] };
   parados: { plate: string; modelo: string; osAberta: OsAberta | null }[];
   backlog: { porStatus: Record<string, number>; total: number; itens: OsAberta[]; antigas: number; aprovacaoAtrasada: number };
   aderencia: { itens: AderenciaVeiculo[]; vencidas: number; breve: number; emDia: number; semHistorico: number };
@@ -161,6 +162,13 @@ export async function buildManutencao(companyId: string, now = new Date()): Prom
     emUso: cont("inUse"),
     inativos: vehicles.filter((v) => v.sofitId && v.sofitStatus !== "active").length,
     semSofit: vehicles.filter((v) => !v.sofitId && v.status !== "INATIVO").length,
+  };
+  const placas = (d: string | null) => comSofit.filter((v) => v.sofitDisponibilidade === d).map((v) => v.plate);
+  const frotaListas = {
+    disponiveis: placas("available"),
+    emUso: placas("inUse"),
+    emManutencao: placas("inMaintenance"),
+    semStatus: comSofit.filter((v) => !v.sofitDisponibilidade || !["available", "inUse", "inMaintenance"].includes(v.sofitDisponibilidade)).map((v) => v.plate),
   };
 
   const toAberta = (o: (typeof osAbertas)[number]): OsAberta => ({
@@ -333,6 +341,7 @@ export async function buildManutencao(companyId: string, now = new Date()): Prom
   return {
     ultimaSync: ultimaOs?.syncedAt ?? null,
     frota,
+    frotaListas,
     parados,
     backlog: { porStatus, total: abertas.length, itens: abertas, antigas, aprovacaoAtrasada },
     aderencia,
