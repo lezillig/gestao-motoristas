@@ -59,6 +59,7 @@ import {
 } from "@/lib/convencao";
 import { annotateJurisprudenceRisks, type DriverViolationSummary } from "@/lib/jurisprudencia";
 import { formatHoursMinutes } from "@/lib/time";
+import { mesParam } from "@/lib/params";
 
 type Categoria = "CLT" | "CCT/ACT" | "Jurisprudência";
 
@@ -116,7 +117,7 @@ export default async function AnaliseDeRiscosPage({
   const session = await requireRole("ADMIN", "GESTOR");
   const { mes, driverId, sort, dir, tipo, categoria: categoriaFiltro } = await searchParams;
 
-  const anchor = mes ? new Date(`${mes}-01T00:00:00`) : new Date();
+  const anchor = mesParam(mes);
   const monthStart = startOfMonth(anchor);
   const monthEnd = addDays(endOfMonth(anchor), 1); // exclusivo
   const prevMonth = format(subMonths(monthStart, 1), "yyyy-MM");

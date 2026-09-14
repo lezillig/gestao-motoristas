@@ -1,46 +1,32 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isSofitAvailable } from "@/lib/sofit/client";
 import { syncSofitCnhCore } from "@/lib/sofit/cnhSync";
+import { executarCron } from "@/lib/cronRun";
 
-// Diario — pedido explicito do usuario (2026-09-05), Sofit tratada como
-// fonte de verdade pro vencimento de CNH (sobrescreve o que ja tinhamos
-// aqui quando ela tem o dado, ver comentario em lib/sofit/cnhSync.ts). O
-// cadastro de funcionario da Sofit e pequeno (~600 registros) e cabe
-// folgado no teto de 60s — sem auto-encadeamento como o de combustivel/
-// TiqueTaque, que lidam com volume bem maior.
+// Diario (ver vercel.json): CNH (numero/categoria/validade) dos motoristas a
+// partir do cadastro de pessoas da Sofit.
 export const maxDuration = 60;
 
-function verifyCronAuth(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  return req.headers.get("authorization") === `Bearer ${secret}`;
-}
-
 export async function GET(req: NextRequest) {
-  if (!verifyCronAuth(req)) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
-  if (!isSofitAvailable()) {
-    return NextResponse.json({ error: "Sofit não configurado" }, { status: 200 });
-  }
+  return executarCron("sofit-cnh-import", req, async () => {
+    if (!isSofitAvailable()) return { status: "pulado", detalhe: { skipped: "Sofit não configurada" } };
 
-  const companies = await prisma.company.findMany({ select: { id: true } });
-
-  // Um unico deadline pra invocacao inteira (nao um novo por empresa) — com
-  // N empresas, um deadline fresco a cada iteracao deixava a funcao livre
-  // pra rodar N*45s, bem acima do teto de 60s da funcao serverless
-  // (maxDuration acima).
-  const deadline = Date.now() + 45_000;
-  const results = [];
-  for (const company of companies) {
-    try {
-      const result = await syncSofitCnhCore(company.id, deadline);
-      results.push({ companyId: company.id, ...result });
-    } catch (e) {
-      results.push({ companyId: company.id, error: e instanceof Error ? e.message : "erro desconhecido" });
+    const companies = await prisma.company.findMany({ select: { id: true } });
+    const deadline = Date.now() + 45_000;
+    const results: Record<string, unknown>[] = [];
+    const errors: string[] = [];
+    let processados = 0;
+    for (const company of companies) {
+      try {
+        const result = await syncSofitCnhCore(company.id, deadline);
+        results.push({ companyId: company.id, ...result });
+        processados += Object.values(result).reduce<number>((s, v) => (typeof v === "number" ? s + v : s), 0);
+      } catch (e) {
+        errors.push(`${company.id}: ${e instanceof Error ? e.message : "erro desconhecido"}`);
+      }
     }
-  }
 
-  return NextResponse.json({ results });
+    return { status: "ok", processados, erros: errors, detalhe: { results } };
+  });
 }

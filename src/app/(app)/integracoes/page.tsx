@@ -32,6 +32,8 @@ import LwCadastroCheck from "./LwCadastroCheck";
 import SofitManutencaoButton from "./SofitManutencaoButton";
 import SyncAllButton from "./SyncAllButton";
 import GapStatusPanel from "./GapStatusPanel";
+import CronExecucoesPanel from "./CronExecucoesPanel";
+import { ultimasExecucoesCron } from "@/lib/cronRun";
 import { checkAllGaps, RECURRING_GAP_WINDOW_DAYS } from "@/lib/integrationGaps";
 
 function GoTo({ href, label }: { href: string; label: string }) {
@@ -120,7 +122,7 @@ export default async function IntegracoesPage() {
     end: format(today, "yyyy-MM-dd"),
   };
 
-  const gaps = await checkAllGaps(session.companyId, RECURRING_GAP_WINDOW_DAYS);
+  const [gaps, execucoes] = await Promise.all([checkAllGaps(session.companyId, RECURRING_GAP_WINDOW_DAYS), ultimasExecucoesCron()]);
 
   return (
     <div>
@@ -141,6 +143,8 @@ export default async function IntegracoesPage() {
       />
 
       <GapStatusPanel initial={gaps} />
+
+      <CronExecucoesPanel execucoes={execucoes} />
 
       <Section title="Sistemas externos">
         <IntegrationCard

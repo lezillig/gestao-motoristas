@@ -7,6 +7,7 @@ import PageHeader from "@/components/ui/PageHeader";
 import SortableTh from "@/components/ui/SortableTh";
 import { parseLocalDate } from "@/lib/date";
 import type { Prisma } from "@prisma/client";
+import { dataParam } from "@/lib/params";
 
 const SORT_FIELDS = ["vehicle", "startAt", "distanceKm", "maxSpeedKmh"] as const;
 type SortField = (typeof SORT_FIELDS)[number];
@@ -24,7 +25,9 @@ export default async function ViagensPage({
   }>;
 }) {
   const session = await requireRole("ADMIN", "GESTOR");
-  const { sort, dir, vehicleId, dateFrom, dateTo, status } = await searchParams;
+  const { sort, dir, vehicleId, dateFrom: dateFromRaw, dateTo: dateToRaw, status } = await searchParams;
+  const dateFrom = dataParam(dateFromRaw) ? dateFromRaw : undefined;
+  const dateTo = dataParam(dateToRaw) ? dateToRaw : undefined;
 
   const sortField: SortField = SORT_FIELDS.includes(sort as SortField) ? (sort as SortField) : "startAt";
   const sortDir = dir === "asc" ? "asc" : "desc";

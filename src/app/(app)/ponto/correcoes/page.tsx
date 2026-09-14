@@ -9,8 +9,9 @@ import PageHeader from "@/components/ui/PageHeader";
 import { formatHoursMinutes } from "@/lib/time";
 import { workedMinutes, overtimeMinutes } from "@/lib/pontoCompliance";
 import { driverDailyLimitMinutes, overtimeCostCents } from "@/lib/convencao";
-import { parseLocalDate } from "@/lib/date";
 import type { Prisma } from "@prisma/client";
+import { dataParam } from "@/lib/params";
+import { parseLocalDate } from "@/lib/date";
 
 type DriverWithConvencoes = Prisma.DriverGetPayload<{
   include: { sindicato: { include: { convencoes: { include: { regras: true } } } } };
@@ -61,10 +62,12 @@ export default async function PontoCorrecoesPage({
   const semLimite = tudo === "1";
 
   const where: Prisma.TimeClockCorrectionWhereInput = { companyId: session.companyId };
-  if (de || ate) {
+  const deD = dataParam(de);
+  const ateD = dataParam(ate);
+  if (deD || ateD) {
     where.date = {};
-    if (de) where.date.gte = parseLocalDate(de);
-    if (ate) where.date.lte = parseLocalDate(ate);
+    if (deD) where.date.gte = deD;
+    if (ateD) where.date.lte = ateD;
   } else if (!semLimite) {
     where.date = { gte: subMonths(new Date(), DEFAULT_LOOKBACK_MONTHS) };
   }
@@ -140,8 +143,8 @@ export default async function PontoCorrecoesPage({
   const monthRows = [...byMonth.entries()].sort((a, b) => b[0].localeCompare(a[0]));
 
   const periodLabel =
-    de || ate
-      ? `${de ? format(parseLocalDate(de), "dd/MM/yyyy") : "início"} até ${ate ? format(parseLocalDate(ate), "dd/MM/yyyy") : "hoje"}`
+    deD || ateD
+      ? `${deD ? format(deD, "dd/MM/yyyy") : "início"} até ${ateD ? format(ateD, "dd/MM/yyyy") : "hoje"}`
       : semLimite
         ? "todo o período"
         : `últimos ${DEFAULT_LOOKBACK_MONTHS} meses`;

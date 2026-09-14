@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { addDays, addWeeks, format, startOfWeek, subWeeks } from "date-fns";
+import { addDays, addWeeks, format, subWeeks } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { requireRole } from "@/lib/auth";
@@ -8,6 +8,7 @@ import { cardClass, inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import { buildSortHref, nextSortDir } from "@/lib/sort";
 import { toMinutes } from "@/lib/time";
+import { semanaParam } from "@/lib/params";
 
 export default async function EscalasPage({
   searchParams,
@@ -17,8 +18,7 @@ export default async function EscalasPage({
   const session = await requireRole("ADMIN", "GESTOR");
   const { semana, motorista, todos, sort, dir } = await searchParams;
 
-  const anchor = semana ? new Date(`${semana}T00:00:00`) : new Date();
-  const weekStart = startOfWeek(anchor, { weekStartsOn: 1 });
+  const weekStart = semanaParam(semana, 1);
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const weekEnd = addDays(weekStart, 7);
 

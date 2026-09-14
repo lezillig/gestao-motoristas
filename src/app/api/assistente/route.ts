@@ -4,6 +4,12 @@ import { z } from "zod";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { isAssistenteAvailable, perguntarAssistente } from "@/lib/assistente/run";
+import { consumirCota, minutosAte } from "@/lib/rateLimit";
+
+// Cada pergunta pode custar ate 8 iteracoes do modelo; sem teto por usuario
+// um loop (ou uma aba esquecida repetindo) vira custo de API sem limite.
+const PERGUNTAS_POR_JANELA = 20;
+const JANELA_MS = 10 * 60_000;
 
 // Teto do plano Hobby da Vercel — uma pergunta com 3-5 consultas ao banco
 // costuma levar 10-30s. Route Handler (nao Server Action) pra poder fixar
@@ -22,6 +28,14 @@ export async function POST(req: NextRequest) {
   const session = await requireRole("ADMIN", "GESTOR");
   if (!isAssistenteAvailable()) {
     return NextResponse.json({ error: "Assistente não configurado (ANTHROPIC_API_KEY ausente)." }, { status: 503 });
+  }
+
+  const cota = await consumirCota(`assistente:user:${session.userId}`, PERGUNTAS_POR_JANELA, JANELA_MS);
+  if (!cota.permitido) {
+    return NextResponse.json(
+      { error: `Limite de ${PERGUNTAS_POR_JANELA} perguntas em 10 minutos atingido — aguarde ${minutosAte(cota.reiniciaEm)} minuto(s).` },
+      { status: 429 }
+    );
   }
 
   const parsed = BodySchema.safeParse(await req.json().catch(() => null));

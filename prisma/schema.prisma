@@ -95,18 +95,18 @@ enum StatusIndicacaoCondutor {
 // cada empresa e um tenant isolado. Fase 2 roda com uma unica empresa, mas o
 // isolamento evita retrabalho se o produto for vendido a mais de um cliente.
 model Company {
-  id        String   @id @default(cuid())
-  name      String
-  logoUrl   String?
-  active    Boolean  @default(true)
+  id                 String   @id @default(cuid())
+  name               String
+  logoUrl            String?
+  active             Boolean  @default(true)
   // Encargos sobre a folha (INSS patronal, FGTS, 13o, ferias, provisoes),
   // em percentual inteiro (ex.: 80). Aplicado SO na tela Custos, em cima da
   // mao de obra calculada a partir do espelho do TiqueTaque x valor-hora nua
   // — nunca nos calculos trabalhistas (Analise de riscos, Passivo), que
   // precisam da hora nua. Nulo = sem encargos (custo subestimado, avisado).
   encargosPercentual Int?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   users                User[]
   sindicatos           Sindicato[]
@@ -350,28 +350,28 @@ model DriverLeave {
 
 // ---------- Veiculo ----------
 model Vehicle {
-  id                     String        @id @default(cuid())
-  companyId              String
-  company                Company       @relation(fields: [companyId], references: [id])
-  plate                  String        @unique
-  brand                  String
-  model                  String
-  year                   Int?
-  type                   String
-  status                 VehicleStatus @default(ATIVO)
+  id                      String        @id @default(cuid())
+  companyId               String
+  company                 Company       @relation(fields: [companyId], references: [id])
+  plate                   String        @unique
+  brand                   String
+  model                   String
+  year                    Int?
+  type                    String
+  status                  VehicleStatus @default(ATIVO)
   // Atualizado a cada encerramento de VehicleUsageLog (checkout com km final).
-  currentMileage         Int           @default(0)
+  currentMileage          Int           @default(0)
   // Marca o km em que a ultima manutencao foi registrada; a diferenca para
   // currentMileage alimenta o alerta de manutencao pendente em /utilizacao.
-  lastMaintenanceMileage Int           @default(0)
+  lastMaintenanceMileage  Int           @default(0)
   // Integracao SIAT — casamento inicial por `plate` (ja unico aqui), depois
   // por siatId. color/capacity/ownership/licensingMonth so existem no SIAT,
   // enriquecimento puro (nunca mexe em status/currentMileage, geridos aqui).
-  siatId                 String?       @unique
-  color                  String?
-  capacity               Int?
-  ownership              String?
-  licensingMonth         String?
+  siatId                  String?       @unique
+  color                   String?
+  capacity                Int?
+  ownership               String?
+  licensingMonth          String?
   // Integracao Sofit (o sistema de manutencao da empresa, 2026-09-13) —
   // enriquecimento por placa, mesmo espirito do SIAT. sofitDisponibilidade
   // e o status AO VIVO de la ("available" | "inMaintenance" | "inUse" |
@@ -380,7 +380,7 @@ model Vehicle {
   // lib/maintenance.ts quando existem. ultimaManutencaoEm/
   // lastMaintenanceMileage passam a ser preenchidos pela ultima OS de
   // revisao concluida na Sofit (ver lib/sofit/manutencaoSync.ts).
-  sofitId                 String?   @unique
+  sofitId                 String?       @unique
   sofitStatus             String?
   sofitDisponibilidade    String?
   sofitOdometroKm         Int?
@@ -392,8 +392,8 @@ model Vehicle {
   manutencaoIntervaloDias Int?
   ultimaManutencaoEm      DateTime?
   sofitSyncedAt           DateTime?
-  createdAt              DateTime      @default(now())
-  updatedAt              DateTime      @updatedAt
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
 
   escalas              Escala[]
   usageLogs            VehicleUsageLog[]
@@ -420,34 +420,35 @@ model Vehicle {
 // Escala.status). custoCents quase sempre 0 na Sofit deles — custo nao e
 // lancado la, entao nao e fonte de custo por veiculo.
 model OrdemServico {
-  id             String    @id @default(cuid())
-  companyId      String
-  company        Company   @relation(fields: [companyId], references: [id])
-  vehicleId      String?
-  vehicle        Vehicle?  @relation(fields: [vehicleId], references: [id])
-  sofitId        String    @unique
-  numero         String
-  placaOriginal  String?
-  tipo           String?
-  status         String?
-  origem         String?
-  motivo         String?
-  problema       String?
-  fornecedor     String?
-  criadaEm       DateTime
-  atualizadaEm   DateTime
-  inicioEm       DateTime?
-  fimEm          DateTime?
-  previsaoFimEm  DateTime?
-  diasParado     Float?
-  hodometroFinal Int?
+  id                  String    @id @default(cuid())
+  companyId           String
+  company             Company   @relation(fields: [companyId], references: [id])
+  vehicleId           String?
+  vehicle             Vehicle?  @relation(fields: [vehicleId], references: [id])
+  sofitId             String    @unique
+  numero              String
+  placaOriginal       String?
+  tipo                String?
+  status              String?
+  origem              String?
+  motivo              String?
+  problema            String?
+  fornecedor          String?
+  criadaEm            DateTime
+  atualizadaEm        DateTime
+  inicioEm            DateTime?
+  fimEm               DateTime?
+  previsaoFimEm       DateTime?
+  diasParado          Float?
+  hodometroFinal      Int?
   // Cru, sem filtro (ver Vehicle.sofitOdometroBrutoKm) — so pra auditoria.
   hodometroFinalBruto Float?
-  custoCents     Int?
-  syncedAt       DateTime  @default(now())
+  custoCents          Int?
+  syncedAt            DateTime  @default(now())
 
   @@index([companyId, status])
   @@index([companyId, criadaEm])
+  @@index([companyId, atualizadaEm])
   @@index([vehicleId, fimEm])
 }
 
@@ -533,6 +534,8 @@ model Escala {
   vehicleTrips VehicleTrip[]
 
   @@index([companyId, date])
+  @@index([driverId, date])
+  @@index([vehicleId, date])
 }
 
 // ---------- Ponto (MOD.03) ----------
@@ -595,8 +598,11 @@ model TimeClockEntry {
 
   corrections TimeClockCorrection[]
 
+  // Um registro por motorista e dia: importacao (cron encadeado, botao
+  // "Sincronizar tudo", CSV) concorrente nao pode gerar linha dupla, senao a
+  // folha soma duas vezes. O importCore trata P2002 como "ja existe".
+  @@unique([driverId, date])
   @@index([companyId, date])
-  @@index([driverId, date])
 }
 
 // Historico append-only de alteracoes em TimeClockEntry — trilha de
@@ -755,6 +761,7 @@ model TelemetryReading {
   createdAt     DateTime @default(now())
 
   @@index([vehicleId, recordedAt])
+  @@index([companyId, recordedAt])
 }
 
 // ---------- Viagens reais (MOD.05, integracao Ituran) ----------
@@ -793,6 +800,8 @@ model VehicleTrip {
   createdAt     DateTime @default(now())
 
   @@index([companyId, startAt])
+  @@index([vehicleId, startAt])
+  @@index([escalaId])
 }
 
 // ---------- Combustivel (MOD.07) ----------
@@ -1012,6 +1021,7 @@ model Multa {
 
   @@index([companyId, dataInfracao])
   @@index([companyId, situacaoLw])
+  @@index([companyId, dataLimiteIndicacao])
   @@index([vehicleId])
 }
 
@@ -1042,4 +1052,32 @@ model IndicacaoCondutor {
 
   @@index([companyId, status])
   @@index([driverId])
+}
+
+// Historico de execucao das rotinas automaticas (crons). Sem isto, um cron
+// que falha devolve JSON de erro pra ninguem e o painel da Vercel fica verde.
+// Nao guarda dado de negocio — so job, status, contagens e mensagens de erro.
+model CronExecucao {
+  id           String   @id @default(cuid())
+  job          String
+  iniciadoEm   DateTime
+  finalizadoEm DateTime @default(now())
+  duracaoMs    Int
+  // ok | parcial | erro | pulado | encadeamento_falhou
+  status       String
+  processados  Int      @default(0)
+  continuacao  Boolean  @default(false)
+  erros        Json?
+  detalhe      Json?
+
+  @@index([job, finalizadoEm])
+  @@index([finalizadoEm])
+}
+
+// Contador de janela fixa pra rate limit (login, assistente) — vive no banco
+// porque a funcao serverless nao tem memoria compartilhada entre instancias.
+model RateLimit {
+  chave      String   @id
+  contagem   Int
+  reiniciaEm DateTime
 }

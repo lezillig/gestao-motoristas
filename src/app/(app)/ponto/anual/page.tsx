@@ -9,6 +9,7 @@ import { buildSortHref, nextSortDir } from "@/lib/sort";
 import AnnualDriverTable, { type AnnualDriverRow } from "./AnnualDriverTable";
 import AnnualExportBar from "./AnnualExportBar";
 import ViewToggle, { type VisaoHoras } from "@/components/ui/ViewToggle";
+import { anoParam } from "@/lib/params";
 
 const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const mesSortKey = (i: number) => `mes-${i}`;
@@ -22,7 +23,7 @@ export default async function PontoAnualPage({
 }) {
   const session = await requireRole("ADMIN", "GESTOR", "FOLHA");
   const { ano, sort, dir, visao: visaoParam } = await searchParams;
-  const year = ano ? parseInt(ano, 10) : new Date().getFullYear();
+  const year = anoParam(ano);
   const visao: VisaoHoras = visaoParam === "extras" ? "extras" : "totais";
 
   const report = await buildAnnualReport(session.companyId, year);

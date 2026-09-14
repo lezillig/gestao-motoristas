@@ -25,6 +25,7 @@ import {
   spentByVehicle,
 } from "@/lib/fuelCompliance";
 import { anpWeekRange } from "@/lib/anp/client";
+import { mesParam } from "@/lib/params";
 
 const SORT_FIELDS = [
   "dataHora",
@@ -73,7 +74,7 @@ export default async function CombustivelPage({
   const session = await requireRole("ADMIN", "GESTOR");
   const { mes, sort, dir, placa, motorista, modelo, combustivel, posto, situacao } = await searchParams;
 
-  const anchor = mes ? new Date(`${mes}-01T00:00:00`) : new Date();
+  const anchor = mesParam(mes);
   const monthStart = startOfMonth(anchor);
   const monthEnd = addDays(endOfMonth(anchor), 1); // exclusivo
   const prevMonth = format(subMonths(monthStart, 1), "yyyy-MM");

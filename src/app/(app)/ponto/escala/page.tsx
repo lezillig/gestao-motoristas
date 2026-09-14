@@ -13,6 +13,7 @@ import { toMinutes } from "@/lib/time";
 import { fetchDriverFilterOptions } from "@/lib/motoristasList";
 import PontoEscalaTable from "./PontoEscalaTable";
 import type { PontoEscalaRow } from "./types";
+import { mesParam } from "@/lib/params";
 
 // So aceita "H:mm"/"HH:mm" — protege contra Escala com startTime/endTime
 // vazio ou malformado (confirmado real: o sync do SIAT grava sr.time sem
@@ -89,7 +90,7 @@ export default async function PontoEscalaPage({
   const cargo = toArray(rawFilters.cargo);
   const unidade = toArray(rawFilters.unidade);
 
-  const anchor = mes ? new Date(`${mes}-01T00:00:00`) : new Date();
+  const anchor = mesParam(mes);
   const monthStart = startOfMonth(anchor);
   const monthEnd = addDays(endOfMonth(anchor), 1); // exclusivo
   const prevMonth = format(subMonths(monthStart, 1), "yyyy-MM");

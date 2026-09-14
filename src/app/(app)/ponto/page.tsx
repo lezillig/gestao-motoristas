@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { addDays, addWeeks, format, startOfWeek, subDays, subWeeks } from "date-fns";
+import { addDays, addWeeks, format, subDays, subWeeks } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Clock, History, Plus } from "lucide-react";
 import { requireRole } from "@/lib/auth";
@@ -18,6 +18,7 @@ import {
 } from "@/lib/pontoCompliance";
 import { driverDailyLimitMinutes } from "@/lib/convencao";
 import { formatHoursMinutes } from "@/lib/time";
+import { semanaParam } from "@/lib/params";
 
 export default async function PontoPage({
   searchParams,
@@ -27,8 +28,7 @@ export default async function PontoPage({
   const session = await requireRole("ADMIN", "GESTOR");
   const { semana, motorista, sort, dir } = await searchParams;
 
-  const anchor = semana ? new Date(`${semana}T00:00:00`) : new Date();
-  const weekStart = startOfWeek(anchor, { weekStartsOn: 0 });
+  const weekStart = semanaParam(semana, 0);
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const weekEnd = addDays(weekStart, 7);
 

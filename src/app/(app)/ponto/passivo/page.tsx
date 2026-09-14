@@ -7,6 +7,7 @@ import { cardClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import { buildPassivoReport, PASSIVO_TIPO_LABELS, type PassivoTipo } from "@/lib/passivoTrabalhista";
 import PassivoDriverTable, { type PassivoDriverRow } from "./PassivoDriverTable";
+import { mesParam } from "@/lib/params";
 
 const currency = (cents: number) => (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -25,7 +26,7 @@ export default async function PassivoTrabalhistaPage({
   const session = await requireRole("ADMIN", "GESTOR", "FOLHA");
   const { mes } = await searchParams;
 
-  const anchor = mes ? new Date(`${mes}-01T00:00:00`) : new Date();
+  const anchor = mesParam(mes);
   const anchorMonthStart = startOfMonth(anchor);
   const windowEndExclusive = addMonths(anchorMonthStart, 1);
   const prevMonth = format(subMonths(anchorMonthStart, 1), "yyyy-MM");

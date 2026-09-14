@@ -1,4 +1,5 @@
 import { format } from "date-fns";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { parseLocalDate } from "@/lib/date";
 import { fetchEmployeeDays } from "@/lib/tiquetaque/client";
@@ -121,29 +122,40 @@ export async function reconcileDriverDays(
     const existing = existingByDate.get(day.date);
 
     if (!existing) {
-      await prisma.timeClockEntry.create({
-        data: {
-          companyId,
-          driverId,
-          date: parseLocalDate(day.date),
-          clockIn: day.clockIn,
-          clockOut: day.clockOut,
-          intervaloInicio: day.intervaloInicio,
-          intervaloFim: day.intervaloFim,
-          punches: day.pairs,
-          fonte: opts.fonte,
-          hashAtual: hashPontoState({
+      try {
+        await prisma.timeClockEntry.create({
+          data: {
+            companyId,
+            driverId,
+            date: parseLocalDate(day.date),
             clockIn: day.clockIn,
             clockOut: day.clockOut,
             intervaloInicio: day.intervaloInicio,
             intervaloFim: day.intervaloFim,
-            esperaInicio: null,
-            esperaFim: null,
             punches: day.pairs,
-          }),
-        },
-      });
-      created++;
+            fonte: opts.fonte,
+            hashAtual: hashPontoState({
+              clockIn: day.clockIn,
+              clockOut: day.clockOut,
+              intervaloInicio: day.intervaloInicio,
+              intervaloFim: day.intervaloFim,
+              esperaInicio: null,
+              esperaFim: null,
+              punches: day.pairs,
+            }),
+          },
+        });
+        created++;
+      } catch (e) {
+        // Outra importacao (cron encadeado x botao manual) criou o mesmo
+        // motorista+dia entre o findMany e o create: a unicidade no banco
+        // barrou a duplicata — nao e erro, o registro existe.
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+          errors.push({ driverName, date: day.date, message: "Registro criado em paralelo por outra importação — mantido o existente." });
+        } else {
+          throw e;
+        }
+      }
       continue;
     }
 

@@ -10,6 +10,7 @@ import SortableTh from "@/components/ui/SortableTh";
 import KpiCard, { type KpiDetailRow } from "@/components/ui/KpiCard";
 import { checkFolgaCompensada, findFeriasVencidas, folgaIssueLabel, parseDataReferencia } from "@/lib/afastamentoCompliance";
 import type { Prisma } from "@prisma/client";
+import { mesParam } from "@/lib/params";
 
 const DRIVER_CCT_INCLUDE = {
   sindicato: { include: { convencoes: { include: { regras: true } } } },
@@ -44,7 +45,7 @@ export default async function AfastamentosPage({
   const today = startOfDay(new Date());
   const in7Days = addDays(today, 7);
 
-  const anchor = mes ? new Date(`${mes}-01T00:00:00`) : new Date();
+  const anchor = mesParam(mes);
   const monthStart = startOfMonth(anchor);
   const monthEnd = startOfMonth(addMonths(monthStart, 1));
   const prevMonth = format(subMonths(monthStart, 1), "yyyy-MM");

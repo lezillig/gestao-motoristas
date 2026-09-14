@@ -4,8 +4,9 @@ import { AlertTriangle, ArrowLeft, CheckCircle2, SearchCheck } from "lucide-reac
 import { requireRole } from "@/lib/auth";
 import { cardClass, badgeClass, inputClass, primaryButtonClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
-import { brazilDayLabel, parseLocalDate } from "@/lib/date";
+import { brazilDayLabel } from "@/lib/date";
 import { fetchExcecoesDoDia } from "@/lib/excecoesDia";
+import { dataParam } from "@/lib/params";
 
 // Versao "em lote" da Auditoria do dia (../page.tsx): em vez de escolher 1
 // motorista de cada vez, roda a mesma pergunta basica — "tem escala e
@@ -22,7 +23,7 @@ export default async function ExcecoesDoDiaPage({
   // Padrao: ontem, nao hoje — os crons (TiqueTaque/SIAT) rodam de
   // madrugada buscando o dia anterior, entao "hoje" costuma estar
   // incompleto e geraria falso positivo de "sem ponto"/"sem escala".
-  const dayStart = data ? parseLocalDate(data) : brazilDayLabel(-1);
+  const dayStart = dataParam(data, brazilDayLabel(-1));
 
   const excecoes = await fetchExcecoesDoDia(session.companyId, dayStart);
   const semAfastamento = excecoes.filter((e) => !e.afastamento).length;

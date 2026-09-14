@@ -6,6 +6,7 @@ import { requireRole } from "@/lib/auth";
 import { cardClass, badgeClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import { buildViagemPontoAudit } from "@/lib/viagemPontoAudit";
+import { mesParam } from "@/lib/params";
 
 export default async function AuditoriaViagemPontoPage({
   searchParams,
@@ -15,7 +16,7 @@ export default async function AuditoriaViagemPontoPage({
   const session = await requireRole("ADMIN", "GESTOR");
   const { mes } = await searchParams;
 
-  const anchor = mes ? new Date(`${mes}-01T00:00:00`) : new Date();
+  const anchor = mesParam(mes);
   const monthStart = startOfMonth(anchor);
   const monthEndExclusive = addMonths(monthStart, 1);
   const prevMonth = format(subMonths(monthStart, 1), "yyyy-MM");

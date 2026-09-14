@@ -12,6 +12,7 @@ import { type WeekStripView } from "./DriverMonthRow";
 import MonthlyDriverTable, { type MonthlyDriverRow } from "./MonthlyDriverTable";
 import ExportBar from "./ExportBar";
 import ViewToggle, { type VisaoHoras } from "@/components/ui/ViewToggle";
+import { mesParam } from "@/lib/params";
 
 const TOTAL_SORT_KEY = "total";
 const MOTORISTA_SORT_KEY = "motorista";
@@ -28,7 +29,7 @@ export default async function PontoMensalPage({
   const { mes, sort, dir, visao: visaoParam } = await searchParams;
   const visao: VisaoHoras = visaoParam === "extras" ? "extras" : "totais";
 
-  const anchor = mes ? new Date(`${mes}-01T00:00:00`) : new Date();
+  const anchor = mesParam(mes);
   const monthStart = startOfMonth(anchor);
   const prevMonth = format(subMonths(monthStart, 1), "yyyy-MM");
   const nextMonth = format(addMonths(monthStart, 1), "yyyy-MM");

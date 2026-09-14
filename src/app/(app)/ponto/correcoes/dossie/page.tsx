@@ -7,9 +7,10 @@ import { prisma } from "@/lib/prisma";
 import { cardClass, badgeClass } from "@/lib/ui";
 import { formatHoursMinutes } from "@/lib/time";
 import { workedMinutes } from "@/lib/pontoCompliance";
-import { parseLocalDate } from "@/lib/date";
+import { brazilDayLabel } from "@/lib/date";
 import { verifyEntryIntegrity, type IntegrityStatus } from "@/lib/integrity";
 import PrintButton from "./PrintButton";
+import { dataParam } from "@/lib/params";
 
 const ORIGEM_LABELS: Record<string, string> = {
   TIQUETAQUE_REIMPORT: "Reimportação TiqueTaque",
@@ -50,8 +51,8 @@ export default async function DossiePage({
     );
   }
 
-  const ateDate = ate ? parseLocalDate(ate) : new Date();
-  const deDate = de ? parseLocalDate(de) : subMonths(ateDate, 3);
+  const ateDate = dataParam(ate, brazilDayLabel(0));
+  const deDate = dataParam(de) ?? subMonths(ateDate, 3);
 
   const [driver, company, entries, corrections, adminUser] = await Promise.all([
     prisma.driver.findUnique({ where: { id: driverId, companyId: session.companyId } }),

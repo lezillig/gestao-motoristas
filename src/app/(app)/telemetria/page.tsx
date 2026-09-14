@@ -11,6 +11,7 @@ import GerarLeiturasButton from "./GerarLeiturasButton";
 import { brazilDayLabel, parseLocalDate, utcInstantToLocalParts } from "@/lib/date";
 import { toMinutes } from "@/lib/time";
 import type { Prisma } from "@prisma/client";
+import { dataParam } from "@/lib/params";
 
 const SORT_FIELDS = ["vehicle", "speedKmh", "recordedAt"] as const;
 type SortField = (typeof SORT_FIELDS)[number];
@@ -26,7 +27,9 @@ export default async function TelemetriaPage({
   searchParams: Promise<{ sort?: string; dir?: string; vehicleId?: string; dateFrom?: string; dateTo?: string }>;
 }) {
   const session = await requireRole("ADMIN", "GESTOR");
-  const { sort, dir, vehicleId, dateFrom, dateTo } = await searchParams;
+  const { sort, dir, vehicleId, dateFrom: dateFromRaw, dateTo: dateToRaw } = await searchParams;
+  const dateFrom = dataParam(dateFromRaw) ? dateFromRaw : undefined;
+  const dateTo = dataParam(dateToRaw) ? dateToRaw : undefined;
   const provider = getActiveTelemetryProvider();
 
   const sortField: SortField = SORT_FIELDS.includes(sort as SortField) ? (sort as SortField) : "recordedAt";

@@ -1,36 +1,33 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isTicketLogAvailable, fetchFuelCardStatuses } from "@/lib/ticketlog/client";
 import { syncTicketLogCardStatusesCore } from "@/lib/sync/ticketlogCards";
+import { executarCron } from "@/lib/cronRun";
 
-// Diario — atualiza o snapshot de saldo/limite por cartao (ver
-// FuelCardStatus no schema). Volume baixo (~370 cartoes) e uma chamada so a
-// API, cabe folgado no teto de 60s do plano Hobby, sem precisar de
-// auto-encadeamento.
+// Diario (ver vercel.json): snapshot do status dos cartoes de combustivel
+// Ticket Log, uma chamada na API e upsert por empresa.
 export const maxDuration = 60;
 
-function verifyCronAuth(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  return req.headers.get("authorization") === `Bearer ${secret}`;
-}
-
 export async function GET(req: NextRequest) {
-  if (!verifyCronAuth(req)) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
-  if (!isTicketLogAvailable()) {
-    return NextResponse.json({ error: "Ticket Log não configurado" }, { status: 200 });
-  }
+  return executarCron("ticketlog-import", req, async () => {
+    if (!isTicketLogAvailable()) return { status: "pulado", detalhe: { skipped: "Ticket Log não configurado" } };
 
-  const companies = await prisma.company.findMany({ select: { id: true } });
-  const statuses = await fetchFuelCardStatuses();
+    const companies = await prisma.company.findMany({ select: { id: true } });
+    const statuses = await fetchFuelCardStatuses();
 
-  const results = [];
-  for (const company of companies) {
-    const result = await syncTicketLogCardStatusesCore(company.id, statuses);
-    results.push({ companyId: company.id, ...result });
-  }
+    const results = [];
+    const errors: string[] = [];
+    let processados = 0;
+    for (const company of companies) {
+      try {
+        const result = await syncTicketLogCardStatusesCore(company.id, statuses);
+        results.push({ companyId: company.id, ...result });
+        processados += result.count;
+      } catch (e) {
+        errors.push(`${company.id}: ${e instanceof Error ? e.message : "falha"}`);
+      }
+    }
 
-  return NextResponse.json({ results });
+    return { status: "ok", processados, erros: errors, detalhe: { results } };
+  });
 }

@@ -3,6 +3,13 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { signSession, SESSION_COOKIE } from "@/lib/auth";
+import { consumirCota, ipDoCliente, minutosAte } from "@/lib/rateLimit";
+
+// Forca bruta: janela de 15 min por IP e por e-mail. Conta toda tentativa
+// (nao so as erradas) — um usuario legitimo nao tenta 10 vezes em 15 min.
+const JANELA_MS = 15 * 60_000;
+const LIMITE_POR_IP = 30;
+const LIMITE_POR_EMAIL = 10;
 
 const schema = z.object({
   email: z.string().email(),
@@ -17,6 +24,19 @@ export async function POST(req: NextRequest) {
   }
 
   const { email, password } = parsed.data;
+
+  const [porIp, porEmail] = await Promise.all([
+    consumirCota(`login:ip:${ipDoCliente(req.headers)}`, LIMITE_POR_IP, JANELA_MS),
+    consumirCota(`login:email:${email.toLowerCase()}`, LIMITE_POR_EMAIL, JANELA_MS),
+  ]);
+  if (!porIp.permitido || !porEmail.permitido) {
+    const bloqueado = porIp.permitido ? porEmail : porIp;
+    return NextResponse.json(
+      { error: `Muitas tentativas de login. Aguarde ${minutosAte(bloqueado.reiniciaEm)} minuto(s) e tente de novo.` },
+      { status: 429, headers: { "Retry-After": String(minutosAte(bloqueado.reiniciaEm) * 60) } }
+    );
+  }
+
   const user = await prisma.user.findUnique({ where: { email } });
 
   if (!user || !user.active) {
