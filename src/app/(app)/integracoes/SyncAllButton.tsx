@@ -11,9 +11,10 @@ import { syncSofitFuel } from "../combustivel/sofitActions";
 import { syncAnpPrices } from "../combustivel/actions";
 import { syncTicketLogCardStatuses } from "../combustivel/cartoes/actions";
 import { prepareMultasSync, syncMultasVehicle } from "../multas/actions";
+import { syncManutencaoSofit } from "../manutencao/actions";
 import { sleep, TIQUETAQUE_IMPORT_PACE_MS } from "@/lib/tiquetaque/pace";
 
-type SystemKey = "tiquetaquePonto" | "tiquetaqueAfastamentos" | "tiquetaqueEspelho" | "siat" | "sofit" | "ticketlog" | "anp" | "multas";
+type SystemKey = "tiquetaquePonto" | "tiquetaqueAfastamentos" | "tiquetaqueEspelho" | "siat" | "sofit" | "sofitManutencao" | "ticketlog" | "anp" | "multas";
 type SystemStatus = "idle" | "running" | "done" | "error" | "indisponivel";
 type SystemState = { status: SystemStatus; message?: string; progress?: { done: number; total: number } };
 
@@ -23,6 +24,7 @@ const LABELS: Record<SystemKey, string> = {
   tiquetaqueEspelho: "TiqueTaque — Espelho de ponto (mês atual)",
   siat: "SIAT — Escalas",
   sofit: "Sofit — Combustível",
+  sofitManutencao: "Sofit — Manutenção (OS, frota, vencimentos)",
   ticketlog: "Ticket Log — Cartões",
   anp: "ANP — Preços de referência",
   multas: "Multas — LW Tecnologia",
@@ -37,6 +39,7 @@ const PROGRESS_UNIT: Record<SystemKey, string> = {
   tiquetaqueEspelho: "motorista(s)",
   siat: "motorista(s)",
   sofit: "motorista(s)",
+  sofitManutencao: "lote(s)",
   ticketlog: "motorista(s)",
   anp: "motorista(s)",
   multas: "veículo(s)",
@@ -45,7 +48,7 @@ const PROGRESS_UNIT: Record<SystemKey, string> = {
 // Multas nao compartilha limite de taxa com o TiqueTaque (fornecedor
 // diferente, LW Tecnologia) — roda em paralelo com tudo o resto, mesmo
 // espirito de SIAT/Sofit/Ticket Log/ANP.
-const ORDER: SystemKey[] = ["tiquetaquePonto", "tiquetaqueAfastamentos", "tiquetaqueEspelho", "siat", "sofit", "ticketlog", "anp", "multas"];
+const ORDER: SystemKey[] = ["tiquetaquePonto", "tiquetaqueAfastamentos", "tiquetaqueEspelho", "siat", "sofit", "sofitManutencao", "ticketlog", "anp", "multas"];
 
 function StatusIcon({ status }: { status: SystemStatus }) {
   if (status === "running") return <Loader2 className="h-4 w-4 shrink-0 animate-spin text-blue-600" />;
@@ -100,6 +103,7 @@ export default function SyncAllButton({
     tiquetaqueEspelho: { status: tiquetaqueAvailable ? "idle" : "indisponivel" },
     siat: { status: siatAvailable ? "idle" : "indisponivel" },
     sofit: { status: sofitAvailable ? "idle" : "indisponivel" },
+    sofitManutencao: { status: sofitAvailable ? "idle" : "indisponivel" },
     ticketlog: { status: ticketLogAvailable ? "idle" : "indisponivel" },
     anp: { status: "idle" },
     multas: { status: multasAvailable ? "idle" : "indisponivel" },
@@ -228,6 +232,39 @@ export default function SyncAllButton({
     }
   }
 
+  // Mesma API da Sofit do combustivel, mas queries independentes — roda em
+  // sequencia com o combustivel so pra nao dobrar a carga no mesmo servidor.
+  async function runSofitManutencao() {
+    patch("sofitManutencao", { status: "running" });
+    try {
+      let since: string | null = null;
+      let os = 0;
+      let lotes = 0;
+      let semPar = 0;
+      for (;;) {
+        const r = await syncManutencaoSofit(since);
+        if (r.error || !r.result) {
+          patch("sofitManutencao", { status: "error", message: r.error ?? "Falha ao sincronizar." });
+          return;
+        }
+        lotes++;
+        os += r.result.osUpserted;
+        if (r.result.veiculos) semPar = r.result.veiculos.semPar;
+        patch("sofitManutencao", { progress: { done: lotes, total: lotes + (r.result.hasMore ? 1 : 0) } });
+        if (!r.result.hasMore || lotes >= 20) break;
+        since = r.result.nextSince;
+      }
+      patch("sofitManutencao", { status: "done", message: `${os} OS atualizada(s).${semPar > 0 ? ` ${semPar} veículo(s) da Sofit sem par na frota.` : ""}` });
+    } catch (e) {
+      patch("sofitManutencao", { status: "error", message: e instanceof Error ? e.message : "Falha inesperada." });
+    }
+  }
+
+  async function runSofitSequencial() {
+    await runSofit();
+    await runSofitManutencao();
+  }
+
   async function runTicketLog() {
     patch("ticketlog", { status: "running" });
     try {
@@ -289,7 +326,7 @@ export default function SyncAllButton({
   async function handleClick() {
     setRunning(true);
     const tasks: Promise<void>[] = [runAnp()];
-    if (sofitAvailable) tasks.push(runSofit());
+    if (sofitAvailable) tasks.push(runSofitSequencial());
     if (ticketLogAvailable) tasks.push(runTicketLog());
     if (siatAvailable) tasks.push(runSiat());
     if (tiquetaqueAvailable) tasks.push(runTiqueTaqueSequencial());
@@ -304,8 +341,8 @@ export default function SyncAllButton({
         <div>
           <p className="text-sm font-semibold text-slate-900">Sincronizar tudo agora</p>
           <p className="text-xs text-slate-500">
-            Dispara os 8 fluxos manuais de uma vez (TiqueTaque — ponto, afastamentos e espelho —, SIAT, Sofit, Ticket Log,
-            ANP, Multas). Pode levar alguns minutos — TiqueTaque e Multas processam um item de cada vez pra respeitar o
+            Dispara os 9 fluxos manuais de uma vez (TiqueTaque — ponto, afastamentos e espelho —, SIAT, Sofit — combustível e
+            manutenção —, Ticket Log, ANP, Multas). Pode levar alguns minutos — TiqueTaque e Multas processam um item de cada vez pra respeitar o
             limite das APIs.
           </p>
         </div>

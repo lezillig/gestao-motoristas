@@ -6,6 +6,7 @@ import {
   AlarmClockOff,
   AlertTriangle,
   ArrowRight,
+  CalendarClock,
   CalendarDays,
   CalendarOff,
   CheckCircle2,
@@ -20,7 +21,7 @@ import {
 import { requireRole } from "@/lib/auth";
 import { cardClass, badgeClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
-import { buildHoje, MULTAS_PRAZO_JANELA_DIAS } from "@/lib/hoje";
+import { buildHoje, MULTAS_PRAZO_JANELA_DIAS, VENCIMENTO_HOJE_JANELA_DIAS } from "@/lib/hoje";
 import { hojeEmailDestinatarios, isEmailAvailable } from "@/lib/email";
 import EnviarEmailButton from "./EnviarEmailButton";
 
@@ -363,14 +364,42 @@ export default async function HojePage() {
         </Section>
 
         <Section
+          icon={CalendarClock}
+          title={`Manutenção (Sofit) — vencimentos legais em ${VENCIMENTO_HOJE_JANELA_DIAS} dias`}
+          count={hoje.manutencaoSofit.vencimentosTotal}
+          tone={hoje.manutencaoSofit.vencidos > 0 ? "critical" : "warning"}
+          href="/manutencao"
+          hrefLabel="Ver manutenção"
+          emptyText="Nenhum IPVA, licenciamento, tacógrafo, extintor ou seguro vencendo."
+          footer={
+            <span>
+              {hoje.manutencaoSofit.emManutencao} veículo(s) em manutenção agora na Sofit
+              {hoje.manutencaoSofit.paradosSemOs > 0 && ` (${hoje.manutencaoSofit.paradosSemOs} sem OS aberta)`}
+              {hoje.manutencaoSofit.aprovacaoAtrasada > 0 && ` · ${hoje.manutencaoSofit.aprovacaoAtrasada} preventiva(s) aguardando aprovação há mais de 7 dias`}.
+            </span>
+          }
+        >
+          {hoje.manutencaoSofit.vencimentos.map((v, i) => (
+            <Row key={`${v.plate}-${v.tipo}-${i}`}>
+              <p className="text-sm font-medium text-slate-800">
+                <span className="font-mono">{v.plate}</span> <span className="text-slate-500">· {v.tipo}</span>
+              </p>
+              <span className={`${badgeClass} shrink-0 ${v.dias < 0 ? TONE_BADGE.critical : v.dias <= 15 ? TONE_BADGE.warning : TONE_BADGE.neutral}`}>
+                {v.dias < 0 ? `Vencido há ${Math.abs(v.dias)}d` : v.dias === 0 ? "Vence hoje" : `Vence em ${v.dias}d`} · {format(v.venceEm, "dd/MM")}
+              </span>
+            </Row>
+          ))}
+        </Section>
+
+        <Section
           icon={Wrench}
-          title="Manutenção preventiva pendente"
+          title="Revisão vencida (intervalo do veículo na Sofit)"
           count={hoje.manutencao.length}
           tone="warning"
-          href="/utilizacao"
-          hrefLabel="Registrar manutenção"
-          emptyText="Nenhum veículo passou do intervalo de manutenção."
-          footer={<span>Hodômetro atualizado automaticamente pela Ituran a cada leitura.</span>}
+          href="/manutencao"
+          hrefLabel="Ver aderência ao plano"
+          emptyText="Nenhum veículo passou do intervalo de revisão."
+          footer={<span>Km atual da Ituran/Sofit contra a última revisão concluída na Sofit.</span>}
         >
           {hoje.manutencao.map((v) => (
             <Row key={v.vehicleId}>

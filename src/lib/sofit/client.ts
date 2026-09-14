@@ -5,7 +5,13 @@ import type {
   SofitEmployeesResponse,
   SofitExpensesResponse,
   SofitFuelTransaction,
+  SofitServiceOrder,
+  SofitServiceOrderRaw,
+  SofitServiceOrdersResponse,
   SofitTransactionRaw,
+  SofitVehicle,
+  SofitVehicleFullRaw,
+  SofitVehiclesFullResponse,
 } from "./types";
 
 const SOFIT_MAX_PAGE_SIZE = 20; // confirmado real: perPage > 20 e rejeitado (422)
@@ -137,6 +143,166 @@ export async function fetchFuelTransactionsSince(
   }
 
   return { transactions: result, hasMore: false };
+}
+
+const SERVICE_ORDERS_QUERY = `
+  query ServiceOrders($page: Int!, $perPage: Int!, $since: DateTime!) {
+    serviceOrders(page: $page, perPage: $perPage, lastIntegrationDate: $since, sortField: "updated_at", sortOrder: "ASC") {
+      count
+      nodes {
+        id name created_at updated_at type status origin request_reason problem_description total_cost
+        service_start_date service_finish_date forecast_finish_date vehicle_down_days final_odometer
+        vehicle { license_plate }
+        supplier { name }
+      }
+    }
+  }
+`;
+
+function toDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+// Hodometro digitado errado na Sofit (visto real 2026-09-13: 12.212.212.212
+// km num veiculo) estoura o inteiro do banco e, pior, viraria "km atual" no
+// alerta de revisao. Acima de 5 milhoes de km nenhum onibus/van chega.
+const KM_MAXIMO_PLAUSIVEL = 5_000_000;
+function kmPlausivel(value: number | null | undefined): number | null {
+  if (value == null || !Number.isFinite(value) || value <= 0 || value > KM_MAXIMO_PLAUSIVEL) return null;
+  return Math.round(value);
+}
+
+function mapServiceOrder(o: SofitServiceOrderRaw): SofitServiceOrder | null {
+  const criadaEm = toDate(o.created_at);
+  if (!criadaEm) return null;
+  return {
+    sofitId: String(o.id),
+    numero: o.name?.trim() || `OS-${o.id}`,
+    plate: o.vehicle?.license_plate?.trim().toUpperCase() || null,
+    tipo: o.type,
+    status: o.status,
+    origem: o.origin,
+    motivo: o.request_reason,
+    problema: o.problem_description?.trim() || null,
+    fornecedor: o.supplier?.name?.trim() || null,
+    criadaEm,
+    atualizadaEm: toDate(o.updated_at) ?? criadaEm,
+    inicioEm: toDate(o.service_start_date),
+    fimEm: toDate(o.service_finish_date),
+    previsaoFimEm: toDate(o.forecast_finish_date),
+    diasParado: o.vehicle_down_days,
+    hodometroFinal: kmPlausivel(o.final_odometer),
+    custoCents: o.total_cost != null ? Math.round(o.total_cost * 100) : null,
+  };
+}
+
+export type FetchServiceOrdersResult = { orders: SofitServiceOrder[]; hasMore: boolean; nextSince: Date };
+
+// lastIntegrationDate filtra por updated_at >= since (confirmado real
+// 2026-09-13) e a ordenacao por updated_at ASC permite um cursor estavel:
+// quem chama guarda o maior updated_at visto e continua dali (o upsert por
+// sofitId torna a sobreposicao de 1ms inofensiva). Pagina responde em
+// ~60-230ms; a carga inicial (5.285 OS / 20 por pagina) cabe em 2-3
+// invocacoes encadeadas de 40s.
+export async function fetchServiceOrdersSince(since: Date, deadline: number = Date.now() + 40_000): Promise<FetchServiceOrdersResult> {
+  const orders: SofitServiceOrder[] = [];
+  let page = 1;
+  let total = Infinity;
+  let maxUpdated = since;
+  while ((page - 1) * SOFIT_MAX_PAGE_SIZE < total && page <= MAX_PAGES) {
+    if (Date.now() > deadline) {
+      return { orders, hasMore: true, nextSince: new Date(maxUpdated.getTime() + 1) };
+    }
+    const data = await sofitFetch<SofitServiceOrdersResponse>(SERVICE_ORDERS_QUERY, {
+      page,
+      perPage: SOFIT_MAX_PAGE_SIZE,
+      since: since.toISOString(),
+    });
+    total = data.serviceOrders.count;
+    for (const raw of data.serviceOrders.nodes) {
+      const o = mapServiceOrder(raw);
+      if (!o) continue;
+      orders.push(o);
+      if (o.atualizadaEm > maxUpdated) maxUpdated = o.atualizadaEm;
+    }
+    if (data.serviceOrders.nodes.length < SOFIT_MAX_PAGE_SIZE) break;
+    page += 1;
+  }
+  return { orders, hasMore: false, nextSince: new Date(maxUpdated.getTime() + 1) };
+}
+
+const VEHICLES_FULL_QUERY = `
+  query Vehicles($page: Int!, $perPage: Int!) {
+    vehicles(page: $page, perPage: $perPage, lastIntegrationDate: "2000-01-01T00:00:00.000Z") {
+      count
+      nodes {
+        id license_plate status disponibility current_odometer
+        basic_maintenance_frequency_km basic_maintenance_frequency_time_num basic_maintenance_frequency_time_period
+        dues { id item_id due_date recurrent_due recurrence }
+      }
+    }
+  }
+`;
+
+function periodoEmDias(num: number | null, period: string | null): number | null {
+  if (num == null || num <= 0) return null;
+  const p = (period ?? "days").toLowerCase();
+  if (p.startsWith("month") || p.startsWith("mes")) return Math.round(num * 30);
+  if (p.startsWith("year") || p.startsWith("ano")) return Math.round(num * 365);
+  if (p.startsWith("week") || p.startsWith("sem")) return Math.round(num * 7);
+  return Math.round(num);
+}
+
+function mapVehicle(v: SofitVehicleFullRaw): SofitVehicle {
+  return {
+    sofitId: String(v.id),
+    plate: v.license_plate?.trim().toUpperCase() || null,
+    status: v.status,
+    disponibilidade: v.disponibility,
+    odometroKm: kmPlausivel(v.current_odometer),
+    intervaloKm: kmPlausivel(v.basic_maintenance_frequency_km),
+    intervaloDias: periodoEmDias(v.basic_maintenance_frequency_time_num, v.basic_maintenance_frequency_time_period),
+    dues: (v.dues ?? [])
+      .map((d) => ({
+        sofitDueId: String(d.id),
+        itemId: d.item_id != null ? String(d.item_id) : null,
+        venceEm: toDate(d.due_date),
+        recorrente: Boolean(d.recurrent_due),
+        recorrencia: d.recurrence,
+      }))
+      .filter((d): d is typeof d & { venceEm: Date } => d.venceEm != null),
+  };
+}
+
+// Frota inteira da Sofit (287 veiculos / 20 por pagina = 15 paginas, ~70ms
+// cada) — sem cursor incremental, e barato o bastante pra buscar tudo.
+export async function fetchSofitVehicles(deadline: number = Date.now() + 40_000): Promise<SofitVehicle[]> {
+  const result: SofitVehicle[] = [];
+  let page = 1;
+  let total = Infinity;
+  while ((page - 1) * SOFIT_MAX_PAGE_SIZE < total && page <= MAX_PAGES) {
+    if (Date.now() > deadline) break;
+    const data = await sofitFetch<SofitVehiclesFullResponse>(VEHICLES_FULL_QUERY, { page, perPage: SOFIT_MAX_PAGE_SIZE });
+    total = data.vehicles.count;
+    result.push(...data.vehicles.nodes.map(mapVehicle));
+    if (data.vehicles.nodes.length < SOFIT_MAX_PAGE_SIZE) break;
+    page += 1;
+  }
+  return result;
+}
+
+// VehicleDue nao expoe a relacao com o item — resolve o nome (IPVA,
+// Licenciamento, Extintor...) por id; sao ~7 ids distintos na frota toda.
+export async function fetchSofitItem(id: string): Promise<{ name: string; type: string | null } | null> {
+  // id inline (numerico, validado) — o tipo do argumento na Sofit nao e
+  // Float nem Int declarado de forma estavel; com variavel tipada a query
+  // era rejeitada (visto real 2026-09-13), inline funciona.
+  const n = Number(id);
+  if (!Number.isFinite(n)) return null;
+  const data = await sofitFetch<{ item: { name: string | null; type: string | null } | null }>(`{ item(id: ${n}) { name type } }`, {});
+  return data.item?.name ? { name: data.item.name.trim(), type: data.item.type } : null;
 }
 
 const EMPLOYEES_QUERY = `

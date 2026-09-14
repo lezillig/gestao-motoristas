@@ -29,6 +29,7 @@ import LeaveImportButton from "../afastamentos/LeaveImportButton";
 import MultasSyncButton from "../multas/MultasSyncButton";
 import BackfillTripsForm from "./BackfillTripsForm";
 import LwCadastroCheck from "./LwCadastroCheck";
+import SofitManutencaoButton from "./SofitManutencaoButton";
 import SyncAllButton from "./SyncAllButton";
 import GapStatusPanel from "./GapStatusPanel";
 import { checkAllGaps, RECURRING_GAP_WINDOW_DAYS } from "@/lib/integrationGaps";
@@ -166,11 +167,15 @@ export default async function IntegracoesPage() {
         <IntegrationCard
           icon={Fuel}
           title="Sofit"
-          description="Abastecimentos e vencimento de CNH. O CNH roda sozinho toda madrugada (sem botão manual); o combustível dá pra sincronizar na hora abaixo."
+          description="Sistema de manutenção da empresa: ordens de serviço, disponibilidade da frota, intervalos e vencimentos por veículo, além de abastecimentos e vencimento de CNH. Tudo roda sozinho toda madrugada; dá pra sincronizar na hora abaixo."
           unavailable={!isSofitAvailable()}
         >
           {isSofitAvailable() ? (
-            <SofitSyncButton />
+            <div className="flex flex-col gap-3">
+              <SofitSyncButton />
+              <SofitManutencaoButton />
+              <GoTo href="/manutencao" label="Ver manutenção" />
+            </div>
           ) : (
             <p className="text-xs text-slate-400">Configure SOFIT_API_URL/SOFIT_TOKEN pra habilitar.</p>
           )}

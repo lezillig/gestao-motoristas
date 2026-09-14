@@ -105,7 +105,7 @@ export default async function UtilizacaoPage({
           </div>
           <p className="text-2xl font-semibold text-slate-900">{vehiclesDue.length}</p>
           <p className="mt-0.5 text-xs text-slate-500">
-            Veículos com manutenção pendente (&gt;{MAINTENANCE_INTERVAL_KM.toLocaleString("pt-BR")} km)
+            Veículos com revisão vencida (intervalo de cada veículo na Sofit; padrão {MAINTENANCE_INTERVAL_KM.toLocaleString("pt-BR")} km)
           </p>
         </div>
         <div className={cardClass}>

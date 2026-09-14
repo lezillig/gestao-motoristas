@@ -33,6 +33,7 @@ import {
   Siren,
   Coins,
   Sparkles,
+  Wrench,
 } from "lucide-react";
 
 type NavItem = {
@@ -132,6 +133,12 @@ const NAV: NavItem[] = [
     href: "/custos",
     label: "Custos",
     icon: Coins,
+    roles: ["ADMIN", "GESTOR"],
+  },
+  {
+    href: "/manutencao",
+    label: "Manutenção",
+    icon: Wrench,
     roles: ["ADMIN", "GESTOR"],
   },
   {

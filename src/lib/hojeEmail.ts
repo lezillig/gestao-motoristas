@@ -86,11 +86,21 @@ export function renderHojeEmail(hoje: Hoje, opts: { companyName: string; baseUrl
       linhas: hoje.integracoes.map((i) => `<b>${esc(i.sistema)}</b> — sem dados em ${i.missingDays.map((d) => format(new Date(`${d}T12:00:00`), "dd/MM")).join(", ")}`),
     },
     {
-      titulo: "Manutenção preventiva pendente",
+      titulo: "Manutenção (Sofit) — vencimentos legais em 30 dias",
+      count: hoje.manutencaoSofit.vencimentosTotal,
+      tom: hoje.manutencaoSofit.vencidos > 0 ? "critico" : "aviso",
+      href: `${base}/manutencao`,
+      linhas: hoje.manutencaoSofit.vencimentos.map(
+        (v) => `<b>${esc(v.plate)}</b> · ${esc(v.tipo)} — ${v.dias < 0 ? `vencido há ${Math.abs(v.dias)}d` : v.dias === 0 ? "vence hoje" : `vence em ${v.dias}d`} (${format(v.venceEm, "dd/MM")})`
+      ),
+      rodape: `${hoje.manutencaoSofit.emManutencao} veículo(s) em manutenção agora na Sofit${hoje.manutencaoSofit.paradosSemOs > 0 ? ` (${hoje.manutencaoSofit.paradosSemOs} sem OS aberta)` : ""}${hoje.manutencaoSofit.aprovacaoAtrasada > 0 ? ` · ${hoje.manutencaoSofit.aprovacaoAtrasada} preventiva(s) aguardando aprovação há mais de 7 dias` : ""}.`,
+    },
+    {
+      titulo: "Revisão vencida (intervalo do veículo na Sofit)",
       count: hoje.manutencao.length,
       tom: "aviso",
-      href: `${base}/utilizacao`,
-      linhas: hoje.manutencao.map((m) => `<b>${esc(m.plate)}</b> — ${m.kmDesde.toLocaleString("pt-BR")} km desde a última`),
+      href: `${base}/manutencao`,
+      linhas: hoje.manutencao.map((m) => `<b>${esc(m.plate)}</b> — ${m.kmDesde.toLocaleString("pt-BR")} km desde a última revisão`),
     },
     {
       titulo: "Motoristas afastados hoje",

@@ -1,4 +1,4 @@
-import { differenceInCalendarDays, format } from "date-fns";
+import { addDays, differenceInCalendarDays, format, subDays } from "date-fns";
 import type { StatusIndicacaoCondutor } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { brazilDayLabel, brazilMidnightUtc } from "@/lib/date";
@@ -47,6 +47,16 @@ export type HojeCartao = {
 export type HojeIntegracao = { sistema: string; missingDays: string[]; lastDate: Date | null };
 export type HojeManutencao = { vehicleId: string; plate: string; kmDesde: number };
 export type HojeAfastado = { driverName: string; tipo: string; ate: Date };
+export type HojeVencimento = { plate: string; tipo: string; venceEm: Date; dias: number };
+export type HojeManutencaoSofit = {
+  emManutencao: number;
+  paradosSemOs: number;
+  aprovacaoAtrasada: number;
+  vencimentos: HojeVencimento[];
+  vencimentosTotal: number;
+  vencidos: number;
+};
+export const VENCIMENTO_HOJE_JANELA_DIAS = 30;
 
 export type Hoje = {
   hojeLabel: Date;
@@ -61,6 +71,7 @@ export type Hoje = {
   cartoes: HojeCartao[];
   integracoes: HojeIntegracao[];
   manutencao: HojeManutencao[];
+  manutencaoSofit: HojeManutencaoSofit;
   afastadosHoje: HojeAfastado[];
 };
 
@@ -95,6 +106,8 @@ export async function buildHoje(companyId: string, now = new Date()): Promise<Ho
     gaps,
     vehicles,
     excecoesOntem,
+    vencimentosRows,
+    osAbertas,
   ] = await Promise.all([
     prisma.multa.findMany({
       where: { companyId, dataLimiteIndicacao: { gte: now, lte: limitePrazo }, indicacao: semIndicacaoConfirmada },
@@ -141,9 +154,27 @@ export async function buildHoje(companyId: string, now = new Date()): Promise<Ho
     checkAllGaps(companyId, RECURRING_GAP_WINDOW_DAYS),
     prisma.vehicle.findMany({
       where: { companyId, status: { not: "INATIVO" } },
-      select: { id: true, plate: true, currentMileage: true, lastMaintenanceMileage: true },
+      select: {
+        id: true,
+        plate: true,
+        currentMileage: true,
+        lastMaintenanceMileage: true,
+        manutencaoIntervaloKm: true,
+        sofitOdometroKm: true,
+        sofitStatus: true,
+        sofitDisponibilidade: true,
+      },
     }),
     fetchExcecoesDoDia(companyId, ontemLabel),
+    prisma.vencimentoVeiculo.findMany({
+      where: { companyId, venceEm: { gte: subDays(now, 365), lte: addDays(now, VENCIMENTO_HOJE_JANELA_DIAS) } },
+      include: { vehicle: { select: { plate: true } } },
+      orderBy: { venceEm: "asc" },
+    }),
+    prisma.ordemServico.findMany({
+      where: { companyId, status: { in: ["underApproval", "planned", "inProgress", "waitingNf"] } },
+      select: { vehicleId: true, status: true, criadaEm: true },
+    }),
   ]);
 
   // --- Multas: prazo de indicacao ---
@@ -237,6 +268,24 @@ export async function buildHoje(companyId: string, now = new Date()): Promise<Ho
     .map((v) => ({ vehicleId: v.id, plate: v.plate, kmDesde: kmSinceLastMaintenance(v) }))
     .sort((a, b) => b.kmDesde - a.kmDesde);
 
+  // --- Manutencao (espelho da Sofit): parados agora, aprovacao travada, vencimentos legais ---
+  const comOsAberta = new Set(osAbertas.map((o) => o.vehicleId).filter(Boolean));
+  const emManutencaoList = vehicles.filter((v) => v.sofitStatus === "active" && v.sofitDisponibilidade === "inMaintenance");
+  const vencimentosItens: HojeVencimento[] = vencimentosRows.map((r) => ({
+    plate: r.vehicle.plate,
+    tipo: r.tipo,
+    venceEm: r.venceEm,
+    dias: differenceInCalendarDays(r.venceEm, now),
+  }));
+  const manutencaoSofit: HojeManutencaoSofit = {
+    emManutencao: emManutencaoList.length,
+    paradosSemOs: emManutencaoList.filter((v) => !comOsAberta.has(v.id)).length,
+    aprovacaoAtrasada: osAbertas.filter((o) => o.status === "underApproval" && differenceInCalendarDays(now, o.criadaEm) > 7).length,
+    vencimentos: vencimentosItens.slice(0, ITENS_POR_SECAO),
+    vencimentosTotal: vencimentosItens.length,
+    vencidos: vencimentosItens.filter((v) => v.dias < 0).length,
+  };
+
   // --- Afastados hoje (so motoristas) ---
   const nomeByDriverId = new Map(motoristas.map((d) => [d.id, d.name]));
   const afastadosHoje: HojeAfastado[] = afastamentos
@@ -258,7 +307,9 @@ export async function buildHoje(companyId: string, now = new Date()): Promise<Ho
       semViagem.length +
       cartoesItens.length +
       integracoes.length +
-      manutencao.length,
+      manutencao.length +
+      manutencaoSofit.vencimentosTotal +
+      manutencaoSofit.paradosSemOs,
     resumo: {
       escalasHoje: escalasHoje.length,
       motoristasEscalados: new Set(escalasHoje.map((e) => e.driverId)).size,
@@ -275,6 +326,7 @@ export async function buildHoje(companyId: string, now = new Date()): Promise<Ho
     cartoes: cartoesItens.slice(0, ITENS_POR_SECAO),
     integracoes,
     manutencao: manutencao.slice(0, ITENS_POR_SECAO),
+    manutencaoSofit,
     afastadosHoje,
   };
 }

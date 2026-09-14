@@ -128,6 +128,8 @@ model Company {
   multas               Multa[]
   indicacaoCondutors   IndicacaoCondutor[]
   timesheets           TimesheetMensal[]
+  ordensServico        OrdemServico[]
+  vencimentosVeiculo   VencimentoVeiculo[]
 }
 
 // Espelho de ponto mensal JA APURADO pelo TiqueTaque (GET /timesheets?
@@ -370,6 +372,22 @@ model Vehicle {
   capacity               Int?
   ownership              String?
   licensingMonth         String?
+  // Integracao Sofit (o sistema de manutencao da empresa, 2026-09-13) —
+  // enriquecimento por placa, mesmo espirito do SIAT. sofitDisponibilidade
+  // e o status AO VIVO de la ("available" | "inMaintenance" | "inUse" |
+  // "inactive"); os intervalos vem do cadastro de cada veiculo na Sofit
+  // (ex.: 15000 km / 30 dias) e substituem o generico de 10.000 km de
+  // lib/maintenance.ts quando existem. ultimaManutencaoEm/
+  // lastMaintenanceMileage passam a ser preenchidos pela ultima OS de
+  // revisao concluida na Sofit (ver lib/sofit/manutencaoSync.ts).
+  sofitId                 String?   @unique
+  sofitStatus             String?
+  sofitDisponibilidade    String?
+  sofitOdometroKm         Int?
+  manutencaoIntervaloKm   Int?
+  manutencaoIntervaloDias Int?
+  ultimaManutencaoEm      DateTime?
+  sofitSyncedAt           DateTime?
   createdAt              DateTime      @default(now())
   updatedAt              DateTime      @updatedAt
 
@@ -381,8 +399,71 @@ model Vehicle {
   consumptionSummaries FuelConsumptionSummary[]
   vehicleTrips         VehicleTrip[]
   multas               Multa[]
+  ordensServico        OrdemServico[]
+  vencimentos          VencimentoVeiculo[]
 
   @@index([companyId])
+}
+
+// Ordem de servico da Sofit (query serviceOrders) — a unidade de trabalho da
+// oficina: corretiva/preventiva, status, dias parado, hodometro no
+// fechamento, fornecedor (oficina propria "AZUL MOB" x externo). Espelho
+// local pra visao executiva em /manutencao (backlog, preventiva x corretiva,
+// disponibilidade, reincidencia) e pra cobrar a equipe a manter a Sofit
+// atualizada — confirmado real (2026-09-13): 188 OS "em andamento" com a
+// mais antiga de 158 dias e 75 preventivas "aguardando aprovacao" desde
+// abril. Texto cru de tipo/status/origem de proposito (mesma filosofia de
+// Escala.status). custoCents quase sempre 0 na Sofit deles — custo nao e
+// lancado la, entao nao e fonte de custo por veiculo.
+model OrdemServico {
+  id             String    @id @default(cuid())
+  companyId      String
+  company        Company   @relation(fields: [companyId], references: [id])
+  vehicleId      String?
+  vehicle        Vehicle?  @relation(fields: [vehicleId], references: [id])
+  sofitId        String    @unique
+  numero         String
+  placaOriginal  String?
+  tipo           String?
+  status         String?
+  origem         String?
+  motivo         String?
+  problema       String?
+  fornecedor     String?
+  criadaEm       DateTime
+  atualizadaEm   DateTime
+  inicioEm       DateTime?
+  fimEm          DateTime?
+  previsaoFimEm  DateTime?
+  diasParado     Float?
+  hodometroFinal Int?
+  custoCents     Int?
+  syncedAt       DateTime  @default(now())
+
+  @@index([companyId, status])
+  @@index([companyId, criadaEm])
+  @@index([vehicleId, fimEm])
+}
+
+// Vencimentos por veiculo cadastrados na Sofit (Vehicle.dues): IPVA,
+// licenciamento, DPVAT, seguro, afericao de tacografo, extintor, CVS.
+// `tipo` e o nome do item na Sofit (resolvido via query item(id), a dues
+// nao expoe a relacao). Substituido por completo a cada sync do veiculo.
+model VencimentoVeiculo {
+  id          String   @id @default(cuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id])
+  vehicleId   String
+  vehicle     Vehicle  @relation(fields: [vehicleId], references: [id])
+  sofitDueId  String   @unique
+  tipo        String
+  categoria   String?
+  venceEm     DateTime
+  recorrente  Boolean  @default(false)
+  recorrencia String?
+  syncedAt    DateTime @default(now())
+
+  @@index([companyId, venceEm])
 }
 
 // ---------- Escala (MOD.02) ----------

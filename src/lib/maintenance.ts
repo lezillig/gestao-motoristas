@@ -1,17 +1,36 @@
 import { prisma } from "@/lib/prisma";
 
-// Intervalo preventivo generico para onibus/vans de fretamento. Sem um
-// modulo de manutencao completo ainda, isto e propositalmente simples: um
-// unico contador por veiculo, resetado manualmente quando a manutencao e
-// feita (ver registerMaintenance em /utilizacao/actions.ts).
+// Intervalo preventivo generico, usado so quando a Sofit nao informa o
+// intervalo do proprio veiculo (Vehicle.manutencaoIntervaloKm, sincronizado
+// de la desde 2026-09-13 — ex.: 15.000 km pra Renault Master). A "ultima
+// manutencao" tambem vem da Sofit (ultima OS de revisao concluida, ver
+// lib/sofit/manutencaoSync.ts), com o botao manual de /utilizacao como
+// alternativa.
 export const MAINTENANCE_INTERVAL_KM = 10000;
 
-export function kmSinceLastMaintenance(vehicle: { currentMileage: number; lastMaintenanceMileage: number }) {
-  return vehicle.currentMileage - vehicle.lastMaintenanceMileage;
+export type VehicleMaintenanceLike = {
+  currentMileage: number;
+  lastMaintenanceMileage: number;
+  manutencaoIntervaloKm?: number | null;
+  sofitOdometroKm?: number | null;
+};
+
+export function maintenanceIntervalKm(vehicle: Pick<VehicleMaintenanceLike, "manutencaoIntervaloKm">): number {
+  return vehicle.manutencaoIntervaloKm && vehicle.manutencaoIntervaloKm > 0 ? vehicle.manutencaoIntervaloKm : MAINTENANCE_INTERVAL_KM;
 }
 
-export function isMaintenanceDue(vehicle: { currentMileage: number; lastMaintenanceMileage: number }) {
-  return kmSinceLastMaintenance(vehicle) >= MAINTENANCE_INTERVAL_KM;
+// Km atual = o maior entre o hodometro da Ituran (currentMileage) e o da
+// Sofit — as duas fontes sao reais, so atualizam em momentos diferentes.
+export function currentKm(vehicle: Pick<VehicleMaintenanceLike, "currentMileage" | "sofitOdometroKm">): number {
+  return Math.max(vehicle.currentMileage, vehicle.sofitOdometroKm ?? 0);
+}
+
+export function kmSinceLastMaintenance(vehicle: VehicleMaintenanceLike) {
+  return currentKm(vehicle) - vehicle.lastMaintenanceMileage;
+}
+
+export function isMaintenanceDue(vehicle: VehicleMaintenanceLike) {
+  return kmSinceLastMaintenance(vehicle) >= maintenanceIntervalKm(vehicle);
 }
 
 // Atualiza Vehicle.currentMileage a partir do hodometro real da Ituran —
