@@ -3,6 +3,7 @@ import { requireSession } from "@/lib/auth";
 import { buildAnnualReport } from "@/lib/pontoAnual";
 import { buildAnnualExportTable } from "@/lib/pontoAnualExport";
 import { buildExportCsv, buildExportPdf, buildExportXlsx } from "@/lib/pontoMensalExport";
+import { anoParam as lerAno } from "@/lib/params";
 
 export async function GET(request: NextRequest) {
   const session = await requireSession();
@@ -10,7 +11,7 @@ export async function GET(request: NextRequest) {
   const anoParam = searchParams.get("ano") ?? "";
   const formato = searchParams.get("formato") ?? "xlsx";
   const visao = searchParams.get("visao") === "extras" ? "extras" : "totais";
-  const year = /^\d{4}$/.test(anoParam) ? parseInt(anoParam, 10) : new Date().getFullYear();
+  const year = lerAno(anoParam);
 
   const report = await buildAnnualReport(session.companyId, year);
   // Mesmo ranking fixo do relatorio na tela: mais hora extra no ano primeiro,

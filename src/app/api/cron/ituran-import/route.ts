@@ -6,6 +6,7 @@ import { fetchTrips, fetchVehiclesRealtime, isIturanAvailable } from "@/lib/itur
 import { syncVehicleTripsForCompany } from "@/lib/ituran/tripSync";
 import { updateVehicleMileageFromReadings } from "@/lib/maintenance";
 import { executarCron } from "@/lib/cronRun";
+import { filtroEmpresaDasIntegracoes } from "@/lib/integracoesEmpresa";
 
 // Diario (ver vercel.json): snapshot de posicao/velocidade de toda a frota +
 // viagens de ONTEM (calendario de Brasilia) casadas com a escala do dia.
@@ -29,7 +30,7 @@ export async function GET(req: NextRequest) {
     const yesterday = brazilDayLabel(-1);
 
     const [snapshots, trips] = await Promise.all([fetchVehiclesRealtime(), fetchTrips(dateFrom, dateTo)]);
-    const companies = await prisma.company.findMany({ select: { id: true } });
+    const companies = await prisma.company.findMany({ where: await filtroEmpresaDasIntegracoes(), select: { id: true } });
 
     let readingsCreated = 0;
     let tripsUpserted = 0;

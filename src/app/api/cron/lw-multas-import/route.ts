@@ -5,6 +5,7 @@ import { matchVehicleToLw } from "@/lib/lw/plateMatch";
 import { syncMultasForVehicle, resolveCondutoresPendentes } from "@/lib/lw/sync";
 import { sleep } from "@/lib/tiquetaque/pace";
 import { executarCron } from "@/lib/cronRun";
+import { filtroEmpresaDasIntegracoes } from "@/lib/integracoesEmpresa";
 
 // Diario (ver vercel.json): multas de cada veiculo na LW, um veiculo por
 // vez com pausa (limite da API). Nao cabe tudo numa invocacao: processa ate
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest) {
     const token = await getLwToken();
     const veiculosLw = await listarVeiculosLw(token);
 
-    const companies = await prisma.company.findMany({ select: { id: true }, orderBy: { id: "asc" } });
+    const companies = await prisma.company.findMany({ where: await filtroEmpresaDasIntegracoes(), select: { id: true }, orderBy: { id: "asc" } });
     const itens: { companyId: string; vehicleId: string; placaParaConsulta: string }[] = [];
     const semCorrespondencia: string[] = [];
     for (const company of companies) {

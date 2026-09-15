@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { isSofitAvailable } from "@/lib/sofit/client";
 import { syncSofitCnhCore } from "@/lib/sofit/cnhSync";
 import { executarCron } from "@/lib/cronRun";
+import { filtroEmpresaDasIntegracoes } from "@/lib/integracoesEmpresa";
 
 // Diario (ver vercel.json): CNH (numero/categoria/validade) dos motoristas a
 // partir do cadastro de pessoas da Sofit.
@@ -12,7 +13,7 @@ export async function GET(req: NextRequest) {
   return executarCron("sofit-cnh-import", req, async () => {
     if (!isSofitAvailable()) return { status: "pulado", detalhe: { skipped: "Sofit não configurada" } };
 
-    const companies = await prisma.company.findMany({ select: { id: true } });
+    const companies = await prisma.company.findMany({ where: await filtroEmpresaDasIntegracoes(), select: { id: true } });
     const deadline = Date.now() + 45_000;
     const results: Record<string, unknown>[] = [];
     const errors: string[] = [];

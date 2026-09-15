@@ -1,8 +1,7 @@
 import type { NextConfig } from "next";
 
-// Cabecalhos de seguranca basicos. CSP ficou de fora de proposito: o Next
-// injeta scripts inline e exigiria nonce por requisicao (middleware) — fica
-// para uma etapa propria, testada.
+// Cabecalhos de seguranca basicos. A CSP fica em src/proxy.ts, porque precisa
+// de um nonce novo por requisicao (modo controlado pela variavel CSP_MODO).
 const SECURITY_HEADERS = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },

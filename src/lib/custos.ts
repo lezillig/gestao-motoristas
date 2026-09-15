@@ -4,6 +4,7 @@ import { brazilDateStringToUtc } from "@/lib/date";
 import { platePhysicalVariants } from "@/lib/plate";
 import { workedMinutes } from "@/lib/pontoCompliance";
 import { ADICIONAL_NOTURNO_PERCENTUAL_MINIMO, HORA_EXTRA_PERCENTUAL_MINIMO, resolveRegra } from "@/lib/convencao";
+import { mesParam } from "@/lib/params";
 
 export const SEM_ESCALA = "Sem escala no SIAT";
 export const SEM_CLIENTE = "Sem cliente (plantão)";
@@ -63,6 +64,9 @@ export type CustosMes = {
   veiculos: CustoVeiculo[];
   clientes: CustoCliente[];
   maoDeObra: MaoDeObraResumo;
+  // OS da Sofit concluidas no mes e quantas tem valor lancado. A manutencao
+  // ainda NAO entra no total: so quando a cobertura for confiavel.
+  manutencao: { osConcluidas: number; osComCusto: number; custoLancadoCents: number };
   totais: {
     combustivelCents: number;
     litros: number;
@@ -87,9 +91,10 @@ function normalizePlate(raw: string): string {
   return raw.toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
+// Mes da URL validado; sem mes (ou invalido), o mes corrente no calendario
+// de Brasilia — o relogio do servidor (UTC) virava o mes as 21h do ultimo dia.
 export function parseMes(mes: string | undefined): Date {
-  const anchor = mes && /^\d{4}-\d{2}$/.test(mes) ? new Date(`${mes}-01T00:00:00`) : new Date();
-  return startOfMonth(Number.isNaN(anchor.getTime()) ? new Date() : anchor);
+  return mesParam(mes);
 }
 
 // Custo operacional do mes por veiculo e por cliente/contrato, juntando o
@@ -121,7 +126,7 @@ export async function buildCustosMes(companyId: string, monthStart: Date): Promi
   const startUtc = brazilDateStringToUtc(format(monthStart, "yyyy-MM-dd"));
   const endUtc = brazilDateStringToUtc(format(monthEnd, "yyyy-MM-dd"));
 
-  const [company, vehicles, drivers, timesheets, fuel, multas, trips, escalas, entries] = await Promise.all([
+  const [company, vehicles, drivers, timesheets, fuel, multas, trips, escalas, entries, osMes] = await Promise.all([
     prisma.company.findUnique({ where: { id: companyId }, select: { encargosPercentual: true } }),
     prisma.vehicle.findMany({ where: { companyId }, select: { id: true, plate: true, brand: true, model: true } }),
     prisma.driver.findMany({
@@ -160,6 +165,10 @@ export async function buildCustosMes(companyId: string, monthStart: Date): Promi
     prisma.timeClockEntry.findMany({
       where: { companyId, date: { gte: monthStart, lt: monthEnd } },
       select: { driverId: true, date: true, clockIn: true, clockOut: true, intervaloInicio: true, intervaloFim: true, punches: true },
+    }),
+    prisma.ordemServico.findMany({
+      where: { companyId, status: "finished", fimEm: { gte: startUtc, lt: endUtc } },
+      select: { custoCents: true },
     }),
   ]);
 
@@ -425,6 +434,11 @@ export async function buildCustosMes(companyId: string, monthStart: Date): Promi
     veiculos: veiculosOut,
     clientes: clientesOut,
     maoDeObra: mao,
+    manutencao: {
+      osConcluidas: osMes.length,
+      osComCusto: osMes.filter((o) => (o.custoCents ?? 0) > 0).length,
+      custoLancadoCents: osMes.reduce((s, o) => s + (o.custoCents ?? 0), 0),
+    },
     totais: {
       combustivelCents,
       litros: somaC((c) => c.litros),

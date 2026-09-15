@@ -75,6 +75,7 @@ export async function auditarSofit(companyId: string, now = new Date()): Promise
         diasParado: true,
         hodometroFinal: true,
         hodometroFinalBruto: true,
+        custoCents: true,
         fornecedor: true,
         problema: true,
       },
@@ -251,6 +252,20 @@ export async function auditarSofit(companyId: string, now = new Date()): Promise
     colunas: ["OS", "Placa", "Tipo", "Concluída em", "Fornecedor", "Problema"],
     linhas: os
       .filter((o) => o.status === "finished" && o.fimEm && o.fimEm >= inicio90 && !o.hodometroFinalBruto)
+      .map((o) => ({ OS: o.numero, Placa: plateOf(o), Tipo: o.tipo, "Concluída em": d(o.fimEm), Fornecedor: o.fornecedor, Problema: problema1(o.problema) })),
+  });
+  // OS concluida sem valor: sem ele a manutencao nao entra no custo por
+  // veiculo e por cliente (tela de Custos mostra a cobertura).
+  const inicioSemCusto = subDays(now, 60);
+  achados.push({
+    chave: "os_sem_custo",
+    titulo: "OS concluída nos últimos 60 dias sem valor lançado",
+    gravidade: "media",
+    oQueFazer: "Lançar na OS da Sofit o valor total (peças, mão de obra e terceiros) ao concluir, com a nota fiscal. Sem isso a manutenção não entra no custo por veículo e por cliente.",
+    colunas: ["OS", "Placa", "Tipo", "Concluída em", "Fornecedor", "Problema"],
+    linhas: os
+      .filter((o) => o.status === "finished" && o.fimEm && o.fimEm >= inicioSemCusto && !(o.custoCents && o.custoCents > 0))
+      .sort((a, b) => (b.fimEm?.getTime() ?? 0) - (a.fimEm?.getTime() ?? 0))
       .map((o) => ({ OS: o.numero, Placa: plateOf(o), Tipo: o.tipo, "Concluída em": d(o.fimEm), Fornecedor: o.fornecedor, Problema: problema1(o.problema) })),
   });
   achados.push({

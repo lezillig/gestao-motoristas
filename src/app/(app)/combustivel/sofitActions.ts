@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { brazilDateStringToUtc } from "@/lib/date";
 import { syncSofitFuelCore } from "@/lib/sync/sofitFuel";
+import { exigirIntegracoesDaEmpresa } from "@/lib/integracoesEmpresa";
 
 export type SofitSyncState = { error?: string; result?: { created: number; skipped: number; hasMore: boolean } };
 
@@ -13,6 +14,7 @@ export type SofitSyncState = { error?: string; result?: { created: number; skipp
 // "Gerar leituras" de /telemetria).
 export async function syncSofitFuel(_prevState: SofitSyncState): Promise<SofitSyncState> {
   const session = await requireRole("ADMIN", "GESTOR");
+  await exigirIntegracoesDaEmpresa(session.companyId);
   try {
     // 45s de orcamento pro fetch em si, deixando folga pro resto da acao
     // (queries, createMany) dentro do teto real da funcao serverless.
@@ -30,6 +32,7 @@ export async function syncSofitFuel(_prevState: SofitSyncState): Promise<SofitSy
 // yyyy-MM-dd.
 export async function backfillSofitFuel(since: string): Promise<SofitSyncState> {
   const session = await requireRole("ADMIN", "GESTOR");
+  await exigirIntegracoesDaEmpresa(session.companyId);
   try {
     const result = await syncSofitFuelCore(session.companyId, Date.now() + 45_000, brazilDateStringToUtc(since));
     revalidatePath("/combustivel");

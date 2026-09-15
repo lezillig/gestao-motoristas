@@ -7,6 +7,7 @@ import { fetchAllEmployees } from "@/lib/tiquetaque/client";
 import { signTiqueTaquePlanItem, verifyTiqueTaquePlanItem } from "@/lib/tiquetaque/planToken";
 import { importTimesheetCore, MES_REGEX } from "@/lib/tiquetaque/timesheetCore";
 import type { TiqueTaquePlanItem, TiqueTaquePlanResult } from "./actions";
+import { exigirIntegracoesDaEmpresa } from "@/lib/integracoesEmpresa";
 
 // Mesmo par fase 1 / fase 2 do import de ponto (ver prepareTiqueTaqueImport):
 // o cliente orquestra 1 chamada por motorista com pausa, e o token amarra o
@@ -14,6 +15,7 @@ import type { TiqueTaquePlanItem, TiqueTaquePlanResult } from "./actions";
 // volta do navegador.
 export async function prepareTimesheetImport(mes: string): Promise<TiqueTaquePlanResult> {
   const session = await requireRole("ADMIN", "GESTOR");
+  await exigirIntegracoesDaEmpresa(session.companyId);
   if (!MES_REGEX.test(mes)) return { error: "Mês inválido (use yyyy-MM)." };
 
   let employees;
@@ -47,6 +49,7 @@ export async function importTimesheetForDriver(
   mes: string
 ): Promise<{ errors: { message: string }[] }> {
   const session = await requireRole("ADMIN", "GESTOR");
+  await exigirIntegracoesDaEmpresa(session.companyId);
   if (!MES_REGEX.test(mes)) return { errors: [{ message: "Mês inválido." }] };
   const driver = await prisma.driver.findUnique({ where: { id: driverId, companyId: session.companyId }, select: { id: true } });
   if (!driver) return { errors: [{ message: "Motorista não encontrado." }] };

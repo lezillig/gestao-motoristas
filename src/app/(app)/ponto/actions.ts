@@ -12,6 +12,7 @@ import { importDriverDaysCore, reconcileDriverDays } from "@/lib/tiquetaque/impo
 import type { TiqueTaqueDriverImportResult } from "@/lib/tiquetaque/importCore";
 import type { TiqueTaqueDayEntry } from "@/lib/tiquetaque/types";
 import { hashPontoState } from "@/lib/integrity";
+import { exigirIntegracoesDaEmpresa } from "@/lib/integracoesEmpresa";
 
 export type { TiqueTaqueImportRowError, TiqueTaqueDriverImportResult } from "@/lib/tiquetaque/importCore";
 
@@ -315,6 +316,7 @@ export async function prepareTiqueTaqueImport(
   endDate: string
 ): Promise<TiqueTaquePlanResult> {
   const session = await requireRole("ADMIN", "GESTOR");
+  await exigirIntegracoesDaEmpresa(session.companyId);
 
   const parsed = tiqueTaqueRangeSchema.safeParse({ startDate, endDate });
   if (!parsed.success) {
@@ -361,6 +363,7 @@ export async function importDriverFromTiqueTaque(
   endDate: string
 ): Promise<TiqueTaqueDriverImportResult> {
   const session = await requireRole("ADMIN", "GESTOR");
+  await exigirIntegracoesDaEmpresa(session.companyId);
 
   const driver = await prisma.driver.findUnique({ where: { id: driverId, companyId: session.companyId } });
   if (!driver) {

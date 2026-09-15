@@ -6,6 +6,7 @@ import { sleep, TIQUETAQUE_IMPORT_PACE_MS } from "@/lib/tiquetaque/pace";
 import { importTimesheetCore } from "@/lib/tiquetaque/timesheetCore";
 import { brazilDayLabel } from "@/lib/date";
 import { executarCron } from "@/lib/cronRun";
+import { filtroEmpresaDasIntegracoes } from "@/lib/integracoesEmpresa";
 
 // Diario, 04:20 UTC (antes do cron de ponto, que divide o mesmo limite de
 // 60 req/min): espelho mensal apurado (horas normais, extras 50/100,
@@ -32,7 +33,7 @@ export async function GET(req: NextRequest) {
       ? mesesParam.split(",").filter((m) => /^\d{4}-\d{2}$/.test(m))
       : [format(hoje, "yyyy-MM"), ...(hoje.getDate() <= DIAS_PARA_REVISAR_MES_ANTERIOR ? [format(subMonths(hoje, 1), "yyyy-MM")] : [])];
 
-    const companies = await prisma.company.findMany({ select: { id: true }, orderBy: { id: "asc" } });
+    const companies = await prisma.company.findMany({ where: await filtroEmpresaDasIntegracoes(), select: { id: true }, orderBy: { id: "asc" } });
     const drivers = (
       await Promise.all(
         companies.map((c) =>

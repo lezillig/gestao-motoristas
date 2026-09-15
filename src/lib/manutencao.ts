@@ -2,6 +2,7 @@ import { differenceInCalendarDays, format, subDays, subMonths, startOfMonth } fr
 import { prisma } from "@/lib/prisma";
 import { currentKm, maintenanceIntervalKm } from "@/lib/maintenance";
 import { OS_STATUS_ABERTOS } from "@/lib/sofit/manutencaoSync";
+import { brazilDayLabel, utcInstantToLocalParts } from "@/lib/date";
 
 export const OS_STATUS_LABEL: Record<string, string> = {
   underApproval: "Aguardando aprovação",
@@ -276,12 +277,14 @@ export async function buildManutencao(companyId: string, now = new Date()): Prom
   // --- Mensal (6 meses) ---
   const meses: ManutencaoMes[] = [];
   for (let i = 5; i >= 0; i--) {
-    const m = format(startOfMonth(subMonths(now, i)), "yyyy-MM");
+    const m = format(startOfMonth(subMonths(brazilDayLabel(0), i)), "yyyy-MM");
     meses.push({ mes: m, total: 0, corretivas: 0, preventivas: 0, externas: 0, diasParado: 0 });
   }
   const mesIdx = new Map(meses.map((m, i) => [m.mes, i]));
   for (const o of osRecentes) {
-    const i = mesIdx.get(format(o.criadaEm, "yyyy-MM"));
+    // criadaEm e instante real: o mes e o de Brasilia (OS aberta as 22h do
+    // ultimo dia pertence a esse mes, nao ao seguinte).
+    const i = mesIdx.get(utcInstantToLocalParts(o.criadaEm.toISOString())?.dateISO.slice(0, 7) ?? format(o.criadaEm, "yyyy-MM"));
     if (i == null) continue;
     const m = meses[i];
     m.total++;

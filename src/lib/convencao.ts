@@ -1,8 +1,9 @@
 import { STANDARD_DAILY_MINUTES } from "@/lib/pontoCompliance";
+import { brazilDayLabel } from "@/lib/date";
 
 export function isVigente(
   convencao: { vigenciaInicio: Date; vigenciaFim: Date | null },
-  today = new Date()
+  today = brazilDayLabel(0)
 ) {
   return convencao.vigenciaInicio <= today && (!convencao.vigenciaFim || today <= convencao.vigenciaFim);
 }
@@ -42,7 +43,7 @@ export type RegraResolvida = {
 export function resolveRegra(
   driver: DriverWithConvencoes,
   tipoRegra: string,
-  today = new Date()
+  today = brazilDayLabel(0)
 ): RegraResolvida {
   if (!driver.sindicato) return { valorNumerico: null, descricao: null, fonte: null };
 
@@ -67,7 +68,7 @@ export function resolveRegra(
 // horas).
 export function driverDailyLimitMinutes(
   driver: DriverWithConvencoes,
-  today = new Date()
+  today = brazilDayLabel(0)
 ): { minutes: number; source: string | null } {
   const regra = resolveRegra(driver, "JORNADA_DIARIA", today);
   if (regra.valorNumerico != null && regra.fonte) {
@@ -85,7 +86,7 @@ export function driverDailyLimitMinutes(
 export function overtimeCostCents(
   driver: DriverWithConvencoes,
   overtimeMinutes: number,
-  today = new Date()
+  today = brazilDayLabel(0)
 ): number | null {
   if (!driver.valorHoraCents || overtimeMinutes <= 0) return driver.valorHoraCents ? 0 : null;
   const regra = resolveRegra(driver, "HORA_EXTRA", today);
@@ -105,7 +106,7 @@ export const ADICIONAL_NOTURNO_PERCENTUAL_MINIMO = 20;
 export function nightPremiumCents(
   driver: DriverWithConvencoes,
   nightMinutes: number,
-  today = new Date()
+  today = brazilDayLabel(0)
 ): number | null {
   if (!driver.valorHoraCents || nightMinutes <= 0) return driver.valorHoraCents ? 0 : null;
   const regra = resolveRegra(driver, "ADICIONAL_NOTURNO", today);
@@ -126,7 +127,7 @@ export const TEMPO_ESPERA_PERCENTUAL_MINIMO = 30;
 export function waitingTimeIndemnityCents(
   driver: DriverWithConvencoes,
   waitingMinutes: number,
-  today = new Date()
+  today = brazilDayLabel(0)
 ): number | null {
   if (!driver.valorHoraCents || waitingMinutes <= 0) return driver.valorHoraCents ? 0 : null;
   const regra = resolveRegra(driver, "TEMPO_ESPERA", today);
@@ -142,7 +143,7 @@ export function waitingTimeIndemnityCents(
 // sindicato — usado para categorizar o alerta corretamente na analise.
 export function driverRegime12x36(
   driver: DriverWithConvencoes,
-  today = new Date()
+  today = brazilDayLabel(0)
 ): { ativo: boolean; source: string | null; individual: boolean } {
   if (driver.regimeHoras === "DOZE_X_TRINTA_SEIS") {
     return { ativo: true, source: "acordo individual (art. 59-A CLT)", individual: true };

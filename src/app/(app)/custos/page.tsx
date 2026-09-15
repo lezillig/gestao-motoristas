@@ -63,6 +63,10 @@ export default async function CustosPage({ searchParams }: { searchParams: Promi
   const semDados = custos.veiculos.length === 0 && custos.clientes.length === 0;
   const mao = custos.maoDeObra;
   const semEspelhoNoMes = mao.motoristasComEspelho === 0;
+  const manut = custos.manutencao;
+  const coberturaPct = manut.osConcluidas > 0 ? Math.round((manut.osComCusto / manut.osConcluidas) * 100) : 0;
+  const coberturaTom = coberturaPct >= 90 ? "text-emerald-700" : coberturaPct >= 50 ? "text-amber-700" : "text-red-700";
+  const coberturaBarra = coberturaPct >= 90 ? "bg-emerald-500" : coberturaPct >= 50 ? "bg-amber-500" : "bg-red-500";
 
   return (
     <div>
@@ -147,6 +151,36 @@ export default async function CustosPage({ searchParams }: { searchParams: Promi
             <EncargosForm atual={mao.encargosPercentual} />
           </div>
         </div>
+      </section>
+
+      <section className={`${cardClass} mb-6`}>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-[260px] flex-1">
+            <h2 className="text-sm font-semibold text-slate-900">Manutenção (Sofit)</h2>
+            <p className="text-xs text-slate-500">
+              Ainda fora do custo total. Entra quando pelo menos 90% das OS concluídas no mês tiverem valor lançado na Sofit.
+            </p>
+          </div>
+          <Link href="/manutencao/auditoria" className="text-xs font-medium text-blue-700 hover:underline">
+            Ver OS sem valor na auditoria
+          </Link>
+        </div>
+        {manut.osConcluidas === 0 ? (
+          <p className="mt-3 text-sm text-slate-500">Nenhuma OS concluída neste mês.</p>
+        ) : (
+          <div className="mt-3">
+            <div className="flex items-baseline justify-between gap-4 text-sm">
+              <span className="text-slate-700">
+                {num(manut.osComCusto)} de {num(manut.osConcluidas)} OS concluídas com valor lançado
+              </span>
+              <span className={`font-semibold tabular-nums ${coberturaTom}`}>{coberturaPct}%</span>
+            </div>
+            <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-valuenow={coberturaPct} aria-valuemin={0} aria-valuemax={100} aria-label="Cobertura de valor nas OS">
+              <div className={`h-full rounded-full ${coberturaBarra}`} style={{ width: `${coberturaPct}%` }} />
+            </div>
+            {manut.custoLancadoCents > 0 && <p className="mt-2 text-xs text-slate-500">{brl(manut.custoLancadoCents)} lançados até agora neste mês.</p>}
+          </div>
+        )}
       </section>
 
       {semDados ? (

@@ -4,6 +4,7 @@ import { buildHoje } from "@/lib/hoje";
 import { renderHojeEmail } from "@/lib/hojeEmail";
 import { hojeEmailDestinatarios, isEmailAvailable, sendEmail } from "@/lib/email";
 import { executarCron } from "@/lib/cronRun";
+import { filtroEmpresaDasIntegracoes } from "@/lib/integracoesEmpresa";
 
 // Agendado no vercel.json pras 10:00 UTC (= 07:00 Brasilia), depois de TODOS
 // os outros crons (o ultimo, multas da LW, roda 07:45 UTC) — o e-mail e um
@@ -18,7 +19,7 @@ export async function GET(req: NextRequest) {
     if (destinatarios.length === 0) return { status: "pulado", detalhe: { skipped: "HOJE_EMAIL_PARA vazio" } };
 
     const baseUrl = process.env.APP_BASE_URL ?? req.nextUrl.origin;
-    const companies = await prisma.company.findMany({ select: { id: true, name: true } });
+    const companies = await prisma.company.findMany({ where: await filtroEmpresaDasIntegracoes(), select: { id: true, name: true } });
     const enviados: { company: string; id: string; subject: string }[] = [];
     const errors: string[] = [];
 

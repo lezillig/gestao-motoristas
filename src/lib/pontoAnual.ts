@@ -27,9 +27,27 @@ export async function buildAnnualReport(companyId: string, year: number): Promis
     prisma.driver.findMany({
       where: { companyId, active: true },
       orderBy: { name: "asc" },
-      include: { sindicato: { include: { convencoes: { include: { regras: true } } } } },
+      // So o que o calculo usa: nome, regime, valor-hora e regras vigentes.
+      select: {
+        id: true,
+        name: true,
+        regimeHoras: true,
+        valorHoraCents: true,
+        sindicato: {
+          select: {
+            nome: true,
+            convencoes: {
+              select: { tipo: true, vigenciaInicio: true, vigenciaFim: true, regras: { select: { tipo: true, valorNumerico: true, descricao: true } } },
+            },
+          },
+        },
+      },
     }),
-    prisma.timeClockEntry.findMany({ where: { companyId, date: { gte: yearStart, lt: yearEndExclusive } } }),
+    // So os horarios: o ano inteiro da empresa, sem hash e demais colunas.
+    prisma.timeClockEntry.findMany({
+      where: { companyId, date: { gte: yearStart, lt: yearEndExclusive } },
+      select: { id: true, driverId: true, date: true, clockIn: true, clockOut: true, intervaloInicio: true, intervaloFim: true, esperaInicio: true, esperaFim: true, punches: true },
+    }),
   ]);
 
   const dailyLimitByDriver = new Map(drivers.map((d) => [d.id, driverDailyLimitMinutes(d)]));

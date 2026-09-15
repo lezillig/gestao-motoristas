@@ -4,11 +4,13 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { fetchFuelCardStatuses } from "@/lib/ticketlog/client";
 import { syncTicketLogCardStatusesCore } from "@/lib/sync/ticketlogCards";
+import { exigirIntegracoesDaEmpresa } from "@/lib/integracoesEmpresa";
 
 export type TicketLogSyncState = { error?: string; result?: { count: number } };
 
 export async function syncTicketLogCardStatuses(_prevState: TicketLogSyncState): Promise<TicketLogSyncState> {
   const session = await requireRole("ADMIN", "GESTOR");
+  await exigirIntegracoesDaEmpresa(session.companyId);
 
   try {
     const statuses = await fetchFuelCardStatuses();

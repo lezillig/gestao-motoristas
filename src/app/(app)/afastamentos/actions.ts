@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { parseLocalDate } from "@/lib/date";
 import { fetchAllEmployees, fetchEmployeeLeaves } from "@/lib/tiquetaque/client";
 import { signTiqueTaquePlanItem, verifyTiqueTaquePlanItem } from "@/lib/tiquetaque/planToken";
+import { exigirIntegracoesDaEmpresa } from "@/lib/integracoesEmpresa";
 
 // `token` amarra o employeeId ao driverId+empresa (ver planToken.ts) — a
 // fase 2 recebe o employeeId de volta do cliente e PRECISA revalidar esse
@@ -20,6 +21,7 @@ export type LeaveImportPlanResult = { error?: string; plan?: LeaveImportPlanItem
 // motoristas.
 export async function prepareLeaveImport(): Promise<LeaveImportPlanResult> {
   const session = await requireRole("ADMIN", "GESTOR");
+  await exigirIntegracoesDaEmpresa(session.companyId);
 
   let employees;
   try {
@@ -61,6 +63,7 @@ export async function importLeavesForDriver(
   token: string
 ): Promise<LeaveImportDriverResult> {
   const session = await requireRole("ADMIN", "GESTOR");
+  await exigirIntegracoesDaEmpresa(session.companyId);
 
   const driver = await prisma.driver.findUnique({ where: { id: driverId, companyId: session.companyId } });
   if (!driver) {

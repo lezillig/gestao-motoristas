@@ -6,6 +6,7 @@ import { sleep, TIQUETAQUE_IMPORT_PACE_MS } from "@/lib/tiquetaque/pace";
 import { importDriverDaysCore } from "@/lib/tiquetaque/importCore";
 import { brazilDayLabel } from "@/lib/date";
 import { executarCron } from "@/lib/cronRun";
+import { filtroEmpresaDasIntegracoes } from "@/lib/integracoesEmpresa";
 
 // Diario (ver vercel.json): batidas de ONTEM (calendario de Brasilia) de
 // cada motorista, uma chamada por motorista com pausa (60 req/min
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest) {
       return { status: "erro", erros: ["date inválido (use yyyy-MM-dd)."], httpStatus: 400 };
     }
 
-    const companies = await prisma.company.findMany({ select: { id: true }, orderBy: { id: "asc" } });
+    const companies = await prisma.company.findMany({ where: await filtroEmpresaDasIntegracoes(), select: { id: true }, orderBy: { id: "asc" } });
     const drivers = (
       await Promise.all(
         companies.map((c) =>

@@ -11,6 +11,7 @@ import { fetchAllEmployees, fetchPaymentSources } from "@/lib/tiquetaque/client"
 import { parsePayrollWorkbook, type PayrollRow } from "@/lib/payrollImport";
 import { isValidCPF, normalizeCpf } from "@/lib/cpf";
 import { findSindicatoMatch, suggestSindicatoMatch, suggestShortName } from "@/lib/sindicatoMatch";
+import { exigirIntegracoesDaEmpresa } from "@/lib/integracoesEmpresa";
 
 const schema = z.object({
   name: z.string().min(2, "Informe o nome do motorista"),
@@ -281,6 +282,7 @@ export type TiqueTaqueDriverImportState = { error?: string; result?: TiqueTaqueD
 // corrigir (ver src/app/(app)/ponto/actions.ts).
 export async function importDriversFromTiqueTaque(): Promise<TiqueTaqueDriverImportState> {
   const session = await requireRole("ADMIN", "GESTOR");
+  await exigirIntegracoesDaEmpresa(session.companyId);
 
   let employees;
   let paymentSources;
@@ -705,6 +707,7 @@ export type TiqueTaqueSyncState = { error?: string; result?: TiqueTaqueSyncResul
 // manualmente, ou CPF desatualizado) ficam intocados e contam em `notFound`.
 export async function syncDriversFromTiqueTaque(): Promise<TiqueTaqueSyncState> {
   const session = await requireRole("ADMIN", "GESTOR");
+  await exigirIntegracoesDaEmpresa(session.companyId);
 
   let employees;
   let paymentSources;

@@ -3,12 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { syncFromSiatCore, type SiatSyncResult } from "@/lib/sync/siat";
+import { exigirIntegracoesDaEmpresa } from "@/lib/integracoesEmpresa";
 
 export type { SiatSyncResult, SiatSyncRowError } from "@/lib/sync/siat";
 
 // Wrapper com sessao — usado pelo botao "Sincronizar" em /escalas.
 export async function syncFromSiat(dateFrom: string, dateTo: string): Promise<SiatSyncResult> {
   const session = await requireRole("ADMIN", "GESTOR");
+  await exigirIntegracoesDaEmpresa(session.companyId);
   // O SIAT e consultado 1 vez por dia do intervalo (limite de 20 req/min):
   // sem teto, um intervalo de anos vira dezenas de milhares de chamadas.
   const DATA_RE = /^\d{4}-\d{2}-\d{2}$/;

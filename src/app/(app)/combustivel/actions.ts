@@ -121,18 +121,47 @@ export async function importFuelTransactions(
 
   const isRfcv = Object.prototype.hasOwnProperty.call(rows[0], "CODIGO TRANSACAO");
 
-  const [vehicles, drivers, existingTxs, existingCodigos] = await Promise.all([
+  // Pre-leitura do arquivo: periodo e codigos de transacao. A checagem de
+  // duplicata consulta so abastecimentos desse periodo (com folga de 2 min) e
+  // so os codigos presentes no arquivo — antes carregava todo o historico da
+  // empresa e comparava linha a linha, o que ficava mais lento a cada mes.
+  let menorData = Infinity;
+  let maiorData = -Infinity;
+  const codigosDoArquivo = new Set<string>();
+  for (const row of rows) {
+    const dh = isRfcv ? parseDataHoraReal(row["DATA TRANSACAO"]) : parseDataHora(row["Data/Hora (AAAA-MM-DD HH:mm)"]);
+    if (dh) {
+      menorData = Math.min(menorData, dh.getTime());
+      maiorData = Math.max(maiorData, dh.getTime());
+    }
+    if (isRfcv) {
+      const codigo = normalizeText(row["CODIGO TRANSACAO"]);
+      if (codigo) codigosDoArquivo.add(codigo);
+    }
+  }
+  const FOLGA_MS = 2 * 60_000;
+  type TxExistente = { vehicleId: string | null; dataHora: Date; valorCents: number };
+
+  const [vehicles, drivers, existingTxs] = await Promise.all([
     prisma.vehicle.findMany({ where: { companyId: session.companyId }, select: { id: true, plate: true } }),
     prisma.driver.findMany({ where: { companyId: session.companyId }, select: { id: true, cpf: true, name: true } }),
-    prisma.fuelTransaction.findMany({
-      where: { companyId: session.companyId },
-      select: { vehicleId: true, dataHora: true, valorCents: true },
-    }),
-    prisma.fuelTransaction.findMany({
-      where: { companyId: session.companyId, codigoTransacao: { not: null } },
-      select: { codigoTransacao: true },
-    }),
+    Number.isFinite(menorData)
+      ? prisma.fuelTransaction.findMany({
+          where: { companyId: session.companyId, dataHora: { gte: new Date(menorData - FOLGA_MS), lte: new Date(maiorData + FOLGA_MS) } },
+          select: { vehicleId: true, dataHora: true, valorCents: true },
+        })
+      : Promise.resolve([] as TxExistente[]),
   ]);
+  const existingCodigos: { codigoTransacao: string | null }[] = [];
+  const listaCodigos = [...codigosDoArquivo];
+  for (let i = 0; i < listaCodigos.length; i += 1000) {
+    existingCodigos.push(
+      ...(await prisma.fuelTransaction.findMany({
+        where: { companyId: session.companyId, codigoTransacao: { in: listaCodigos.slice(i, i + 1000) } },
+        select: { codigoTransacao: true },
+      }))
+    );
+  }
   const vehicleByPlate = new Map(vehicles.map((v) => [v.plate, v.id]));
   // Driver.cpf nem sempre tem so digitos — cadastro manual (DriverForm) grava
   // exatamente o que foi digitado (com pontuacao), so a importacao de planilha
@@ -146,14 +175,29 @@ export async function importFuelTransactions(
   const driverByName = new Map(drivers.map((d) => [d.name.trim().toLowerCase(), d.id]));
   const codigosVistos = new Set(existingCodigos.map((t) => t.codigoTransacao as string));
 
+  // Duplicata = mesmo veiculo, menos de 1 min de diferenca e valor igual (com
+  // 2 centavos de tolerancia). Indice por veiculo + minuto: cada linha olha so
+  // o proprio minuto e os vizinhos, em vez de percorrer a lista inteira.
   const DUPLICATE_TOLERANCE_CENTS = 2;
-  const isDuplicate = (vehicleId: string | undefined, dataHora: Date, valorCents: number) =>
-    existingTxs.some(
-      (t) =>
-        t.vehicleId === (vehicleId ?? null) &&
-        Math.abs(t.dataHora.getTime() - dataHora.getTime()) < 60_000 &&
-        Math.abs(t.valorCents - valorCents) <= DUPLICATE_TOLERANCE_CENTS
-    );
+  const chaveMinuto = (vehicleId: string | null, t: number) => `${vehicleId ?? "-"}|${Math.floor(t / 60_000)}`;
+  const indiceTx = new Map<string, TxExistente[]>();
+  const indexar = (tx: TxExistente) => {
+    const k = chaveMinuto(tx.vehicleId, tx.dataHora.getTime());
+    const lista = indiceTx.get(k);
+    if (lista) lista.push(tx);
+    else indiceTx.set(k, [tx]);
+  };
+  existingTxs.forEach(indexar);
+  const isDuplicate = (vehicleId: string | undefined, dataHora: Date, valorCents: number) => {
+    const t = dataHora.getTime();
+    const v = vehicleId ?? null;
+    for (const passo of [-1, 0, 1]) {
+      for (const tx of indiceTx.get(chaveMinuto(v, t + passo * 60_000)) ?? []) {
+        if (Math.abs(tx.dataHora.getTime() - t) < 60_000 && Math.abs(tx.valorCents - valorCents) <= DUPLICATE_TOLERANCE_CENTS) return true;
+      }
+    }
+    return false;
+  };
 
   const errors: ImportRowError[] = [];
   const toCreate: FuelTxDraft[] = [];
@@ -286,7 +330,7 @@ export async function importFuelTransactions(
       modeloOriginal: null,
     });
     // Evita duplicar dentro do mesmo arquivo se a mesma linha aparecer 2x.
-    existingTxs.push({ vehicleId: vehicleId ?? null, dataHora, valorCents });
+    indexar({ vehicleId: vehicleId ?? null, dataHora, valorCents });
   }
 
   // createMany unico (nao um loop de create()) — mesmo cuidado ja aplicado

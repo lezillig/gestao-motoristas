@@ -6,6 +6,7 @@ import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { isSiatAvailable } from "@/lib/siat/client";
 import SiatSyncForm from "../SiatSyncForm";
+import { brazilDayLabel } from "@/lib/date";
 
 export default async function ImportarSiatPage() {
   const session = await requireRole("ADMIN", "GESTOR");
@@ -18,7 +19,7 @@ export default async function ImportarSiatPage() {
     orderBy: { date: "desc" },
     select: { date: true },
   });
-  const today = new Date();
+  const today = brazilDayLabel(0);
   // Nunca deixa a data inicial depois da final (ex.: ultima sincronizacao
   // ja cobriu ate hoje) — trava em hoje nesse caso.
   const defaultDateFrom = format(lastSynced ? minDate([addDays(lastSynced.date, 1), today]) : today, "yyyy-MM-dd");

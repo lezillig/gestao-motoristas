@@ -35,6 +35,7 @@ import GapStatusPanel from "./GapStatusPanel";
 import CronExecucoesPanel from "./CronExecucoesPanel";
 import { ultimasExecucoesCron } from "@/lib/cronRun";
 import { checkAllGaps, RECURRING_GAP_WINDOW_DAYS } from "@/lib/integrationGaps";
+import { brazilDayLabel } from "@/lib/date";
 
 function GoTo({ href, label }: { href: string; label: string }) {
   return (
@@ -94,8 +95,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 // existiam em cada tela.
 export default async function IntegracoesPage() {
   const session = await requireRole("ADMIN", "GESTOR");
-  const mesAtual = format(new Date(), "yyyy-MM");
-  const today = new Date();
+  const today = brazilDayLabel(0);
+  const mesAtual = format(today, "yyyy-MM");
 
   // Mesmo calculo de "desde a ultima vez" ja usado em /ponto/importar-
   // tiquetaque e /escalas/importar-siat — reaproveitado aqui pra alimentar

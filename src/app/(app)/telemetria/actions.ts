@@ -5,6 +5,7 @@ import { requireRole } from "@/lib/auth";
 import { fetchTrips } from "@/lib/ituran/client";
 import { syncVehicleTripsForCompany } from "@/lib/ituran/tripSync";
 import { brazilDateStringToUtc, parseLocalDate } from "@/lib/date";
+import { exigirIntegracoesDaEmpresa } from "@/lib/integracoesEmpresa";
 
 export type IturanBackfillState = { error?: string; result?: { upserted: number; semEscala: number } };
 
@@ -15,6 +16,7 @@ export type IturanBackfillState = { error?: string; result?: { upserted: number;
 // formato yyyy-MM-dd.
 export async function backfillIturanTrips(dateFrom: string, dateTo: string): Promise<IturanBackfillState> {
   const session = await requireRole("ADMIN", "GESTOR");
+  await exigirIntegracoesDaEmpresa(session.companyId);
   try {
     // `dateFrom`/`dateTo` vem do painel de lacunas, ja rotulados por dia-
     // calendario de Brasilia (ver lib/integrationGaps.ts) — a janela pra

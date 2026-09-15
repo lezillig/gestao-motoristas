@@ -184,8 +184,27 @@ export async function syncFromSiatCore(companyId: string, dateFrom: string, date
   const driverByCpf = new Map<string, Driver>(existingDrivers.map((d) => [d.cpf.replace(/\D/g, ""), d]));
   const driverBySiatId = new Map<string, Driver>(existingDrivers.filter((d) => d.siatId).map((d) => [d.siatId as string, d]));
 
+  // Motorista local -> id do SIAT com que ja casou nesta rodada. O SIAT tem
+  // pessoas cadastradas duas vezes (visto real: um cadastro com CPF e outro
+  // sem); sem esta trava, cada cadastro regravava o siatId do mesmo motorista
+  // e ele era atualizado a toda sincronizacao. O segundo id passa a apontar
+  // pro mesmo motorista (as reservas dele continuam casando) e vira aviso.
+  const casadoNestaRodada = new Map<string, string>();
   for (const sd of siatDrivers) {
     const existing = driverBySiatId.get(sd.id) ?? (sd.cpf ? driverByCpf.get(sd.cpf) : undefined) ?? driverByName.get(normName(sd.name));
+    if (existing) {
+      const jaCasado = casadoNestaRodada.get(existing.id);
+      if (jaCasado && jaCasado !== sd.id) {
+        driverBySiatId.set(sd.id, existing);
+        result.drivers.unchanged++;
+        result.errors.push({
+          context: `motorista ${existing.name}`,
+          message: `Cadastrado duas vezes no SIAT (ids ${jaCasado} e ${sd.id}) — unificar o cadastro no SIAT.`,
+        });
+        continue;
+      }
+      casadoNestaRodada.set(existing.id, sd.id);
+    }
     const enrichment: Record<string, unknown> = { siatId: sd.id, tipoContratacaoSiat: sd.type };
     if (existing) {
       if (!existing.cnh && sd.cnhNumber) enrichment.cnh = sd.cnhNumber;
@@ -213,6 +232,7 @@ export async function syncFromSiatCore(companyId: string, dateFrom: string, date
       });
       result.drivers.created++;
       driverBySiatId.set(sd.id, created);
+      casadoNestaRodada.set(created.id, sd.id);
       driverByCpf.set(sd.cpf, created);
       driverByName.set(normName(created.name), created);
     } else {

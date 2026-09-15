@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { atualizarUltimaManutencao, syncOrdensServicoSofit, syncVeiculosSofit, ultimoCursorOs } from "@/lib/sofit/manutencaoSync";
 import { auditarSofit, registrarSnapshotAuditoria } from "@/lib/sofit/auditoria";
 import { executarCron } from "@/lib/cronRun";
+import { filtroEmpresaDasIntegracoes } from "@/lib/integracoesEmpresa";
 
 // Diario (ver vercel.json): veiculos (status, hodometro, plano, vencimentos)
 // e ordens de servico da Sofit. OS e incremental por updated_at; quando nao
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest) {
     if (sinceDate && Number.isNaN(sinceDate.getTime())) {
       return { status: "erro", erros: ["since inválido (use ISO 8601)."], httpStatus: 400 };
     }
-    const companies = await prisma.company.findMany({ select: { id: true }, orderBy: { id: "asc" } });
+    const companies = await prisma.company.findMany({ where: await filtroEmpresaDasIntegracoes(), select: { id: true }, orderBy: { id: "asc" } });
     const out: Record<string, unknown>[] = [];
     const errors: string[] = [];
     let processados = 0;

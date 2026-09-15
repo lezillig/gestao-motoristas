@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { isTiqueTaqueAvailable } from "@/lib/tiquetaque/client";
 import TiqueTaqueImportForm from "../TiqueTaqueImportForm";
 import TiqueTaqueCsvImportForm from "../TiqueTaqueCsvImportForm";
+import { brazilDayLabel } from "@/lib/date";
 
 export default async function ImportarTiqueTaquePage() {
   const session = await requireRole("ADMIN", "GESTOR");
@@ -20,7 +21,7 @@ export default async function ImportarTiqueTaquePage() {
     orderBy: { date: "desc" },
     select: { date: true },
   });
-  const today = new Date();
+  const today = brazilDayLabel(0);
   // Nunca deixa a data inicial depois da final (ex.: ultima importacao ja
   // cobriu ate hoje) — trava em hoje nesse caso.
   const defaultStartDate = format(lastImported ? minDate([addDays(lastImported.date, 1), today]) : today, "yyyy-MM-dd");

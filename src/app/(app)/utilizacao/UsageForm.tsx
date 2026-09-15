@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 import { inputClass, labelClass, primaryButtonClass, secondaryButtonClass } from "@/lib/ui";
 import type { UsageFormState } from "./actions";
+import { format } from "date-fns";
 
 export default function UsageForm({
   action,
@@ -16,7 +17,9 @@ export default function UsageForm({
   vehicles: { id: string; plate: string; currentMileage: number }[];
 }) {
   const [state, formAction, pending] = useActionState<UsageFormState, FormData>(action, {});
-  const today = new Date().toISOString().slice(0, 10);
+  // Data local do navegador: toISOString() e UTC e sugeria o dia seguinte
+  // depois das 21h.
+  const today = format(new Date(), "yyyy-MM-dd");
 
   return (
     <form action={formAction} className="flex flex-col gap-4">

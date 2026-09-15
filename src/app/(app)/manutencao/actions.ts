@@ -5,6 +5,7 @@ import { requireRole } from "@/lib/auth";
 import { isSofitAvailable } from "@/lib/sofit/client";
 import { atualizarUltimaManutencao, syncOrdensServicoSofit, syncVeiculosSofit, ultimoCursorOs } from "@/lib/sofit/manutencaoSync";
 import { auditarSofit, registrarSnapshotAuditoria } from "@/lib/sofit/auditoria";
+import { exigirIntegracoesDaEmpresa } from "@/lib/integracoesEmpresa";
 
 export type SyncManutencaoResult = {
   error?: string;
@@ -27,6 +28,7 @@ const BUDGET_MS = 40_000;
 // recalcula a ultima manutencao por veiculo.
 export async function syncManutencaoSofit(sinceISO: string | null): Promise<SyncManutencaoResult> {
   const session = await requireRole("ADMIN", "GESTOR");
+  await exigirIntegracoesDaEmpresa(session.companyId);
   if (!isSofitAvailable()) return { error: "Sofit não configurada (SOFIT_API_URL/SOFIT_TOKEN)." };
   const deadline = Date.now() + BUDGET_MS;
   try {

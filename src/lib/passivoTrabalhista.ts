@@ -91,8 +91,10 @@ export async function buildPassivoReport(
       orderBy: { name: "asc" },
       include: { sindicato: { include: { convencoes: { include: { regras: true } } } } },
     }),
+    // So os horarios (a janela e de varios meses da empresa inteira).
     prisma.timeClockEntry.findMany({
       where: { companyId, date: { gte: fetchStart, lt: windowEndExclusive } },
+      select: { id: true, driverId: true, date: true, clockIn: true, clockOut: true, intervaloInicio: true, intervaloFim: true, esperaInicio: true, esperaFim: true, punches: true },
     }),
   ]);
 

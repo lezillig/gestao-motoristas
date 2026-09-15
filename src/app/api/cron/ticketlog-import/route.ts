@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { isTicketLogAvailable, fetchFuelCardStatuses } from "@/lib/ticketlog/client";
 import { syncTicketLogCardStatusesCore } from "@/lib/sync/ticketlogCards";
 import { executarCron } from "@/lib/cronRun";
+import { filtroEmpresaDasIntegracoes } from "@/lib/integracoesEmpresa";
 
 // Diario (ver vercel.json): snapshot do status dos cartoes de combustivel
 // Ticket Log, uma chamada na API e upsert por empresa.
@@ -12,7 +13,7 @@ export async function GET(req: NextRequest) {
   return executarCron("ticketlog-import", req, async () => {
     if (!isTicketLogAvailable()) return { status: "pulado", detalhe: { skipped: "Ticket Log não configurado" } };
 
-    const companies = await prisma.company.findMany({ select: { id: true } });
+    const companies = await prisma.company.findMany({ where: await filtroEmpresaDasIntegracoes(), select: { id: true } });
     const statuses = await fetchFuelCardStatuses();
 
     const results = [];

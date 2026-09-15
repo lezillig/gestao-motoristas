@@ -1,6 +1,7 @@
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getLwToken, buscarPrimeiraImagemMulta } from "@/lib/lw/client";
+import { integracoesPermitidas, MENSAGEM_INTEGRACOES_BLOQUEADAS } from "@/lib/integracoesEmpresa";
 
 // Serve a imagem de notificacao da multa direto da LW (proxy — a LW exige
 // Bearer token, entao nao da pra apontar o <img> direto pra la do
@@ -11,6 +12,7 @@ const TIPOS_PERMITIDOS = new Set(["image/jpeg", "image/jpg", "image/png", "image
 
 export async function GET(_req: Request, { params }: { params: Promise<{ multaId: string }> }) {
   const session = await requireRole("ADMIN", "GESTOR");
+  if (!(await integracoesPermitidas(session.companyId))) return new Response(MENSAGEM_INTEGRACOES_BLOQUEADAS, { status: 403 });
   const { multaId } = await params;
 
   const multa = await prisma.multa.findUnique({ where: { id: multaId, companyId: session.companyId } });

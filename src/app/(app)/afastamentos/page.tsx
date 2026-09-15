@@ -11,6 +11,7 @@ import KpiCard, { type KpiDetailRow } from "@/components/ui/KpiCard";
 import { checkFolgaCompensada, findFeriasVencidas, folgaIssueLabel, parseDataReferencia } from "@/lib/afastamentoCompliance";
 import type { Prisma } from "@prisma/client";
 import { mesParam } from "@/lib/params";
+import { brazilDayLabel } from "@/lib/date";
 
 const DRIVER_CCT_INCLUDE = {
   sindicato: { include: { convencoes: { include: { regras: true } } } },
@@ -42,7 +43,7 @@ export default async function AfastamentosPage({
   const session = await requireRole("ADMIN", "GESTOR", "FOLHA");
   const { mes, tipo, driverId, sort, dir } = await searchParams;
 
-  const today = startOfDay(new Date());
+  const today = brazilDayLabel(0);
   const in7Days = addDays(today, 7);
 
   const anchor = mesParam(mes);

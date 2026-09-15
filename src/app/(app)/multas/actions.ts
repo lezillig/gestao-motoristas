@@ -5,11 +5,13 @@ import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { isLwAvailable, getLwToken, buscarCondutorPorCpfEMulta, indicarCondutorLw, statusIndicacao } from "@/lib/lw/client";
 import { prepareMultasSyncPlan, syncMultasForVehicle, resolveCondutoresPendentes, type MultasSyncPlan } from "@/lib/lw/sync";
+import { exigirIntegracoesDaEmpresa } from "@/lib/integracoesEmpresa";
 
 export { isLwAvailable };
 
 export async function prepareMultasSync(): Promise<MultasSyncPlan> {
   const session = await requireRole("ADMIN", "GESTOR");
+  await exigirIntegracoesDaEmpresa(session.companyId);
   return prepareMultasSyncPlan(session.companyId);
 }
 
@@ -24,6 +26,7 @@ export type SyncMultasVehicleState =
 // pendente — nunca envia nada pra LW sozinho, so sugere.
 export async function syncMultasVehicle(vehicleId: string, placaParaConsulta: string): Promise<SyncMultasVehicleState> {
   const session = await requireRole("ADMIN", "GESTOR");
+  await exigirIntegracoesDaEmpresa(session.companyId);
   try {
     const vehicle = await prisma.vehicle.findUnique({ where: { id: vehicleId, companyId: session.companyId } });
     if (!vehicle) return { error: "Veículo não encontrado." };
@@ -67,6 +70,7 @@ export type EnviarIndicacaoState = { error?: string; ok?: boolean };
 // este sistema nao coleta hoje (endereco, data de nascimento).
 export async function enviarIndicacaoCondutor(multaId: string): Promise<EnviarIndicacaoState> {
   const session = await requireRole("ADMIN", "GESTOR");
+  await exigirIntegracoesDaEmpresa(session.companyId);
   const multa = await prisma.multa.findUnique({
     where: { id: multaId, companyId: session.companyId },
     include: { indicacao: { include: { driver: true } } },
@@ -113,6 +117,7 @@ export type VerificarStatusState = { error?: string; descricao?: string };
 // adivinhar o mapeamento e classificar errado sozinho.
 export async function verificarStatusIndicacao(multaId: string): Promise<VerificarStatusState> {
   const session = await requireRole("ADMIN", "GESTOR");
+  await exigirIntegracoesDaEmpresa(session.companyId);
   const multa = await prisma.multa.findUnique({ where: { id: multaId, companyId: session.companyId } });
   if (!multa) return { error: "Multa não encontrada." };
 

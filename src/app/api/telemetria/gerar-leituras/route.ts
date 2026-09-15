@@ -2,6 +2,7 @@ import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getActiveTelemetryProvider } from "@/lib/telemetry";
 import { updateVehicleMileageFromReadings } from "@/lib/maintenance";
+import { integracoesPermitidas, MENSAGEM_INTEGRACOES_BLOQUEADAS } from "@/lib/integracoesEmpresa";
 
 // Stream de progresso (SSE) do botao "Gerar leituras" — a busca na Ituran e
 // paginada (ver fetchVehiclesRealtime) e antes rodava sem nenhum feedback
@@ -9,6 +10,7 @@ import { updateVehicleMileageFromReadings } from "@/lib/maintenance";
 // "data: ...\n\n"; o cliente (GerarLeiturasButton) le e mostra o progresso.
 export async function POST() {
   const session = await requireRole("ADMIN", "GESTOR");
+  if (!(await integracoesPermitidas(session.companyId))) return Response.json({ error: MENSAGEM_INTEGRACOES_BLOQUEADAS }, { status: 403 });
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({

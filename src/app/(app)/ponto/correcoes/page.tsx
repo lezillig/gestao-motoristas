@@ -11,7 +11,7 @@ import { workedMinutes, overtimeMinutes } from "@/lib/pontoCompliance";
 import { driverDailyLimitMinutes, overtimeCostCents } from "@/lib/convencao";
 import type { Prisma } from "@prisma/client";
 import { dataParam } from "@/lib/params";
-import { parseLocalDate } from "@/lib/date";
+import { parseLocalDate, brazilDayLabel } from "@/lib/date";
 
 type DriverWithConvencoes = Prisma.DriverGetPayload<{
   include: { sindicato: { include: { convencoes: { include: { regras: true } } } } };
@@ -69,14 +69,31 @@ export default async function PontoCorrecoesPage({
     if (deD) where.date.gte = deD;
     if (ateD) where.date.lte = ateD;
   } else if (!semLimite) {
-    where.date = { gte: subMonths(new Date(), DEFAULT_LOOKBACK_MONTHS) };
+    where.date = { gte: subMonths(brazilDayLabel(0), DEFAULT_LOOKBACK_MONTHS) };
   }
 
   const [corrections, drivers, users] = await Promise.all([
     prisma.timeClockCorrection.findMany({
       where,
       include: {
-        driver: { include: { sindicato: { include: { convencoes: { include: { regras: true } } } } } },
+        // So o que o calculo de impacto usa, em vez do cadastro completo do
+        // motorista com toda a arvore de convencoes em cada correcao.
+        driver: {
+          select: {
+        id: true,
+        name: true,
+        regimeHoras: true,
+        valorHoraCents: true,
+        sindicato: {
+          select: {
+            nome: true,
+            convencoes: {
+              select: { tipo: true, vigenciaInicio: true, vigenciaFim: true, regras: { select: { tipo: true, valorNumerico: true, descricao: true } } },
+            },
+          },
+        },
+      },
+        },
       },
       orderBy: { date: "desc" },
     }),

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { isSofitAvailable } from "@/lib/sofit/client";
 import { syncSofitFuelCore } from "@/lib/sync/sofitFuel";
 import { executarCron } from "@/lib/cronRun";
+import { filtroEmpresaDasIntegracoes } from "@/lib/integracoesEmpresa";
 
 // Diario (ver vercel.json): abastecimentos da Sofit desde a ultima
 // sincronizacao (cursor = maior dataHora ja importada, ver syncSofitFuelCore).
@@ -30,7 +31,7 @@ export async function GET(req: NextRequest) {
     const pageRaw = pageParam ? parseInt(pageParam, 10) : 1;
     const startPage = Number.isFinite(pageRaw) && pageRaw >= 1 ? pageRaw : 1;
 
-    const companies = await prisma.company.findMany({ select: { id: true }, orderBy: { id: "asc" } });
+    const companies = await prisma.company.findMany({ where: await filtroEmpresaDasIntegracoes(), select: { id: true }, orderBy: { id: "asc" } });
 
     const results = [];
     const errors: string[] = [];
