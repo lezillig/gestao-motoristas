@@ -11,6 +11,12 @@ export const LEAVE_LABELS: Record<string, string> = {
 export type ExcecaoDia = {
   driverId: string;
   driverName: string;
+  // Campos de cadastro que a tela de Exceções usa nos filtros (empregador,
+  // unidade de alocação e cargo vêm do TiqueTaque).
+  cpf: string;
+  empregador: string | null;
+  departamento: string | null;
+  funcao: string | null;
   tipo: "escala_sem_ponto" | "ponto_sem_escala";
   afastamento: string | null;
 };
@@ -28,7 +34,7 @@ export async function fetchExcecoesDoDia(companyId: string, dayStart: Date): Pro
   const [drivers, escalas, entries, leaves] = await Promise.all([
     prisma.driver.findMany({
       where: { companyId, active: true },
-      select: { id: true, name: true },
+      select: { id: true, name: true, cpf: true, empregador: true, departamento: true, funcao: true },
     }),
     prisma.escala.findMany({
       where: { companyId, date: { gte: dayStart, lt: dayEnd } },
@@ -57,6 +63,10 @@ export async function fetchExcecoesDoDia(companyId: string, dayStart: Date): Pro
     excecoes.push({
       driverId: d.id,
       driverName: d.name,
+      cpf: d.cpf,
+      empregador: d.empregador,
+      departamento: d.departamento,
+      funcao: d.funcao,
       tipo: temEscala ? "escala_sem_ponto" : "ponto_sem_escala",
       afastamento: afastamento ? (LEAVE_LABELS[afastamento] ?? afastamento) : null,
     });
