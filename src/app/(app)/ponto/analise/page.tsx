@@ -7,6 +7,7 @@ import {
   startOfMonth,
   subMonths,
 } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import {
   AlarmClockOff,
   Banknote,
@@ -29,6 +30,9 @@ import { cardClass, badgeClass, inputClass } from "@/lib/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import SortableTh from "@/components/ui/SortableTh";
 import {
+  CLIENT_LOCATION_DIVERGENCE_METERS,
+  DRIVER_LOCATION_OUTLIER_METERS,
+  ENTRADA_SAIDA_DIVERGENCE_METERS,
   EXCESSIVE_OVERTIME_MINUTES,
   MIN_INTERJORNADA_MINUTES,
   REGIME_12X36_REST_MINUTES,
@@ -112,10 +116,10 @@ type AnaliseSortField = (typeof ANALISE_SORT_FIELDS)[number];
 export default async function AnaliseDeRiscosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string; driverId?: string; sort?: string; dir?: string; tipo?: string; categoria?: string }>;
+  searchParams: Promise<{ mes?: string; driverId?: string; sort?: string; dir?: string; tipo?: string; categoria?: string; geoDriver?: string }>;
 }) {
   const session = await requireRole("ADMIN", "GESTOR");
-  const { mes, driverId, sort, dir, tipo, categoria: categoriaFiltro } = await searchParams;
+  const { mes, driverId, sort, dir, tipo, categoria: categoriaFiltro, geoDriver } = await searchParams;
 
   const anchor = mesParam(mes);
   const monthStart = startOfMonth(anchor);
@@ -623,6 +627,79 @@ export default async function AnaliseDeRiscosPage({
     .map(([id, v]) => ({ id, name: driverName(id), ...v }))
     .sort((a, b) => b.clientCount + b.entradaSaidaCount + b.outlierCount - (a.clientCount + a.entradaSaidaCount + a.outlierCount));
 
+  // Detalhe de um motorista: cada apontamento com dia, horario, distancia e
+  // os dois pontos comparados (a batida e a referencia), pra conferir no
+  // mapa e abrir o registro de ponto do dia.
+  const geoDriverSelecionado = geoDriver && geoByDriver.has(geoDriver) ? geoDriver : null;
+  type GeoDetalhe = {
+    entryId: string;
+    date: Date;
+    apontamento: string;
+    tom: string;
+    hora: string | null;
+    distanceMeters: number;
+    local: [number, number];
+    referencia: [number, number];
+    referenciaLabel: string;
+    limite: number;
+  };
+  const geoDetalhes: GeoDetalhe[] = geoDriverSelecionado
+    ? [
+        ...clientLocationDivergences
+          .filter((d) => d.driverId === geoDriverSelecionado)
+          .map((d) => ({
+            entryId: d.entryId,
+            date: d.date,
+            apontamento: d.marco === "entrada" ? "Entrada longe do cliente" : "Saída longe do cliente",
+            tom: "bg-cyan-100 text-cyan-700",
+            hora: d.hora,
+            distanceMeters: d.distanceMeters,
+            local: d.local,
+            referencia: d.esperado,
+            referenciaLabel: "Endereço do cliente",
+            limite: CLIENT_LOCATION_DIVERGENCE_METERS,
+          })),
+        ...entradaSaidaLocationDivergences
+          .filter((d) => d.driverId === geoDriverSelecionado)
+          .map((d) => ({
+            entryId: d.entryId,
+            date: d.date,
+            apontamento: "Entrada × saída distante",
+            tom: "bg-slate-100 text-slate-700",
+            hora: d.horaSaida ? `${d.horaEntrada} → ${d.horaSaida}` : d.horaEntrada,
+            distanceMeters: d.distanceMeters,
+            local: d.entrada,
+            referencia: d.saida,
+            referenciaLabel: "Onde bateu a saída",
+            limite: ENTRADA_SAIDA_DIVERGENCE_METERS,
+          })),
+        ...driverLocationOutliers
+          .filter((d) => d.driverId === geoDriverSelecionado)
+          .map((d) => ({
+            entryId: d.entryId,
+            date: d.date,
+            apontamento: "Fora do padrão do motorista",
+            tom: "bg-amber-100 text-amber-700",
+            hora: d.hora,
+            distanceMeters: d.distanceMeters,
+            local: d.local,
+            referencia: d.habitual,
+            referenciaLabel: "Local habitual dele",
+            limite: DRIVER_LOCATION_OUTLIER_METERS,
+          })),
+      ].sort((a, b) => a.date.getTime() - b.date.getTime() || a.apontamento.localeCompare(b.apontamento))
+    : [];
+  const distanciaLegivel = (metros: number) =>
+    metros < 1000 ? `${Math.round(metros)} m` : `${(metros / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} km`;
+  const coordenada = ([lat, lon]: [number, number]) => `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+  const mapaHref = ([lat, lon]: [number, number]) => `https://www.google.com/maps?q=${lat},${lon}`;
+  const geoDriverHref = (id: string) => {
+    const p = baseFilterParams();
+    p.set("tipo", "geolocalizacao");
+    if (geoDriverSelecionado !== id) p.set("geoDriver", id);
+    return `/ponto/analise?${p.toString()}`;
+  };
+
   return (
     <div>
       <PageHeader
@@ -637,7 +714,7 @@ export default async function AnaliseDeRiscosPage({
         >
           <ChevronLeft className="h-4 w-4" /> Mês anterior
         </Link>
-        <p className="text-sm font-medium text-slate-700">{format(monthStart, "MMMM/yyyy")}</p>
+        <p className="text-sm font-medium text-slate-700">{format(monthStart, "MMMM/yyyy", { locale: ptBR })}</p>
         <Link
           href={`/ponto/analise?mes=${nextMonth}${driverId ? `&driverId=${driverId}` : ""}`}
           className="flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
@@ -937,31 +1014,93 @@ export default async function AnaliseDeRiscosPage({
             </ul>
           )}
           {drillAtivo === "geolocalizacao" && (
-            <ul className="flex flex-col gap-1">
-              {geoRanking.length === 0 && <li className="px-2 py-6 text-center text-sm text-slate-500">Sem divergência de geolocalização neste período.</li>}
-              {geoRanking.map((d) => (
-                <li key={d.id} className="flex items-center justify-between rounded-lg px-2 py-1.5 text-sm">
-                  <span className="text-slate-700">{d.name}</span>
-                  <span className="flex items-center gap-2 text-xs">
-                    {d.clientCount > 0 && (
-                      <span className={`${badgeClass} bg-cyan-100 text-cyan-700`}>
-                        {d.clientCount} longe do cliente
+            <>
+              <ul className="flex flex-col gap-1">
+                {geoRanking.length === 0 && <li className="px-2 py-6 text-center text-sm text-slate-500">Sem divergência de geolocalização neste período.</li>}
+                {geoRanking.map((d) => (
+                  <li key={d.id}>
+                    <Link
+                      href={geoDriverHref(d.id)}
+                      className={`flex items-center justify-between rounded-lg px-2 py-1.5 text-sm hover:bg-slate-50 ${geoDriverSelecionado === d.id ? "bg-slate-50 ring-1 ring-blue-200" : ""}`}
+                    >
+                      <span className="text-slate-700">{d.name}</span>
+                      <span className="flex items-center gap-2 text-xs">
+                        {d.clientCount > 0 && <span className={`${badgeClass} bg-cyan-100 text-cyan-700`}>{d.clientCount} longe do cliente</span>}
+                        {d.entradaSaidaCount > 0 && <span className={`${badgeClass} bg-slate-100 text-slate-700`}>{d.entradaSaidaCount} entrada×saída distante</span>}
+                        {d.outlierCount > 0 && <span className={`${badgeClass} bg-amber-100 text-amber-700`}>{d.outlierCount} fora do padrão</span>}
+                        <span className="text-slate-400">{geoDriverSelecionado === d.id ? "ocultar" : "ver detalhe"}</span>
                       </span>
-                    )}
-                    {d.entradaSaidaCount > 0 && (
-                      <span className={`${badgeClass} bg-slate-100 text-slate-700`}>
-                        {d.entradaSaidaCount} entrada×saída distante
-                      </span>
-                    )}
-                    {d.outlierCount > 0 && (
-                      <span className={`${badgeClass} bg-amber-100 text-amber-700`}>
-                        {d.outlierCount} fora do padrão
-                      </span>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ul>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+
+              {geoDriverSelecionado && (
+                <div className="mt-4 border-t border-slate-200 pt-4">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-sm font-semibold text-slate-900">
+                      {driverName(geoDriverSelecionado)} — {geoDetalhes.length} apontamento{geoDetalhes.length === 1 ? "" : "s"} em {format(monthStart, "MMMM/yyyy", { locale: ptBR })}
+                    </h3>
+                    <Link href={geoDriverHref(geoDriverSelecionado)} className="text-xs font-medium text-blue-700 hover:underline">
+                      Fechar detalhe
+                    </Link>
+                  </div>
+                  {geoDetalhes.length === 0 ? (
+                    <p className="py-4 text-center text-sm text-slate-500">Sem apontamento de geolocalização para este motorista no período.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                            <th className="py-2 pr-3 font-medium">Dia</th>
+                            <th className="py-2 pr-3 font-medium">Apontamento</th>
+                            <th className="py-2 pr-3 font-medium">Horário</th>
+                            <th className="py-2 pr-3 text-right font-medium">Distância</th>
+                            <th className="py-2 pr-3 font-medium">Onde bateu</th>
+                            <th className="py-2 pr-3 font-medium">Comparado com</th>
+                            <th className="py-2 font-medium">Registro</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {geoDetalhes.map((g, i) => (
+                            <tr key={`${g.entryId}-${g.apontamento}-${i}`} className="border-b border-slate-100 last:border-0">
+                              <td className="py-1.5 pr-3 tabular-nums text-slate-700">{format(g.date, "dd/MM")}</td>
+                              <td className="py-1.5 pr-3">
+                                <span className={`${badgeClass} ${g.tom}`}>{g.apontamento}</span>
+                              </td>
+                              <td className="py-1.5 pr-3 tabular-nums text-slate-600">{g.hora ?? "—"}</td>
+                              <td className="py-1.5 pr-3 text-right font-medium tabular-nums text-slate-900" title={`Limite de ${distanciaLegivel(g.limite)}`}>
+                                {distanciaLegivel(g.distanceMeters)}
+                              </td>
+                              <td className="py-1.5 pr-3">
+                                <a href={mapaHref(g.local)} target="_blank" rel="noopener noreferrer" className="font-mono text-xs text-blue-700 hover:underline">
+                                  {coordenada(g.local)}
+                                </a>
+                              </td>
+                              <td className="py-1.5 pr-3">
+                                <a href={mapaHref(g.referencia)} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-700 hover:underline" title={coordenada(g.referencia)}>
+                                  {g.referenciaLabel}
+                                </a>
+                              </td>
+                              <td className="py-1.5">
+                                <Link href={`/ponto/${g.entryId}`} className="text-xs font-medium text-blue-700 hover:underline">
+                                  Abrir ponto
+                                </Link>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  <p className="mt-3 text-xs text-slate-400">
+                    Limites: {distanciaLegivel(CLIENT_LOCATION_DIVERGENCE_METERS)} do endereço do cliente, {distanciaLegivel(ENTRADA_SAIDA_DIVERGENCE_METERS)} entre a entrada e a saída do mesmo par, e{" "}
+                    {distanciaLegivel(DRIVER_LOCATION_OUTLIER_METERS)} do local habitual (mediana das entradas do mês, calculada só com 5 dias ou mais com GPS). Só entram batidas feitas pelo aplicativo
+                    do TiqueTaque com localização; marcação manual ou por relógio fica de fora.
+                  </p>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}

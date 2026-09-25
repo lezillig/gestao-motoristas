@@ -494,6 +494,11 @@ export type ClientLocationDivergence = {
   date: Date;
   marco: "entrada" | "saida";
   distanceMeters: number;
+  // Horario e coordenadas da batida, mais o ponto com que foi comparada —
+  // o detalhe por ocorrencia em /ponto/analise mostra os tres.
+  hora: string | null;
+  local: LatLon;
+  esperado: LatLon;
 };
 
 // Compara cada batida (entrada e saida, separadamente) contra o local
@@ -512,13 +517,13 @@ export function findClientLocationDivergences(
       if (p.entradaLocation) {
         const d = distanceMeters(p.entradaLocation, clienteLoc);
         if (d > CLIENT_LOCATION_DIVERGENCE_METERS) {
-          results.push({ entryId: entry.id, driverId: entry.driverId, date: entry.date, marco: "entrada", distanceMeters: d });
+          results.push({ entryId: entry.id, driverId: entry.driverId, date: entry.date, marco: "entrada", distanceMeters: d, hora: p.entrada, local: p.entradaLocation, esperado: clienteLoc });
         }
       }
       if (p.saidaLocation) {
         const d = distanceMeters(p.saidaLocation, clienteLoc);
         if (d > CLIENT_LOCATION_DIVERGENCE_METERS) {
-          results.push({ entryId: entry.id, driverId: entry.driverId, date: entry.date, marco: "saida", distanceMeters: d });
+          results.push({ entryId: entry.id, driverId: entry.driverId, date: entry.date, marco: "saida", distanceMeters: d, hora: p.saida, local: p.saidaLocation, esperado: clienteLoc });
         }
       }
     }
@@ -531,6 +536,10 @@ export type EntradaSaidaLocationDivergence = {
   driverId: string;
   date: Date;
   distanceMeters: number;
+  horaEntrada: string;
+  horaSaida: string | null;
+  entrada: LatLon;
+  saida: LatLon;
 };
 
 // Compara a localizacao da entrada com a da saida do MESMO par — teto bem
@@ -546,7 +555,7 @@ export function findEntradaSaidaLocationDivergences(
       if (!p.entradaLocation || !p.saidaLocation) continue;
       const d = distanceMeters(p.entradaLocation, p.saidaLocation);
       if (d > ENTRADA_SAIDA_DIVERGENCE_METERS) {
-        results.push({ entryId: entry.id, driverId: entry.driverId, date: entry.date, distanceMeters: d });
+        results.push({ entryId: entry.id, driverId: entry.driverId, date: entry.date, distanceMeters: d, horaEntrada: p.entrada, horaSaida: p.saida, entrada: p.entradaLocation, saida: p.saidaLocation });
       }
     }
   }
@@ -558,6 +567,11 @@ export type DriverLocationOutlier = {
   driverId: string;
   date: Date;
   distanceMeters: number;
+  hora: string;
+  local: LatLon;
+  // Mediana das entradas do periodo — o "local habitual" com que a batida
+  // foi comparada.
+  habitual: LatLon;
 };
 
 // "Local habitual" do motorista = mediana de latitude e mediana de
@@ -570,12 +584,12 @@ export type DriverLocationOutlier = {
 export function findDriverLocationOutliers(
   entries: (PontoEntryLike & { id: string; driverId: string })[]
 ): DriverLocationOutlier[] {
-  const byDriver = new Map<string, { entryId: string; date: Date; loc: LatLon }[]>();
+  const byDriver = new Map<string, { entryId: string; date: Date; hora: string; loc: LatLon }[]>();
   for (const entry of entries) {
     const firstPair = parsePunches(entry.punches)[0];
     if (!firstPair?.entradaLocation) continue;
     const list = byDriver.get(entry.driverId) ?? [];
-    list.push({ entryId: entry.id, date: entry.date, loc: firstPair.entradaLocation });
+    list.push({ entryId: entry.id, date: entry.date, hora: firstPair.entrada, loc: firstPair.entradaLocation });
     byDriver.set(entry.driverId, list);
   }
 
@@ -586,7 +600,7 @@ export function findDriverLocationOutliers(
     for (const day of days) {
       const d = distanceMeters(day.loc, baseline);
       if (d > DRIVER_LOCATION_OUTLIER_METERS) {
-        results.push({ entryId: day.entryId, driverId, date: day.date, distanceMeters: d });
+        results.push({ entryId: day.entryId, driverId, date: day.date, distanceMeters: d, hora: day.hora, local: day.loc, habitual: baseline });
       }
     }
   }
