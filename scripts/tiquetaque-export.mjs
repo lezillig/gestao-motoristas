@@ -15,6 +15,10 @@
 //   --out             diretorio de saida (padrao ./export-tiquetaque)
 //   --only            times,leaves,timesheets (padrao: os tres)
 //   --empregador      trecho do nome do empregador, ex. "mcz" (padrao: todos)
+//   --corte DIA       dia de corte do periodo de apuracao. Com --corte 10, a
+//                     competencia AAAA-MM cobre de 10 do mes anterior a 09
+//                     deste. Sem a flag, usa o mes calendario — que quase
+//                     nunca e o periodo real (ver comentario em competencias).
 //   --resume          continua de onde parou usando o checkpoint do --out
 //
 // Gera CSV (';' + BOM, abre no Excel pt-BR sem passar pelo assistente de
@@ -68,6 +72,17 @@ const RESUME = Boolean(args.resume);
 // GET /payment-sources). A base do TiqueTaque tem as duas empresas do grupo
 // misturadas, entao sem isso a extracao puxa todo mundo.
 const EMPREGADOR = typeof args.empregador === "string" ? args.empregador.toLowerCase() : null;
+// O TiqueTaque nao fecha o ponto por mes calendario: o painel mostra series
+// como "10 a 09" e "16 a 15", e a API nao expoe qual vale para quem (nao ha
+// endpoint de work-schedules). Medido na MCZ contra a folha, o periodo e
+// "10 a 09 fechando no proprio mes" — usar mes calendario ali inflava a
+// divergencia em 44%. Descubra o corte antes de auditar: uma janela errada
+// desloca hora de um mes para o outro e inventa divergencia dos dois lados.
+const CORTE = args.corte ? Number(args.corte) : 0;
+if (CORTE && !(CORTE >= 1 && CORTE <= 28)) {
+  console.error("--corte deve ser um dia entre 1 e 28.");
+  process.exit(1);
+}
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 if (!DATE_RE.test(START || "") || !DATE_RE.test(END || "")) {
@@ -252,6 +267,16 @@ const ultimoDia = (comp) => {
   return `${comp}-${String(new Date(a, m, 0).getDate()).padStart(2, "0")}`;
 };
 
+// Intervalo de apuracao de uma competencia. Sem --corte, o mes calendario.
+// Com --corte D, de D do mes anterior a (D-1) desta competencia.
+function periodo(comp) {
+  if (!CORTE) return [`${comp}-01`, ultimoDia(comp)];
+  const [a, m] = comp.split("-").map(Number);
+  const ai = m === 1 ? a - 1 : a, mi = m === 1 ? 12 : m - 1;
+  const p2 = (n) => String(n).padStart(2, "0");
+  return [`${ai}-${p2(mi)}-${p2(CORTE)}`, `${comp}-${p2(CORTE - 1)}`];
+}
+
 const num = (v) => {
   const n = parseFloat(String(v ?? "0"));
   return Number.isNaN(n) ? 0 : n;
@@ -266,6 +291,7 @@ async function main() {
   const feitos = new Set(estado.feitos || []);
 
   console.log(`Periodo: ${START} a ${END}`);
+  console.log(`Apuracao do espelho: ${CORTE ? `corte dia ${CORTE} (de ${CORTE} do mes anterior a ${CORTE - 1} da competencia)` : "mes calendario"}`);
   console.log(`Relatorios: ${ONLY.join(", ")}`);
   console.log(`Saida: ${OUT}${RESUME ? "  (retomando)" : ""}\n`);
 
@@ -352,8 +378,10 @@ async function main() {
       if (espM) {
         let comHoras = 0;
         for (const comp of comps) {
-          const ini = comp + "-01" < START ? START : comp + "-01";
-          const fim = ultimoDia(comp) > END ? END : ultimoDia(comp);
+          let [ini, fim] = periodo(comp);
+          if (ini < START) ini = START;
+          if (fim > END) fim = END;
+          if (ini > fim) continue;
           const data = await api(`/timesheets?${new URLSearchParams({ employee_id: f.id, start_date: ini, end_date: fim })}`, 0, { totals: {}, days: {} });
           const t = data.totals ?? {};
           if (num(t.total) > 0) comHoras++;

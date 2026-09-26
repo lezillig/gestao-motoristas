@@ -21,10 +21,31 @@ resolve disputa entre duas versões de um arquivo de HE.
 - **Holerite**, via `scripts/auditoria-folha/extrato.py`. A *referência* de
   cada rubrica é a quantidade de horas; o *valor* é em reais.
 
+## O PERÍODO DE APURAÇÃO NÃO É O MÊS CALENDÁRIO
+
+**Descubra o corte antes de comparar qualquer coisa.** O TiqueTaque fecha o
+ponto em janelas próprias e tem mais de uma convivendo — o painel mostra
+séries "10 a 09" e "16 a 15". A API não diz qual vale para quem: não existe
+endpoint de `work-schedules`, e o cadastro do funcionário traz só um id de
+escala que não abre.
+
+Medido na MCZ contra a folha, o período é **10 a 09 fechando no próprio
+mês** — a competência 06/2026 paga de 10/05 a 09/06. Comparar por mês
+calendário ali inflava a divergência em **44%**.
+
+`scripts/auditoria-folha/testa_periodos.py` mede as hipóteses contra o que a
+folha pagou e aponta a vencedora. O extrator aceita `--corte 10` para puxar
+o espelho já na janela certa.
+
+Por que isso não é detalhe: a janela errada não erra por igual. Quem faz
+hora extra no começo do mês tem o erro num sentido, quem faz no fim tem no
+outro — e a mesma hora aparece faltando num mês e sobrando no seguinte.
+Produz uma lista de divergências convincente e falsa.
+
 ## A folha paga HE com UM MÊS DE DEFASAGEM
 
-**Confirme isso antes de qualquer comparação.** A competência N paga as
-horas trabalhadas em N−1 — a apuração do ponto fecha antes do fechamento da
+Leitura grosseira, subordinada ao período acima: a competência N paga horas
+que, em linhas gerais, são de N−1 — a apuração do ponto fecha antes do fechamento da
 folha. Medido na MCZ: sete dos nove arquivos com HE batem muito melhor com o
 mês anterior, alguns de forma gritante (96,42h de erro contra o próprio mês
 x 17,32h contra o anterior). O próprio modelo de importação confirma, tendo
