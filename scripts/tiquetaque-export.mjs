@@ -14,6 +14,7 @@
 //   --start / --end   periodo (AAAA-MM-DD), obrigatorios
 //   --out             diretorio de saida (padrao ./export-tiquetaque)
 //   --only            times,leaves,timesheets (padrao: os tres)
+//   --empregador      trecho do nome do empregador, ex. "mcz" (padrao: todos)
 //   --resume          continua de onde parou usando o checkpoint do --out
 //
 // Gera CSV (';' + BOM, abre no Excel pt-BR sem passar pelo assistente de
@@ -63,6 +64,10 @@ const ONLY = String(args.only || "times,leaves,timesheets")
   .map((s) => s.trim())
   .filter(Boolean);
 const RESUME = Boolean(args.resume);
+// Trecho do nome do empregador (contract_data.payment_source, resolvido via
+// GET /payment-sources). A base do TiqueTaque tem as duas empresas do grupo
+// misturadas, entao sem isso a extracao puxa todo mundo.
+const EMPREGADOR = typeof args.empregador === "string" ? args.empregador.toLowerCase() : null;
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 if (!DATE_RE.test(START || "") || !DATE_RE.test(END || "")) {
@@ -112,7 +117,11 @@ async function bruto(path) {
   return { status: Number(stdout.slice(corte + 1)), body: stdout.slice(0, corte) };
 }
 
-async function api(path, attempt = 0) {
+// `vazio404`: em /timesheets, 404 nao e falha — e a resposta normal de quem
+// nao tem espelho de ponto no periodo (admitido depois, afastado o mes
+// inteiro, ou sem marcacao nenhuma). Sem isso a extracao inteira morre no
+// primeiro funcionario nessa situacao.
+async function api(path, attempt = 0, vazio404 = null) {
   const { status, body } = await bruto(path);
   chamadas++;
   if (status === 429 && attempt < MAX_RETRIES) {
@@ -121,6 +130,7 @@ async function api(path, attempt = 0) {
     await sleep(backoff);
     return api(path, attempt + 1);
   }
+  if (status === 404 && vazio404 !== null) return vazio404;
   if (status < 200 || status >= 300) {
     throw new Error(`TiqueTaque respondeu ${status} em ${path}: ${body.slice(0, 200)}`);
   }
@@ -182,14 +192,25 @@ function gravarCheckpoint(estado) {
 
 // -------------------------------------------------------------------- coleta
 
-async function buscarFuncionarios() {
+async function buscarEmpregadores() {
+  const data = await api("/payment-sources?max_results=100");
+  const m = new Map();
+  for (const it of data._items ?? []) m.set(it._id, (it.name || "").trim());
+  return m;
+}
+
+async function buscarFuncionarios(empregadores) {
   const todos = [];
   for (let page = 1; ; page++) {
     const data = await api(`/employees?max_results=200&page=${page}`);
     const items = data._items ?? [];
     for (const it of items) {
+      const fonte = it.contract_data?.payment_source ?? null;
+      const empregador = (fonte && empregadores.get(fonte)) || "";
+      if (EMPREGADOR && !empregador.toLowerCase().includes(EMPREGADOR)) continue;
       todos.push({
         id: it._id,
+        empregador,
         nome: (it.full_name || "").trim(),
         cpf: (it.cpf || "").replace(/\D/g, ""),
         cargo: it.contract_data?.job_role?.trim() || "",
@@ -242,12 +263,19 @@ async function main() {
   console.log(`Relatorios: ${ONLY.join(", ")}`);
   console.log(`Saida: ${OUT}${RESUME ? "  (retomando)" : ""}\n`);
 
-  const funcionarios = await buscarFuncionarios();
+  const empregadores = await buscarEmpregadores();
+  const funcionarios = await buscarFuncionarios(empregadores);
+  if (EMPREGADOR) console.log(`Filtro de empregador: "${EMPREGADOR}"`);
   console.log(`Funcionarios: ${funcionarios.length}\n`);
+  if (!funcionarios.length) {
+    console.error("Nenhum funcionario com esse empregador. Disponiveis: " +
+      [...new Set(empregadores.values())].join(" | "));
+    process.exit(1);
+  }
 
-  const fCsv = criarCsv("funcionarios.csv", ["employee_id", "nome", "cpf", "cargo", "departamento", "demitido", "demissao"], null);
+  const fCsv = criarCsv("funcionarios.csv", ["employee_id", "nome", "cpf", "empregador", "cargo", "departamento", "demitido", "demissao"], null);
   // Cadastro completo, sempre reescrito por inteiro — independe do progresso.
-  fCsv.escrever(funcionarios.map((f) => [f.id, f.nome, f.cpf, f.cargo, f.departamento, f.demitido ? "sim" : "nao", f.demissao]));
+  fCsv.escrever(funcionarios.map((f) => [f.id, f.nome, f.cpf, f.empregador, f.cargo, f.departamento, f.demitido ? "sim" : "nao", f.demissao]));
 
   const comps = competencias(START, END);
   const quer = (n) => ONLY.includes(n);
@@ -320,7 +348,7 @@ async function main() {
         for (const comp of comps) {
           const ini = comp + "-01" < START ? START : comp + "-01";
           const fim = ultimoDia(comp) > END ? END : ultimoDia(comp);
-          const data = await api(`/timesheets?${new URLSearchParams({ employee_id: f.id, start_date: ini, end_date: fim })}`);
+          const data = await api(`/timesheets?${new URLSearchParams({ employee_id: f.id, start_date: ini, end_date: fim })}`, 0, { totals: {}, days: {} });
           const t = data.totals ?? {};
           if (num(t.total) > 0) comHoras++;
           espM.escrever([[f.id, f.nome, f.cpf, comp, num(t.horas_normais), num(t.extra_50), num(t.extra_100), num(t.adicional_noturno), num(t.hora_noturna_reduzida), num(t.dsr), num(t.folga), num(t.atraso), num(t.total)]]);
