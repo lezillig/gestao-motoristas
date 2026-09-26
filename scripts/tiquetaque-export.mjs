@@ -25,7 +25,7 @@
 // importacao): marcacoes.csv, afastamentos.csv, espelho_mensal.csv,
 // espelho_diario.csv e funcionarios.csv.
 
-import { writeFileSync, appendFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
+import { writeFileSync, appendFileSync, mkdirSync, existsSync, readFileSync, openSync, closeSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -219,6 +219,82 @@ function gravarCheckpoint(estado) {
   writeFileSync(CHECKPOINT, JSON.stringify(estado), "utf8");
 }
 
+// -------------------------------------------------------------------- trava
+//
+// Os CSV sao alimentados com appendFileSync. Dois processos apontados para o
+// mesmo --out nao brigam por um arquivo travado: eles simplesmente intercalam
+// as linhas, e cada funcionario que os dois alcancarem sai DUPLICADO — sem
+// erro nenhum no log. Foi o que aconteceu na extracao da Azul: o container
+// suspendeu, a execucao pareceu morta, uma segunda foi disparada, e quando a
+// primeira voltou a rodar as duas passaram pelas mesmas pessoas. O estrago e
+// silencioso e so aparece muito depois, como hora dobrada no espelho.
+//
+// A trava e um arquivo com o PID. Um PID que nao responde ao sinal 0 e de
+// processo morto — a trava e orfa e pode ser tomada.
+
+const TRAVA = join(OUT, "_lock");
+
+function vivo(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err.code === "EPERM";
+  }
+}
+
+function travar() {
+  if (existsSync(TRAVA)) {
+    const dono = Number.parseInt(readFileSync(TRAVA, "utf8").trim(), 10);
+    if (Number.isInteger(dono) && dono !== process.pid && vivo(dono)) {
+      console.error(
+        `Ja existe uma extracao rodando neste diretorio (PID ${dono}).\n` +
+        `Duas ao mesmo tempo duplicam linhas em silencio. Espere a outra\n` +
+        `terminar, ou mate o processo, ou use outro --out.`
+      );
+      process.exit(3);
+    }
+    console.warn(`Trava orfa de um processo morto (PID ${dono || "?"}) — assumindo.\n`);
+  }
+  writeFileSync(TRAVA, String(process.pid), "utf8");
+  const soltar = () => {
+    try {
+      if (existsSync(TRAVA) && readFileSync(TRAVA, "utf8").trim() === String(process.pid)) unlinkSync(TRAVA);
+    } catch {}
+  };
+  process.on("exit", soltar);
+  for (const sinal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+    process.on(sinal, () => {
+      soltar();
+      process.exit(130);
+    });
+  }
+}
+
+// ------------------------------------------------------------------ limpeza
+//
+// Rede de seguranca para o caso de a duplicacao ja ter acontecido: ao final,
+// remove linhas identicas repetidas. Preserva a ordem e nao mexe no
+// cabecalho. Linha repetida e sempre erro de gravacao — a mesma pessoa, no
+// mesmo dia, na mesma hora, do mesmo tipo, com a mesma coordenada.
+
+function deduplicar(caminho) {
+  if (!existsSync(caminho)) return 0;
+  const linhas = readFileSync(caminho, "utf8").split("\n");
+  const cabecalho = linhas[0];
+  const vistas = new Set();
+  const mantidas = [];
+  let fora = 0;
+  for (const l of linhas.slice(1)) {
+    if (!l) continue;
+    if (vistas.has(l)) { fora++; continue; }
+    vistas.add(l);
+    mantidas.push(l);
+  }
+  if (fora) writeFileSync(caminho, [cabecalho, ...mantidas].join("\n") + "\n", "utf8");
+  return fora;
+}
+
 // -------------------------------------------------------------------- coleta
 
 async function buscarEmpregadores() {
@@ -294,6 +370,7 @@ const num = (v) => {
 
 async function main() {
   mkdirSync(OUT, { recursive: true });
+  travar();
   const t0 = Date.now();
   const estado = lerCheckpoint();
   const feitos = new Set(estado.feitos || []);
@@ -420,7 +497,11 @@ async function main() {
 
   const min = ((Date.now() - t0) / 60000).toFixed(1);
   console.log(`\nConcluido em ${min} min · ${chamadas} chamadas a API`);
-  for (const c of [fCsv, marc, afast, espM, espD]) if (c) console.log(`  ${c.caminho}`);
+  for (const c of [fCsv, marc, afast, espM, espD]) {
+    if (!c) continue;
+    const fora = deduplicar(c.caminho);
+    console.log(`  ${c.caminho}${fora ? `  (${fora} linhas duplicadas removidas)` : ""}`);
+  }
 }
 
 main().catch((err) => {
