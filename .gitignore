@@ -42,3 +42,6 @@ next-env.d.ts
 
 .vercel
 .env*
+
+# Saida da extracao em massa do TiqueTaque (scripts/tiquetaque-export.mjs)
+/export-tiquetaque/
