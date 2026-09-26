@@ -21,6 +21,20 @@ resolve disputa entre duas versões de um arquivo de HE.
 - **Holerite**, via `scripts/auditoria-folha/extrato.py`. A *referência* de
   cada rubrica é a quantidade de horas; o *valor* é em reais.
 
+## A folha paga HE com UM MÊS DE DEFASAGEM
+
+**Confirme isso antes de qualquer comparação.** A competência N paga as
+horas trabalhadas em N−1 — a apuração do ponto fecha antes do fechamento da
+folha. Medido na MCZ: sete dos nove arquivos com HE batem muito melhor com o
+mês anterior, alguns de forma gritante (96,42h de erro contra o próprio mês
+x 17,32h contra o anterior). O próprio modelo de importação confirma, tendo
+colunas "HE 50% Mês anterior" e "HE 100% Mês anterior".
+
+Comparar contra o mês errado infla a divergência e produz achado falso.
+`scripts/auditoria-folha/cruza_he.py` testa as duas hipóteses e aponta qual
+se ajusta melhor — rode isso primeiro numa empresa nova, porque a defasagem
+pode não ser a mesma em todas.
+
 ## O cruzamento central
 
 Para cada pessoa e competência, compare a **referência** do holerite com as
