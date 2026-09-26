@@ -85,9 +85,15 @@ if (START > END) {
 //     Authorization para api.tiquetaque.com. Nesse modo as chamadas saem
 //     por curl, porque o fetch nativo do Node NAO respeita HTTPS_PROXY —
 //     sairia direto e voltaria 401.
+// QUEM DECIDE O TRANSPORTE E O PROXY, NAO O TOKEN. Havendo HTTPS_PROXY, as
+// chamadas saem por curl e a autenticacao fica por conta do injetor de
+// cabecalho do ambiente — inclusive quando TIQUETAQUE_API_TOKEN tambem
+// existe. Inverter isso foi bug real: com a variavel definida o script caia
+// no fetch nativo, que ignora HTTPS_PROXY, saia direto e levava 403 do
+// gateway de saida ("Host not in allowlist").
 const TOKEN = process.env.TIQUETAQUE_API_TOKEN;
 const PROXY = process.env.HTTPS_PROXY || process.env.https_proxy;
-const VIA_PROXY = !TOKEN && Boolean(PROXY);
+const VIA_PROXY = Boolean(PROXY);
 if (!TOKEN && !VIA_PROXY) {
   console.error(
     "Sem credencial: defina TIQUETAQUE_API_TOKEN no ambiente, ou rode onde haja\n" +
