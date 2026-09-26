@@ -22,6 +22,10 @@
 
 import { writeFileSync, appendFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 // TIQUETAQUE_API_BASE existe para apontar o script a um servidor de teste que
 // imita a API; sem ela, vai na API real.
@@ -69,37 +73,58 @@ if (START > END) {
   console.error(`Periodo invertido: inicio ${START} e posterior ao fim ${END}.`);
   process.exit(1);
 }
+// Duas formas de autenticar, nesta ordem:
+//  1. TIQUETAQUE_API_TOKEN no ambiente — o script monta o Basic sozinho
+//     (usuario fixo "public"). E o modo para rodar na maquina de alguem.
+//  2. Sem a variavel: assume que um proxy de saida injeta o cabeçalho
+//     Authorization para api.tiquetaque.com. Nesse modo as chamadas saem
+//     por curl, porque o fetch nativo do Node NAO respeita HTTPS_PROXY —
+//     sairia direto e voltaria 401.
 const TOKEN = process.env.TIQUETAQUE_API_TOKEN;
-if (!TOKEN) {
+const PROXY = process.env.HTTPS_PROXY || process.env.https_proxy;
+const VIA_PROXY = !TOKEN && Boolean(PROXY);
+if (!TOKEN && !VIA_PROXY) {
   console.error(
-    "TIQUETAQUE_API_TOKEN nao definida.\n" +
-      "Defina a variavel no ambiente (nao passe o token por argumento de linha de\n" +
-      "comando: ele fica no historico do shell e na lista de processos)."
+    "Sem credencial: defina TIQUETAQUE_API_TOKEN no ambiente, ou rode onde haja\n" +
+      "um proxy de saida que injete o Authorization para api.tiquetaque.com."
   );
   process.exit(1);
 }
 
 // ---------------------------------------------------------------------- http
 
-const authHeader = "Basic " + Buffer.from(`public:${TOKEN}`).toString("base64");
+const authHeader = TOKEN ? "Basic " + Buffer.from(`public:${TOKEN}`).toString("base64") : null;
+const CACERT = "/root/.ccr/ca-bundle.crt";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let chamadas = 0;
 
+async function bruto(path) {
+  if (!VIA_PROXY) {
+    const res = await fetch(`${BASE_URL}${path}`, { headers: { Authorization: authHeader } });
+    return { status: res.status, body: await res.text() };
+  }
+  const args = ["-sS", "-o", "-", "-w", "\n%{http_code}", `${BASE_URL}${path}`];
+  if (existsSync(CACERT)) args.push("--cacert", CACERT);
+  // 20 MB cobre com folga a maior resposta (uma pagina de 200 funcionarios)
+  const { stdout } = await execFileAsync("curl", args, { maxBuffer: 20 * 1024 * 1024 });
+  const corte = stdout.lastIndexOf("\n");
+  return { status: Number(stdout.slice(corte + 1)), body: stdout.slice(0, corte) };
+}
+
 async function api(path, attempt = 0) {
-  const res = await fetch(`${BASE_URL}${path}`, { headers: { Authorization: authHeader } });
+  const { status, body } = await bruto(path);
   chamadas++;
-  if (res.status === 429 && attempt < MAX_RETRIES) {
+  if (status === 429 && attempt < MAX_RETRIES) {
     const backoff = 2000 * 2 ** attempt;
     process.stderr.write(`  429 em ${path} — aguardando ${backoff / 1000}s\n`);
     await sleep(backoff);
     return api(path, attempt + 1);
   }
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`TiqueTaque respondeu ${res.status} em ${path}: ${body.slice(0, 200)}`);
+  if (status < 200 || status >= 300) {
+    throw new Error(`TiqueTaque respondeu ${status} em ${path}: ${body.slice(0, 200)}`);
   }
-  return res.json();
+  return JSON.parse(body);
 }
 
 // ------------------------------------------------------------------- planilha
