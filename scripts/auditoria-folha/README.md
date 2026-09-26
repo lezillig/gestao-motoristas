@@ -15,10 +15,12 @@ Estão versionados porque o conhecimento embutido neles é caro de redescobrir
 | `extrato.py` | Extrato Mensal (PDF) | Reconstrói holerite por holerite, com todas as rubricas |
 | `mcz.py` | planilhas de importação e de líquido (.xls/.xlsx) | Lê e compara versões de um mesmo fechamento |
 | `banco.py` | comprovantes do Bradesco (PDF) + planilha de líquido | Confere se cada pessoa recebeu o líquido apurado |
+| `janela.py` | espelho diário do TiqueTaque + planilhas de importação | Descobre a janela de apuração da competência e confere a HE contra ela |
 
 ```
 python3 extrato.py extrato.pdf              # holerites + fechamento
 python3 banco.py comprovantes.pdf liquido.xlsx
+python3 janela.py --espelho ../../export-tiquetaque --imp imp_08.xls --comp 2026-08
 ```
 
 Dependências: `pymupdf`, `python-calamine`, `xlrd`.
@@ -53,3 +55,34 @@ por prefixo já atribuiu pagamento à pessoa errada.
 **Arquivos com nome diferente são importações parciais**, não versões
 concorrentes: "Ajuste", "Correção", "Apenas convênio" e "Horas extras"
 trazem um subconjunto de rubricas e deixam o resto em branco.
+
+**Mas nem toda parcial soma — algumas substituem.** Na Azul, o
+`imp_01_ajuste_conv.xls` repete o principal valor a valor (173 de 173 pessoas
+na rubrica 259, 146 de 146 na 246); é reenvio. Já o `imp_01_ajuste_horas.xls`
+corrige a hora de 53 das 139 pessoas: é a versão que vale. Compare valor a
+valor antes de decidir; somar um reenvio dobra a competência inteira.
+
+**A folha não fecha no mês civil.** Na Azul a janela vai do dia 10 ao dia 09 do
+mês seguinte. Comparar de 01 a 30 inflou a divergência da MCZ em 44% (517 h
+contra 261 h reais). O `janela.py` descobre a janela por força bruta contra o
+espelho diário.
+
+**A competência de transição tem janela mais curta.** Em 01/2026 são 25 dias
+(16/12 a 09/01), porque o trecho de 10 a 15/12 saiu na folha anterior. Buscar
+só o dia de início, com duração fixa em 30, não encontra.
+
+**A hora extra pode estar inteira num arquivo complementar.** Em 07/2026 o
+`imp_07.xls` traz zero HE. Conferir só o principal produziu 164 falsas
+divergências e 7.660 h fantasmas.
+
+**O espelho do TiqueTaque (`/timesheets`) já é o ajustado.** Conferido batida a
+batida em 50.835 dias-pessoa: entram as aprovadas e os ajustes manuais
+aprovados; ficam de fora as solicitações pendentes (todas as 143), as
+reprovadas e as desconsideradas pelo gestor. Não há campo dizendo isso na
+resposta da API — é preciso cruzar `/times` com a coluna `horarios` do espelho
+para confirmar.
+
+**Duas extrações simultâneas no mesmo diretório duplicam em silêncio.** Os CSV
+são gravados com append; dois processos intercalam linhas sem erro no log. Uma
+pessoa saiu com o histórico dobrado e a folha pareceu pagar exatamente metade
+das horas. O `tiquetaque-export.mjs` passou a travar o diretório por PID.
