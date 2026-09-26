@@ -24,6 +24,7 @@ cada uma custou uma investigação.
 | `passivo-trabalhista` | Quantificação de risco e ordem de correção |
 | `controles-internos` | O processo: quem lança, confere e aprova |
 | `analise-dados` | Séries entre competências, outliers, custo de mão de obra |
+| `auditor-revisor` | Revisa o parecer, não a folha: refaz o caminho de cada achado |
 
 ## Como usar
 
@@ -33,6 +34,12 @@ classificado por severidade.
 
 Para pergunta pontual, vá direto ao especialista — é mais rápido e mais
 barato.
+
+Antes de mandar um parecer para fora — contador, advogado, sindicato —
+passe o **`auditor-revisor`**. Ele não confere a folha; confere a
+conferência, e classifica cada achado em confirmado, frágil, derrubado ou
+incompleto. Numa auditoria real deste grupo, essa segunda passagem derrubou
+quatro achados e corrigiu o valor de outros três.
 
 ## Princípios comuns
 
