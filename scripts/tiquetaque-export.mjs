@@ -37,8 +37,16 @@ const execFileAsync = promisify(execFile);
 const BASE_URL = process.env.TIQUETAQUE_API_BASE || "https://api.tiquetaque.com/v2.1";
 // 60 req/min e o limite real da API (ver src/lib/tiquetaque/pace.ts). 1.1s
 // entre chamadas mantem ~54/min, com margem.
-const PACE_MS = Number(process.env.TIQUETAQUE_PACE_MS || 1100);
-const MAX_RETRIES = 3;
+// 1.1s dava 54 req/min contra um teto de 60 — margem estreita demais numa
+// corrida de milhares de chamadas: um 429 no meio matava a extracao. O ritmo
+// agora COMECA em 1.3s e SOBE sozinho a cada 429, ate 3s. Uma vez que a API
+// reclamou, desacelerar de vez custa minutos; insistir custa a corrida.
+let PACE_MS = Number(process.env.TIQUETAQUE_PACE_MS || 1300);
+const PACE_MAX = 3000;
+// O limite e por janela de 1 minuto, entao o recuo precisa alcancar essa
+// janela: 5s, 15s, 30s, 60s. Um backoff de 2/4/8s nunca a atravessa.
+const MAX_RETRIES = 4;
+const BACKOFF_MS = [5000, 15000, 30000, 60000];
 
 // ---------------------------------------------------------------- argumentos
 
@@ -352,12 +360,12 @@ async function main() {
       if (afast) {
         const todos = [];
         for (let page = 1; ; page++) {
+          if (page > 1) await sleep(PACE_MS);
           const data = await api(`/work-leaves?${new URLSearchParams({ employee_id: f.id, max_results: "200", page: String(page) })}`);
           const items = data._items ?? [];
           todos.push(...items);
           const total = data._meta?.total ?? todos.length;
           if (todos.length >= total || items.length < 200) break;
-          await sleep(PACE_MS);
         }
         // /work-leaves nao aceita filtro de data — devolve o historico inteiro
         // da pessoa. O recorte do periodo e feito aqui, mantendo todo
